@@ -55,3 +55,5 @@ CREATE TABLE rate_events (
 );
 CREATE INDEX idx_rate_events ON rate_events(scope, created_at);
 CREATE INDEX idx_challenges_pr ON challenges(repo_full_name, pr_number);
+CREATE INDEX idx_quizzes_challenge ON quizzes(challenge_id);
+CREATE INDEX idx_sessions_oauth_state ON sessions(oauth_state);

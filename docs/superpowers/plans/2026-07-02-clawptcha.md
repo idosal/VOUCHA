@@ -126,7 +126,7 @@ export default defineWorkersConfig({
 });
 ```
 
-Note: with `vitest-pool-workers`, migrations in `migrations/` are applied to the test D1 automatically when `wrangler.jsonc` declares the binding. If a test run reports missing tables, add `miniflare: { d1Persist: false }` and apply the schema in a test `beforeAll` by executing the SQL from `migrations/0001_init.sql` — but try the default behavior first.
+Note: `vitest-pool-workers` does NOT apply migrations automatically. The config uses an async `defineWorkersConfig` callback with `readD1Migrations`, a `TEST_MIGRATIONS` miniflare binding, and `test/apply-migrations.ts` in `setupFiles` calling `applyD1Migrations(env.DB, env.TEST_MIGRATIONS)`. See `test/migrations.test.ts` for the smoke test proving tables exist.
 
 - [ ] **Step 5: Create .gitignore**
 
