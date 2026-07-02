@@ -9,6 +9,12 @@ function b64urlJson(obj: unknown): string {
 }
 
 function pemToBytes(pem: string): Uint8Array {
+  if (pem.includes("BEGIN RSA PRIVATE KEY")) {
+    throw new Error(
+      "GITHUB_PRIVATE_KEY is PKCS#1; convert to PKCS#8 first: " +
+      "openssl pkcs8 -topk8 -inform PEM -outform PEM -nocrypt -in app.pem -out app-pkcs8.pem"
+    );
+  }
   const body = pem.replace(/-----(BEGIN|END) PRIVATE KEY-----/g, "").replace(/\s+/g, "");
   return Uint8Array.from(atob(body), (c) => c.charCodeAt(0));
 }

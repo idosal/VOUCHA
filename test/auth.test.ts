@@ -38,4 +38,9 @@ describe("createAppJwt", () => {
     );
     expect(ok).toBe(true);
   });
+
+  it("rejects PKCS#1 keys with an actionable error", async () => {
+    const pkcs1 = "-----BEGIN RSA PRIVATE KEY-----\nMIIEow==\n-----END RSA PRIVATE KEY-----";
+    await expect(createAppJwt("12345", pkcs1, new Date())).rejects.toThrow(/PKCS#8/);
+  });
 });
