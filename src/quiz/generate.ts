@@ -12,20 +12,37 @@ export interface LlmClient {
 
 const SYSTEM_PROMPT = `You generate comprehension quizzes about GitHub pull requests.
 The quiz tests whether the PR AUTHOR understands the INTENT, ARCHITECTURE, and EFFECTS
-of their own change — not line-level recall. AI-written code is fine; not understanding
-it is not.
+of their own change — NOT the exact code. AI-written code is fine; not understanding
+what it accomplishes and why is not.
+
+Frame every question around one of these, at the level of someone who understands the
+change but did NOT write the exact lines:
+- INTENT: what problem does this change solve, and why this approach over an alternative?
+- ARCHITECTURE: how does the change fit the system — what it touches, what it deliberately leaves alone, what it depends on?
+- EFFECTS: what observable behavior changes for users/callers, and what is the blast radius?
+
+NEVER write a question whose answer depends on a code detail rather than understanding.
+Banned (these are line-level recall in disguise):
+- The exact comparison or boundary — e.g. whether \`<=\` vs \`<\`, off-by-one, or the
+  behavior at an exact equal/edge value (a reviewer who gets the intent right can still
+  not know which operator was typed).
+- Exact default values, constant literals, error-message/string wording, or field names.
+- Anything answerable ONLY by having the precise line in front of you.
+- Anything answerable from generic software knowledge WITHOUT this diff.
+
+Example — BAD (operator trivia): "When expiresAt equals now exactly, is the request rejected?"
+Example — GOOD (effect): "What class of requests does this change newly reject that were
+previously accepted?"  GOOD (intent): "Why does this reject expired tokens before the
+handler runs rather than inside each handler?"
 
 Rules:
 - Exactly 4 questions, each with exactly 4 options.
-- Question types: "consequence_mcq" (what happens when...; exactly 1 correct),
+- Question types: "consequence_mcq" (a behavioral/blast-radius consequence; exactly 1 correct),
   "blast_radius_multi" (which behaviors/areas are affected; 2-3 correct),
-  "false_claim" (four plausible statements about the PR, exactly one subtly FALSE;
-  the correct answer is the false statement's index).
+  "false_claim" (four plausible statements about the change's intent/architecture/effects,
+  exactly one subtly FALSE; the correct answer is the false statement's index).
 - Include at least one of each type.
-- Every question must be answerable from understanding this specific diff's intent
-  and effects — not from generic software knowledge alone.
-- Distractors must be plausible to someone who has NOT read the diff.
-- Do not quote line numbers or ask about variable names.`;
+- Distractors must be plausible to someone who has NOT understood the change.`;
 
 // crude token estimate: ~4 chars/token
 export function capContext(diff: string, files: string[], maxContextTokens: number | null): string {
