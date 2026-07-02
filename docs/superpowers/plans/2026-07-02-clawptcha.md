@@ -2930,6 +2930,12 @@ export async function onChallengeResolved(env: Env, r: ResolvedChallenge): Promi
 
 // Cron: any check left pending >30 min gets neutralized so we never block on our own outage.
 export async function sweepStaleChallenges(env: Env, now: Date): Promise<void> {
+  // Rate-limit events older than the sliding window are dead weight — purge them
+  // (2h cutoff = WINDOW_MS + margin) so the table doesn't grow unboundedly.
+  await env.DB.prepare("DELETE FROM rate_events WHERE created_at < ?")
+    .bind(new Date(now.getTime() - 2 * 60 * 60_000).toISOString())
+    .run();
+
   const cutoff = new Date(now.getTime() - 30 * 60_000).toISOString();
   const { results } = await env.DB.prepare(
     `SELECT * FROM challenges
