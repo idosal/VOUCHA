@@ -14,6 +14,14 @@ The philosophy: **AI-written code is fine — not understanding it is not.**
 The quiz does not test line-level recall. It tests whether the submitter
 understands the *intent*, *architecture*, and *effects* of their change.
 
+**Product truth:** a contributor whose coding agent has computer use can tell
+it to take the quiz, and no quiz design prevents that. Clawptcha therefore
+does not claim to be an unbeatable gate. Its value is threefold: it forces
+genuine engagement from the honest majority; it converts careless
+slop-submission into *deliberate, on-the-record deception* for cheaters
+(attestation); and it hands maintainers a behavioral risk report so a
+suspicious pass is visible rather than silent.
+
 ## Threat model
 
 "Somewhere in between" casual and adversarial:
@@ -22,10 +30,15 @@ understands the *intent*, *architecture*, and *effects* of their change.
   without reading them. Passing the quiz should require roughly as much
   effort as actually understanding the diff.
 - **Deterred, not defeated:** contributors who would relay the challenge to an
-  AI agent. Interactive UI, per-question time limits, one-question-at-a-time
-  flow, and fresh questions per attempt make relaying awkward — but we do not
-  chase full unforgeability (no proctoring, no keystroke spyware).
-- **Out of scope:** determined fakers with automated relay pipelines.
+  AI agent. Coding agents with built-in computer use (e.g., Codex) can take
+  the quiz at ~zero marginal cost, so relay friction alone is not prevention.
+  Against this population Clawptcha relies on (a) automation detection
+  surfaced to the maintainer as a risk report, and (b) the attestation making
+  cheating a deliberate, visible act rather than mere carelessness.
+- **Explicitly not attempted:** proving humanness. No proctoring, webcams,
+  keystroke spyware, or WebAuthn presence ceremonies — a lazy user would tap
+  a passkey without reading anything, so these add invasiveness without
+  adding meaning.
 
 ## Architecture
 
@@ -65,7 +78,13 @@ Contributor ──challenge link──▶ Quiz web UI (served by same Worker)
 4. **Challenge:** contributor opens the link → GitHub OAuth → identity must
    match the PR author → quiz UI.
 5. **Grading:** answers submitted per question, graded server-side.
-   Pass (default 3/4) → check success + friendly PR comment.
+   Pass (default 3/4) → check success + attestation comment on the PR:
+   the author certified under challenge that they personally understand the
+   change. The check run summary includes a **risk report** for maintainers:
+   total time, per-question timing distribution, Turnstile verdict, and
+   automation fingerprints — so a pass that looks automated (e.g., 4/4
+   conceptual questions in 40 seconds with sterile pointer telemetry) is
+   flagged "passed, automation-likely" rather than silently green.
    Fail → check stays failure, 15-minute cooldown, retry gets a **freshly
    generated** quiz. After max attempts (default 3), the check stays failed
    and the maintainer is notified via the PR comment to review manually.
@@ -98,9 +117,16 @@ Generation requirements:
 - One question at a time; no back navigation.
 - Per-question time limit (default 90s); expiry counts as wrong.
 - Correct answers never sent to the browser; grading is server-side.
-- Progress + result screens; on pass, a small celebration; on fail, cooldown
-  message with retry time.
-- No copy-paste blocking or focus tracking in v1 (matches threat model).
+- Progress + result screens; on pass, a small celebration plus the
+  attestation notice ("your pass will be posted to the PR as a personal
+  certification of understanding"); on fail, cooldown message with retry time.
+- **Cloudflare Turnstile** gates quiz start; its verdict feeds the risk
+  report (informs, never solely blocks).
+- **Behavioral telemetry captured, not enforced:** per-question response
+  times, answer-change counts, pointer-movement summary statistics, focus
+  loss, and automation fingerprints (webdriver flags, CDP artifacts). All of
+  it flows into the maintainer risk report; none of it auto-fails a quiz.
+- No copy-paste blocking in v1.
 
 ## Configuration (`.github/clawptcha.yml`)
 
@@ -143,11 +169,15 @@ Clawptcha must never block merges because of its own problems:
   which must equal the PR author.
 - Correct answers and generation prompts never leave the server.
 - Quiz links contain an unguessable token; expire with the PR head SHA.
+- Telemetry is summary statistics only (timings, aggregate pointer stats,
+  focus events) — no keystroke logging, no content capture — and its
+  collection is disclosed on the quiz page.
 
 ## Testing
 
 - Unit: quiz JSON schema validation, grading logic, config parsing,
-  exemption rules, cooldown/attempt state machine.
+  exemption rules, cooldown/attempt state machine, risk-report assembly
+  from telemetry fixtures.
 - Integration: webhook → check lifecycle with mocked GitHub + Anthropic APIs
   (Vitest + Workers test harness).
 - E2E (manual for v1): demo repo with the app installed; scripted PR
@@ -157,7 +187,8 @@ Clawptcha must never block merges because of its own problems:
 
 - Contributor CLI (pre-push self-check / attestation).
 - Free-form "defend your PR" questions with LLM judging.
-- Paste-detection / focus-loss signals.
+- Paste detection; ML-based scoring of the telemetry (v1 reports raw
+  signals and simple heuristics only).
 - Org dashboards, analytics, billing.
 
 ## Milestones
@@ -166,6 +197,9 @@ Clawptcha must never block merges because of its own problems:
    config loading, exemptions. Check auto-passes everything (no quiz yet).
 2. **Quiz engine:** LLM generation with schema validation, D1 storage,
    grading, attempt/cooldown state machine.
-3. **Challenge UI:** OAuth flow, time-boxed quiz frontend, results.
-4. **Hardening:** failure posture (neutral checks, stale sweep), cost caps,
+3. **Challenge UI:** OAuth flow, time-boxed quiz frontend, results,
+   attestation comment.
+4. **Risk report:** Turnstile integration, behavioral telemetry capture,
+   check-summary risk report with simple heuristics.
+5. **Hardening:** failure posture (neutral checks, stale sweep), cost caps,
    E2E demo repo pass.
