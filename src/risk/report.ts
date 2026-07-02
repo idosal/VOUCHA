@@ -1,11 +1,11 @@
 import { z } from "zod";
 
 export const telemetrySchema = z.object({
-  perQuestionMs: z.array(z.number().nonnegative()).catch(() => []),
-  answerChanges: z.number().int().nonnegative().catch(0),
-  pointerDistancePx: z.number().nonnegative().catch(0),
-  pointerSamples: z.number().int().nonnegative().catch(0),
-  focusLossCount: z.number().int().nonnegative().catch(0),
+  perQuestionMs: z.array(z.number().nonnegative().finite()).catch(() => []),
+  answerChanges: z.number().int().nonnegative().finite().catch(0),
+  pointerDistancePx: z.number().nonnegative().finite().catch(0),
+  pointerSamples: z.number().int().nonnegative().finite().catch(0),
+  focusLossCount: z.number().int().nonnegative().finite().catch(0),
   webdriver: z.boolean().catch(false),
   turnstileOk: z.boolean().catch(false),
 });

@@ -1,5 +1,10 @@
 import { describe, it, expect } from "vitest";
-import { buildRiskReport, renderRiskReportMarkdown, type Telemetry } from "../src/risk/report";
+import {
+  buildRiskReport,
+  renderRiskReportMarkdown,
+  telemetrySchema,
+  type Telemetry,
+} from "../src/risk/report";
 
 const humanTelemetry: Telemetry = {
   perQuestionMs: [42000, 61000, 35000, 55000],
@@ -50,5 +55,30 @@ describe("renderRiskReportMarkdown", () => {
     expect(md).toContain("automation-likely");
     expect(md).toContain("Q1: 4s");
     expect(md).toContain("Turnstile");
+  });
+});
+
+describe("telemetrySchema hardening", () => {
+  it("degrades non-finite numbers to field defaults instead of rendering them", () => {
+    const t = telemetrySchema.parse({
+      perQuestionMs: [Infinity, 100],
+      answerChanges: Infinity,
+      pointerDistancePx: 900,
+      pointerSamples: 50,
+      focusLossCount: 0,
+      webdriver: false,
+      turnstileOk: true,
+    });
+    expect(t.perQuestionMs).toEqual([]);
+    expect(t.answerChanges).toBe(0);
+    const md = renderRiskReportMarkdown(buildRiskReport(t), t);
+    expect(md).not.toContain("Infinity");
+  });
+
+  it("renders the null-telemetry report without crashing", () => {
+    const md = renderRiskReportMarkdown(buildRiskReport(null), null);
+    expect(md).toContain("inconclusive");
+    expect(md).toContain("no telemetry received");
+    expect(md).not.toContain("Total time");
   });
 });
