@@ -13,7 +13,7 @@ function challengeUrl(env: Env, challengeId: string): string {
   return `${env.APP_BASE_URL}/challenge/${challengeId}`;
 }
 
-function commentBody(env: Env, challengeId: string, status: string, cfg: ClawptchaConfig): string {
+function commentBody(env: Env, challengeId: string, status: string, cfg: ClawptchaConfig, authorLogin: string): string {
   const url = challengeUrl(env, challengeId);
   if (status === "awaiting_approval") {
     return [
@@ -31,7 +31,7 @@ function commentBody(env: Env, challengeId: string, status: string, cfg: Clawptc
   return [
     "## 🦞 Clawptcha",
     "",
-    `@-author: take a short comprehension quiz about this change to turn the check green (${cfg.max_attempts} attempts max):`,
+    `@${authorLogin}: take a short comprehension quiz about this change to turn the check green (${cfg.max_attempts} attempts max):`,
     "",
     `➡️ **[Start the challenge](${url})**`,
     "",
@@ -49,12 +49,14 @@ export async function handlePullRequestEvent(
   const installationId = payload.installation.id as number;
   const prNumber = payload.pull_request.number as number;
   const headSha = payload.pull_request.head.sha as string;
+  const baseSha = payload.pull_request.base.sha as string;
 
   // Idempotency: webhook redeliveries for a known (pr, sha) are no-ops.
   if (await getChallengeByPr(env.DB, repo, prNumber, headSha)) return;
 
   const pr = await api.getPr(repo, prNumber);
-  const configYaml = await api.getFileContent(repo, ".github/clawptcha.yml", headSha);
+  // Config comes from the merge target, never the PR branch — a PR must not be able to weaken its own gate.
+  const configYaml = await api.getFileContent(repo, ".github/clawptcha.yml", baseSha);
   const cfg = parseConfig(configYaml);
 
   const changedFiles = await api.listPrFiles(repo, prNumber);
@@ -122,7 +124,7 @@ export async function handlePullRequestEvent(
     config_json: JSON.stringify(cfg),
   });
 
-  await api.upsertPrComment(repo, prNumber, commentBody(env, challengeId, status, cfg));
+  await api.upsertPrComment(repo, prNumber, commentBody(env, challengeId, status, cfg, pr.author_login));
 }
 
 export async function handleIssueCommentEvent(
@@ -153,5 +155,5 @@ export async function handleIssueCommentEvent(
       },
     });
   }
-  await api.upsertPrComment(repo, prNumber, commentBody(env, challenge.id, "ready", storedCfg));
+  await api.upsertPrComment(repo, prNumber, commentBody(env, challenge.id, "ready", storedCfg, challenge.author_login));
 }

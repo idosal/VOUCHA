@@ -32,7 +32,7 @@ const prPayload = {
   installation: { id: 1 },
   repository: { full_name: "o/r" },
   pull_request: {
-    number: 7, head: { sha: "abc123" },
+    number: 7, head: { sha: "abc123" }, base: { sha: "base000" },
     user: { login: "contributor", type: "User" },
     author_association: "FIRST_TIME_CONTRIBUTOR",
     additions: 100, deletions: 30, title: "Add feature", body: "Does a thing",
@@ -109,6 +109,14 @@ describe("handlePullRequestEvent", () => {
     expect(api2.createCheckRun).toHaveBeenCalledWith("o/r", expect.objectContaining({
       head_sha: "sha2", status: "completed", conclusion: "success",
     }));
+  });
+
+  it("reads clawptcha.yml from the base SHA, not the PR head", async () => {
+    const getFileContent = vi.fn(async () => null);
+    const api = stubApi({ getFileContent });
+    const n = uniq + 8;
+    await handlePullRequestEvent(testEnv, api, payloadFor(n));
+    expect(getFileContent).toHaveBeenCalledWith("o/r", ".github/clawptcha.yml", "base000");
   });
 });
 
