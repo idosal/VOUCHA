@@ -69,13 +69,20 @@ export async function startQuizAttempt(
   if (!generated.ok) {
     // Never block merges on our own failure: neutralize.
     await setChallengeStatus(env.DB, challenge.id, "neutral");
+    // Terminal state: drop any question content from earlier attempts.
+    // DB state (status, score, purge) is finalized before the GitHub callback —
+    // a callback failure leaves consistent state for the cron sweep to reconcile.
+    await purgeQuizQuestions(env, challenge.id);
     await deps.onChallengeResolved({
       challenge, outcome: "neutral", telemetry: null, cfg,
     });
-    // Terminal state: drop any question content from earlier attempts.
-    await purgeQuizQuestions(env, challenge.id);
     return { ok: false, error: "generation_failed" };
   }
+
+  // A new attempt invalidates any quiz still open for this challenge.
+  await env.DB.prepare(
+    "UPDATE quizzes SET finished_at=? WHERE challenge_id=? AND finished_at IS NULL"
+  ).bind(deps.now().toISOString(), challenge.id).run();
 
   const quizId = randomToken();
   await env.DB.prepare(
@@ -97,7 +104,7 @@ interface QuizRow {
 export type SubmitResult =
   | { done: false; nextQuestion: number }
   | { done: true; passed: boolean; score: number; total: number }
-  | { done: true; error: "not_found" | "already_finished" };
+  | { done: true; error: "not_found" | "already_finished" | "challenge_closed" };
 
 interface PerQuestionTelemetry {
   elapsedMs: number; answerChanges: number; pointerDistancePx: number;
@@ -105,11 +112,21 @@ interface PerQuestionTelemetry {
 }
 
 export async function submitAnswer(
-  env: Env, deps: ChallengeDeps, quizId: string, answer: number[], telemetryJson: string
+  env: Env, deps: ChallengeDeps, quizId: string, questionIndex: number,
+  answer: number[], telemetryJson: string
 ): Promise<SubmitResult> {
+  // Defense in depth: option indices outside the rendered range are discarded.
+  answer = answer.filter((n) => Number.isInteger(n) && n >= 0 && n <= 3);
+
   const quiz = await env.DB.prepare("SELECT * FROM quizzes WHERE id=?").bind(quizId).first<QuizRow>();
   if (!quiz) return { done: true, error: "not_found" };
   if (quiz.finished_at) return { done: true, error: "already_finished" };
+
+  // A stale/duplicate POST (back button, double submit) re-renders the current
+  // question instead of consuming the next one.
+  if (questionIndex !== quiz.current_question) {
+    return { done: false, nextQuestion: quiz.current_question };
+  }
 
   const questions = (JSON.parse(quiz.questions_json) as Quiz).questions;
   const answers = JSON.parse(quiz.answers_json) as Answer[];
@@ -129,17 +146,23 @@ export async function submitAnswer(
   const nextIndex = quiz.current_question + 1;
   const isLast = nextIndex >= questions.length;
 
-  await env.DB.prepare(
+  // Guarded write: if a concurrent duplicate already advanced or finished this
+  // quiz, we lose the race and must not double-record or double-finalize.
+  // next question's 90s window starts when it's first rendered (route stamps via COALESCE)
+  const updated = await env.DB.prepare(
     `UPDATE quizzes SET answers_json=?, telemetry_json=?, current_question=?,
-       question_served_at=?, finished_at=? WHERE id=?`
+       question_served_at=?, finished_at=?
+     WHERE id=? AND current_question=? AND finished_at IS NULL`
   ).bind(
     JSON.stringify(answers),
     JSON.stringify({ perQuestion }),
     nextIndex,
-    isLast ? null : now.toISOString(),
+    null,
     isLast ? now.toISOString() : null,
-    quizId
+    quizId,
+    quiz.current_question
   ).run();
+  if (updated.meta.changes === 0) return { done: true, error: "already_finished" };
 
   if (!isLast) return { done: false, nextQuestion: nextIndex };
   return finalizeQuiz(env, deps, quiz, questions, answers, perQuestion, now);
@@ -150,6 +173,13 @@ async function finalizeQuiz(
   answers: Answer[], perQuestion: PerQuestionTelemetry[], now: Date
 ): Promise<SubmitResult> {
   const challenge = (await getChallenge(env.DB, quiz.challenge_id))!;
+  // Outcomes only apply to a live challenge. A quiz finishing after the
+  // challenge left `ready` (failed_final, superseded, passed via another quiz,
+  // neutral) must not override that state — pre-starting multiple quizzes
+  // would otherwise bypass the attempt cap and cooldown entirely.
+  if (challenge.status !== "ready") {
+    return { done: true, error: "challenge_closed" };
+  }
   const cfg = resolveConfig(challenge.config_json);
   const { score, passed } = scoreQuiz(questions, answers, cfg.pass_threshold);
 
@@ -182,14 +212,17 @@ async function finalizeQuiz(
     }
   }
 
+  // Terminal states only: retryable failures get a fresh quiz next attempt,
+  // but the challenge itself is still live.
+  // DB state (status, score, purge) is finalized before the GitHub callback —
+  // a callback failure leaves consistent state for the cron sweep to reconcile.
+  if (outcome === "passed" || outcome === "failed_final") {
+    await purgeQuizQuestions(env, challenge.id);
+  }
+
   const fresh = (await getChallenge(env.DB, challenge.id))!;
   await deps.onChallengeResolved({
     challenge: fresh, outcome, score, total: questions.length, telemetry, cfg,
   });
-  // Terminal states only: retryable failures get a fresh quiz next attempt,
-  // but the challenge itself is still live.
-  if (outcome === "passed" || outcome === "failed_final") {
-    await purgeQuizQuestions(env, challenge.id);
-  }
   return { done: true, passed, score, total: questions.length };
 }

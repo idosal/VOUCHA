@@ -2815,6 +2815,14 @@ git add src/challenge.ts src/ui/session.ts src/ui/pages.ts test/challenge.test.t
 git commit -m "feat: challenge service - start gate, grading flow, finalize outcomes"
 ```
 
+**Post-review deltas (Task 13):**
+- `finalizeQuiz` now refuses to apply outcomes unless the challenge is still `ready` (new `challenge_closed` error) — a quiz finishing after the challenge closed can no longer override `failed_final`/`passed`/`neutral` or bypass the attempt cap.
+- `startQuizAttempt` voids any still-open quizzes for the challenge (sets `finished_at`) before inserting a new one, preventing question-variant farming via pre-started quizzes.
+- `submitAnswer` uses a guarded UPDATE (`AND current_question=? AND finished_at IS NULL`) and treats a lost race (`meta.changes === 0`) as `already_finished` — concurrent duplicate submits cannot double-record or double-finalize.
+- `submitAnswer` takes an explicit `questionIndex` (hidden `qi` field in `questionPage`); a stale/duplicate POST idempotently re-renders the current question instead of consuming the next one.
+- On advance, `question_served_at` is set to NULL — the next question's 90s window starts when the route first renders it (COALESCE stamp in Task 14), not at submit time.
+- Terminal DB state (status, score, question purge) is finalized before the `onChallengeResolved` GitHub callback, and answer option indices are clamped to 0–3 as defense in depth.
+
 ---
 
 ### Task 14: Wire everything — Hono app, OAuth routes, resolution side effects, cron sweep
@@ -2985,6 +2993,8 @@ export async function sweepStaleChallenges(env: Env, now: Date): Promise<void> {
   }
 }
 ```
+
+**Task 14 additions from Task 13 review:** (a) the question route must stamp `question_served_at` via COALESCE at render (already in the route code) — this is now load-bearing since submitAnswer leaves it NULL; (b) the answer route must pass the hidden `qi` field as `questionIndex` to `submitAnswer`; (c) `currentSession` must reject sessions older than 1 hour (check `sessions.created_at`); (d) extend the cron: for challenges in terminal status (passed/failed_final/neutral) updated in the last 24h whose check run may not have completed (callback failure), re-issue the terminal `updateCheckRun` idempotently — reconstruct conclusion from status and score (quizzes.score is retained after purge).
 
 Note: the spec's "stale pending checks neutral after 30 minutes" is for checks stuck because the *service* failed mid-webhook. A challenge legitimately waiting for the contributor is not an outage — so the sweep neutralizes only after 24h of no attempt. Adjust `dayCutoff` if the spec owner prefers strict 30-minute semantics (ask during review).
 

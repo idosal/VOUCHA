@@ -53,6 +53,7 @@ export function questionPage(
   ${q.multiSelect ? '<p class="muted">Select all that apply.</p>' : ""}
   <form method="POST" action="/challenge/${esc(challengeId)}/answer" id="f">
     ${options}
+    <input type="hidden" name="qi" value="${index}">
     <input type="hidden" name="telemetry" id="telemetry">
     <button type="submit">Submit answer</button>
   </form>

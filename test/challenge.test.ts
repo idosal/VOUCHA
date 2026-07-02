@@ -110,12 +110,23 @@ describe("submitAnswer", () => {
     pointerSamples: 50, focusLossCount: 0, webdriver: false,
   });
 
+  // submitAnswer leaves question_served_at NULL when advancing; in production
+  // the question route stamps it via COALESCE when the question is first
+  // rendered. This helper simulates that render-time stamp before answering
+  // (COALESCE preserves an explicitly pre-set served_at, e.g. the over-time test).
+  async function answerQ(d: ChallengeDeps, quizId: string, index: number, ans: number[]) {
+    await testEnv.DB.prepare(
+      "UPDATE quizzes SET question_served_at=COALESCE(question_served_at, ?) WHERE id=?"
+    ).bind(d.now().toISOString(), quizId).run();
+    return submitAnswer(testEnv, d, quizId, index, ans, telemetry);
+  }
+
   it("passes with 3+ correct answers, resolves challenge as passed", async () => {
     const { challengeId, quizId, d } = await startedQuiz();
-    await submitAnswer(testEnv, d, quizId, [0], telemetry);  // correct
-    await submitAnswer(testEnv, d, quizId, [1, 2], telemetry); // correct
-    await submitAnswer(testEnv, d, quizId, [0], telemetry);  // wrong (correct is 3)
-    const final = await submitAnswer(testEnv, d, quizId, [2], telemetry); // correct
+    await answerQ(d, quizId, 0, [0]);  // correct
+    await answerQ(d, quizId, 1, [1, 2]); // correct
+    await answerQ(d, quizId, 2, [0]);  // wrong (correct is 3)
+    const final = await answerQ(d, quizId, 3, [2]); // correct
     expect(final.done).toBe(true);
     if (final.done && "passed" in final) expect(final.passed).toBe(true);
     else expect.fail("expected a graded result, not an error");
@@ -127,7 +138,7 @@ describe("submitAnswer", () => {
 
   it("fails below threshold, sets cooldown, increments attempts", async () => {
     const { challengeId, quizId, d } = await startedQuiz();
-    for (const ans of [[1], [0], [0], [0]]) await submitAnswer(testEnv, d, quizId, ans, telemetry);
+    for (const [i, ans] of [[1], [0], [0], [0]].entries()) await answerQ(d, quizId, i, ans);
     const ch = await getChallenge(testEnv.DB, challengeId);
     expect(ch?.status).toBe("ready"); // retryable
     expect(ch?.attempts_used).toBe(1);
@@ -140,7 +151,7 @@ describe("submitAnswer", () => {
     const d = deps();
     const started = await startQuizAttempt(testEnv, d, id, "alice", "tok");
     if (!started.ok) throw new Error("setup failed");
-    for (const ans of [[1], [0], [0], [0]]) await submitAnswer(testEnv, d, started.quizId, ans, telemetry);
+    for (const [i, ans] of [[1], [0], [0], [0]].entries()) await answerQ(d, started.quizId, i, ans);
     expect((await getChallenge(testEnv.DB, id))?.status).toBe("failed_final");
     expect(d.onChallengeResolved).toHaveBeenCalledWith(
       expect.objectContaining({ outcome: "failed_final" })
@@ -152,7 +163,7 @@ describe("submitAnswer", () => {
     // pretend the question was served 3 minutes ago
     await testEnv.DB.prepare("UPDATE quizzes SET question_served_at=? WHERE id=?")
       .bind("2026-07-02T11:57:00Z", quizId).run();
-    const r = await submitAnswer(testEnv, d, quizId, [0], telemetry);
+    const r = await submitAnswer(testEnv, d, quizId, 0, [0], telemetry);
     expect(r.done).toBe(false);
     const row = await testEnv.DB.prepare("SELECT answers_json FROM quizzes WHERE id=?")
       .bind(quizId).first<{ answers_json: string }>();
@@ -161,10 +172,10 @@ describe("submitAnswer", () => {
 
   it("purges question content from the quiz row after a pass (data custody)", async () => {
     const { quizId, d } = await startedQuiz();
-    await submitAnswer(testEnv, d, quizId, [0], telemetry);
-    await submitAnswer(testEnv, d, quizId, [1, 2], telemetry);
-    await submitAnswer(testEnv, d, quizId, [3], telemetry);
-    const final = await submitAnswer(testEnv, d, quizId, [2], telemetry);
+    await answerQ(d, quizId, 0, [0]);
+    await answerQ(d, quizId, 1, [1, 2]);
+    await answerQ(d, quizId, 2, [3]);
+    const final = await answerQ(d, quizId, 3, [2]);
     expect(final.done).toBe(true);
     const row = await testEnv.DB.prepare(
       "SELECT questions_json, score, answers_json, telemetry_json FROM quizzes WHERE id=?"
@@ -175,5 +186,45 @@ describe("submitAnswer", () => {
     expect(row!.score).toBe(4);
     expect(JSON.parse(row!.answers_json)).toHaveLength(4);
     expect(JSON.parse(row!.telemetry_json).perQuestion).toHaveLength(4);
+  });
+
+  it("a quiz finished after the challenge closed cannot override the outcome", async () => {
+    const { challengeId, quizId, d } = await startedQuiz();
+    // Challenge leaves `ready` while the quiz is still in flight.
+    await testEnv.DB.prepare("UPDATE challenges SET status='failed_final' WHERE id=?")
+      .bind(challengeId).run();
+    await answerQ(d, quizId, 0, [0]);
+    await answerQ(d, quizId, 1, [1, 2]);
+    await answerQ(d, quizId, 2, [3]);
+    const final = await answerQ(d, quizId, 3, [2]); // would be a 4/4 pass
+    expect(final).toEqual({ done: true, error: "challenge_closed" });
+    expect((await getChallenge(testEnv.DB, challengeId))?.status).toBe("failed_final");
+    expect(d.onChallengeResolved).not.toHaveBeenCalled();
+  });
+
+  it("starting a new attempt voids the previous open quiz", async () => {
+    const id = await makeChallenge();
+    const d = deps();
+    const a = await startQuizAttempt(testEnv, d, id, "alice", "tok");
+    if (!a.ok) throw new Error("setup failed");
+    const b = await startQuizAttempt(testEnv, d, id, "alice", "tok");
+    expect(b.ok).toBe(true);
+    const rowA = await testEnv.DB.prepare("SELECT finished_at FROM quizzes WHERE id=?")
+      .bind(a.quizId).first<{ finished_at: string | null }>();
+    expect(rowA!.finished_at).not.toBeNull();
+    const r = await submitAnswer(testEnv, d, a.quizId, 0, [0], telemetry);
+    expect(r).toEqual({ done: true, error: "already_finished" });
+  });
+
+  it("a stale question index re-renders instead of consuming the next question", async () => {
+    const { quizId, d } = await startedQuiz();
+    const first = await answerQ(d, quizId, 0, [0]);
+    expect(first).toEqual({ done: false, nextQuestion: 1 });
+    // Duplicate POST for question 0 (back button / double submit).
+    const dup = await submitAnswer(testEnv, d, quizId, 0, [3], telemetry);
+    expect(dup).toEqual({ done: false, nextQuestion: 1 });
+    const row = await testEnv.DB.prepare("SELECT answers_json FROM quizzes WHERE id=?")
+      .bind(quizId).first<{ answers_json: string }>();
+    expect(JSON.parse(row!.answers_json)).toHaveLength(1);
   });
 });
