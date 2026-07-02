@@ -72,11 +72,19 @@ Contributor ──challenge link──▶ Quiz web UI (served by same Worker)
    `.github/clawptcha.yml` in the repo for policy overrides.
 2. **PR opened/synchronized:** webhook → service creates a pending check run
    (`clawptcha`) and posts/updates one PR comment with the challenge link.
-3. **Quiz generation:** service fetches the diff, PR title/description, and
-   limited surrounding file context (token-capped). Claude generates ~4
-   conceptual questions with answers. Stored in D1 keyed by PR + head SHA.
-4. **Challenge:** contributor opens the link → GitHub OAuth → identity must
-   match the PR author → quiz UI.
+   No LLM call happens here.
+3. **Approval gate:** per `require_approval` config (default: first-time
+   contributors), the challenge is locked — the check reads "awaiting
+   maintainer approval" — until someone with write access approves via a
+   link in the PR comment or a `/clawptcha approve` comment. This mirrors
+   GitHub Actions' first-time-contributor workflow approval and prevents
+   malicious actors from burning LLM spend with drive-by PRs.
+4. **Challenge (lazy generation):** contributor opens the link → GitHub
+   OAuth → identity must match the PR author → Turnstile → only then does
+   the service fetch the diff, PR title/description, and surrounding file
+   context, and have Claude generate ~4 conceptual questions with answers
+   (stored in D1 keyed by PR + head SHA). LLM spend therefore occurs only
+   per real, authenticated, approved quiz attempt — never per webhook.
 5. **Grading:** answers submitted per question, graded server-side.
    Pass (default 3/4) → check success + attestation comment on the PR:
    the author certified under challenge that they personally understand the
@@ -135,6 +143,8 @@ Generation requirements:
 pass_threshold: 3        # of 4 questions
 max_attempts: 3
 cooldown_minutes: 15
+require_approval: first_time  # first_time | always | never — maintainer must
+                              # approve before the challenge can run
 rechallenge_on_push: false
 skip_authors: []         # usernames always exempt
 skip_bots: true          # dependabot, renovate, etc.
@@ -165,6 +175,19 @@ Clawptcha must never block merges because of its own problems:
 - Quiz cached per (PR, head SHA) — regeneration only on retry-after-fail or
   a new head SHA when `rechallenge_on_push` is enabled.
 
+### Abuse protection
+
+LLM spend is gated behind three locks, so hostile traffic cannot run up
+costs for maintainers or the operator:
+
+- **Maintainer approval** (`require_approval`, default `first_time`) — no
+  challenge runs for unapproved PRs; webhooks alone never trigger the LLM.
+- **Lazy generation** — quizzes are generated only when an authenticated
+  contributor (matching the PR author) passes Turnstile and starts the quiz.
+- **Rate limits** — per-user, per-repo, and per-installation caps on quiz
+  generations per hour, on top of the existing `max_attempts` + cooldown per
+  PR. Exceeding them leaves the check pending with an explanatory message.
+
 ## Security
 
 - Webhook signatures verified (HMAC).
@@ -179,8 +202,8 @@ Clawptcha must never block merges because of its own problems:
 ## Testing
 
 - Unit: quiz JSON schema validation, grading logic, config parsing,
-  exemption rules, cooldown/attempt state machine, risk-report assembly
-  from telemetry fixtures.
+  exemption rules, approval-gate and rate-limit logic, cooldown/attempt
+  state machine, risk-report assembly from telemetry fixtures.
 - Integration: webhook → check lifecycle with mocked GitHub + Anthropic APIs
   (Vitest + Workers test harness).
 - E2E (manual for v1): demo repo with the app installed; scripted PR
@@ -197,9 +220,10 @@ Clawptcha must never block merges because of its own problems:
 ## Milestones
 
 1. **Core service:** GitHub App plumbing — webhooks, check runs, PR comment,
-   config loading, exemptions. Check auto-passes everything (no quiz yet).
-2. **Quiz engine:** LLM generation with schema validation, D1 storage,
-   grading, attempt/cooldown state machine.
+   config loading, exemptions, approval gate. Check auto-passes everything
+   (no quiz yet).
+2. **Quiz engine:** lazy LLM generation with schema validation, D1 storage,
+   grading, attempt/cooldown state machine, rate limits.
 3. **Challenge UI:** OAuth flow, time-boxed quiz frontend, results,
    attestation comment.
 4. **Risk report:** Turnstile integration, behavioral telemetry capture,
