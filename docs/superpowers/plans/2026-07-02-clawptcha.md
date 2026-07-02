@@ -3332,6 +3332,15 @@ Record outcomes in the PR description of the demo repo or a `docs/verification.m
 
 ## Post-plan notes for the implementer
 
+- **Data retention (spec: Data custody):** when a challenge reaches a terminal
+  state (`passed`, `failed_final`, `neutral`), delete its quiz question content:
+  in `finalizeQuiz` (Task 13) and the neutral path of `startQuizAttempt`, after
+  `onChallengeResolved`, run
+  `UPDATE quizzes SET questions_json='{"questions":[]}' WHERE challenge_id=?`
+  — keep `score`, `answers_json`, and `telemetry_json` (audit trail), drop the
+  question text derived from repo code. Diffs are never persisted anywhere.
+  Add a test in `test/challenge.test.ts`: after a pass, the quiz row's
+  `questions_json` no longer contains any prompt text.
 - **Model:** quiz generation uses `claude-sonnet-5` (spec choice, set via `CLAUDE_MODEL` var). Do not add `temperature` — Sonnet 5 rejects non-default sampling params.
 - **Adaptive thinking is on by default on Sonnet 5** and counts toward `max_tokens` — that's why generation uses `max_tokens: 16000` even though the quiz JSON is small.
 - **Never send `correct` indices to the browser.** Only `redactForClient` output may reach HTML. Grep the UI code for `correct` before finishing.

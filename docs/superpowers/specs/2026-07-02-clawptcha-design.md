@@ -199,6 +199,23 @@ costs for maintainers or the operator:
   focus events) — no keystroke logging, no content capture — and its
   collection is disclosed on the quiz page.
 
+### Data custody
+
+The hosted service **never holds maintainers' secrets**. Repo access comes
+from the GitHub App installation model: the only long-lived credential is the
+operator's own App private key; per-repo access uses short-lived (~1h)
+installation tokens minted on demand, scoped to the installed repos and the
+declared permissions, cached in memory only. Maintainers provide no PATs, no
+deploy keys, and no LLM API keys (LLM billing is operator-side by design).
+
+What the service does handle is **derived data**: PR diffs are read
+transiently for quiz generation (never persisted), and the generated quiz
+questions + a config snapshot are stored in D1. For private repos, quiz
+questions are derived from private code — privacy-sensitive maintainers can
+self-host their own instance (the service is a single open-source Worker with
+their own GitHub App), and quiz rows are deleted once a challenge resolves
+(retention rule).
+
 ## Testing
 
 - Unit: quiz JSON schema validation, grading logic, config parsing,
