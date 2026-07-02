@@ -9,12 +9,12 @@ const configSchema = z.object({
   rechallenge_on_push: z.boolean().catch(false),
   // A single invalid element intentionally falls back to the whole-field
   // default (fail-safe direction), not per-element filtering.
-  skip_authors: z.array(z.string()).catch([]),
+  skip_authors: z.array(z.string()).catch(() => []),
   skip_bots: z.boolean().catch(true),
   min_changed_lines: z.number().int().min(0).catch(10),
   // Same fail-safe direction as skip_authors: any invalid entry defaults
   // the entire array rather than dropping just the bad element.
-  skip_paths: z.array(z.string()).catch(["docs/**", "*.md"]),
+  skip_paths: z.array(z.string()).catch(() => ["docs/**", "*.md"]),
   // Invalid values (including 0/negative) intentionally fall back to
   // null = uncapped, since null is the documented default for this field.
   max_context_tokens: z.number().int().positive().nullable().catch(null),

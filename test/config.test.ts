@@ -49,7 +49,18 @@ describe("parseConfig", () => {
   it("returns a fresh object per call (no shared mutable state)", () => {
     const a = parseConfig(null);
     a.pass_threshold = 999;
-    expect(parseConfig(null).pass_threshold).toBe(3);
+    a.skip_paths.push("mutated/**");
+    a.skip_authors.push("mallory");
+    const b = parseConfig(null);
+    expect(b.pass_threshold).toBe(3);
+    expect(b.skip_paths).toEqual(["docs/**", "*.md"]);
+    expect(b.skip_authors).toEqual([]);
     expect(DEFAULT_CONFIG.pass_threshold).toBe(3);
+  });
+
+  it("gives fresh arrays even when other fields are set", () => {
+    const a = parseConfig("pass_threshold: 4");
+    a.skip_paths.push("mutated/**");
+    expect(parseConfig("pass_threshold: 4").skip_paths).toEqual(["docs/**", "*.md"]);
   });
 });
