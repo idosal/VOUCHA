@@ -39,6 +39,13 @@ suspicious pass is visible rather than silent.
   keystroke spyware, or WebAuthn presence ceremonies — a lazy user would tap
   a passkey without reading anything, so these add invasiveness without
   adding meaning.
+- **Known v1 limitation — prompt injection into quiz generation:** the PR
+  diff/title/description flow into the generation prompt, so a hostile author
+  can try to steer the model toward a trivially easy quiz. Blast radius is
+  bounded: correct answers never reach the client, so the attacker cannot
+  verify the injection worked — at worst they get a possibly-easier quiz,
+  not a reliable bypass. Future hardening: wrap untrusted PR text in
+  explicit "untrusted data" framing and/or sanity-check quiz difficulty.
 
 ## Architecture
 
