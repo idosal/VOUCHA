@@ -198,8 +198,10 @@ costs for maintainers or the operator:
 ## Security
 
 - Webhook signatures verified (HMAC).
-- OAuth state + PKCE; quiz session bound to the authenticated GitHub user,
-  which must equal the PR author.
+- OAuth with single-use `state` bound to the server-side session (PKCE is
+  unnecessary here: the Worker is a confidential client holding the secret,
+  and GitHub does not enforce PKCE); quiz session bound to the authenticated
+  GitHub user, which must equal the PR author.
 - Correct answers and generation prompts never leave the server.
 - Quiz links contain an unguessable token; expire with the PR head SHA.
 - Telemetry is summary statistics only (timings, aggregate pointer stats,
