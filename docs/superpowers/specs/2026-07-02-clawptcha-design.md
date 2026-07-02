@@ -39,6 +39,13 @@ suspicious pass is visible rather than silent.
   keystroke spyware, or WebAuthn presence ceremonies — a lazy user would tap
   a passkey without reading anything, so these add invasiveness without
   adding meaning.
+- **Known v1 limitation — prompt injection into quiz generation:** the PR
+  diff/title/description flow into the generation prompt, so a hostile author
+  can try to steer the model toward a trivially easy quiz. Blast radius is
+  bounded: correct answers never reach the client, so the attacker cannot
+  verify the injection worked — at worst they get a possibly-easier quiz,
+  not a reliable bypass. Future hardening: wrap untrusted PR text in
+  explicit "untrusted data" framing and/or sanity-check quiz difficulty.
 
 ## Architecture
 
@@ -56,8 +63,9 @@ Contributor ──challenge link──▶ Quiz web UI (served by same Worker)
 - **GitHub App** — installed per repo/org by maintainers. Permissions:
   checks (read/write), pull requests (read/write, for comments), contents
   (read, for file context), metadata. Webhook events: `pull_request`
-  (opened, synchronize, reopened). OAuth used to identify the contributor
-  taking the quiz.
+  (opened, synchronize, reopened), `issue_comment` (for `/clawptcha approve`),
+  and `installation` (install bookkeeping). OAuth used to identify the
+  contributor taking the quiz.
 - **Service** — Cloudflare Worker (Hono router). Handles webhooks, quiz
   generation, quiz serving, grading, and check updates.
 - **Storage** — D1. Tables: `installations`, `quizzes` (per PR + head SHA,
@@ -161,9 +169,11 @@ Clawptcha must never block merges because of its own problems:
 
 - LLM error / invalid quiz after retry → check reports **neutral** with an
   explanatory summary.
-- Service errors on webhook → GitHub retries; persistent failure leaves the
-  check pending, and a scheduled sweep marks stale pending checks neutral
-  after 30 minutes.
+- Service errors on webhook → the scheduled sweep is the backstop. A challenge
+  left pending with no quiz attempt after 24h is marked **neutral**; a
+  terminal challenge whose check-run update failed after the DB was already
+  finalized is re-issued idempotently (the sweep only touches check runs that
+  never completed, so it never clobbers a real risk report).
 - Docs-only / tiny diffs auto-pass per config defaults.
 
 ## Cost control
@@ -186,18 +196,39 @@ costs for maintainers or the operator:
   contributor (matching the PR author) passes Turnstile and starts the quiz.
 - **Rate limits** — per-user, per-repo, and per-installation caps on quiz
   generations per hour, on top of the existing `max_attempts` + cooldown per
-  PR. Exceeding them leaves the check pending with an explanatory message.
+  PR. Exceeding them leaves the check pending; the quiz-taker sees an
+  explanatory message on the challenge page (the check itself is not updated).
 
 ## Security
 
 - Webhook signatures verified (HMAC).
-- OAuth state + PKCE; quiz session bound to the authenticated GitHub user,
-  which must equal the PR author.
+- OAuth with single-use `state` bound to the server-side session (PKCE is
+  unnecessary here: the Worker is a confidential client holding the secret,
+  and GitHub does not enforce PKCE); quiz session bound to the authenticated
+  GitHub user, which must equal the PR author.
 - Correct answers and generation prompts never leave the server.
 - Quiz links contain an unguessable token; expire with the PR head SHA.
 - Telemetry is summary statistics only (timings, aggregate pointer stats,
   focus events) — no keystroke logging, no content capture — and its
   collection is disclosed on the quiz page.
+
+### Data custody
+
+The hosted service **never holds maintainers' secrets**. Repo access comes
+from the GitHub App installation model: the only long-lived credential is the
+operator's own App private key; per-repo access uses short-lived (~1h)
+installation tokens minted on demand, scoped to the installed repos and the
+declared permissions, cached in memory only. Maintainers provide no PATs, no
+deploy keys, and no LLM API keys (LLM billing is operator-side by design).
+
+What the service does handle is **derived data**: PR diffs are read
+transiently for quiz generation (never persisted), and the generated quiz
+questions + a config snapshot are stored in D1. For private repos, quiz
+questions are derived from private code — privacy-sensitive maintainers can
+self-host their own instance (the service is a single open-source Worker with
+their own GitHub App), and quiz *question content* is purged once a challenge
+resolves — the row is kept for audit (score, answers, telemetry) but the
+diff-derived question text is emptied (retention rule).
 
 ## Testing
 

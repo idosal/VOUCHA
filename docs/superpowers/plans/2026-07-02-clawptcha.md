@@ -79,7 +79,7 @@
 {
   "name": "clawptcha",
   "main": "src/index.ts",
-  "compatibility_date": "2026-06-01",
+  "compatibility_date": "2025-09-06", // latest supported by installed runtime; bump alongside wrangler upgrades
   "compatibility_flags": ["nodejs_compat"],
   "d1_databases": [
     { "binding": "DB", "database_name": "clawptcha", "database_id": "REPLACE_AFTER_wrangler_d1_create" }
@@ -126,7 +126,7 @@ export default defineWorkersConfig({
 });
 ```
 
-Note: with `vitest-pool-workers`, migrations in `migrations/` are applied to the test D1 automatically when `wrangler.jsonc` declares the binding. If a test run reports missing tables, add `miniflare: { d1Persist: false }` and apply the schema in a test `beforeAll` by executing the SQL from `migrations/0001_init.sql` — but try the default behavior first.
+Note: `vitest-pool-workers` does NOT apply migrations automatically. The config uses an async `defineWorkersConfig` callback with `readD1Migrations`, a `TEST_MIGRATIONS` miniflare binding, and `test/apply-migrations.ts` in `setupFiles` calling `applyD1Migrations(env.DB, env.TEST_MIGRATIONS)`. See `test/migrations.test.ts` for the smoke test proving tables exist.
 
 - [ ] **Step 5: Create .gitignore**
 
@@ -1253,12 +1253,14 @@ import { describe, it, expect } from "vitest";
 import { createAppJwt } from "../src/github/auth";
 
 async function generateTestKey(): Promise<{ pem: string; publicKey: CryptoKey }> {
-  const pair = await crypto.subtle.generateKey(
+  // workers-types can't narrow generateKey's union; algorithm dict guarantees a key pair
+  const pair = (await crypto.subtle.generateKey(
     { name: "RSASSA-PKCS1-v1_5", modulusLength: 2048, publicExponent: new Uint8Array([1, 0, 1]), hash: "SHA-256" },
     true,
     ["sign", "verify"]
-  );
-  const pkcs8 = await crypto.subtle.exportKey("pkcs8", pair.privateKey);
+  )) as CryptoKeyPair;
+  // workers-types can't narrow exportKey's union either; "pkcs8" format always yields an ArrayBuffer
+  const pkcs8 = (await crypto.subtle.exportKey("pkcs8", pair.privateKey)) as ArrayBuffer;
   const b64 = btoa(String.fromCharCode(...new Uint8Array(pkcs8)));
   const lines = b64.match(/.{1,64}/g)!.join("\n");
   const pem = `-----BEGIN PRIVATE KEY-----\n${lines}\n-----END PRIVATE KEY-----`;
@@ -1659,7 +1661,7 @@ const prPayload = {
   installation: { id: 1 },
   repository: { full_name: "o/r" },
   pull_request: {
-    number: 7, head: { sha: "abc123" },
+    number: 7, head: { sha: "abc123" }, base: { sha: "base000" },
     user: { login: "contributor", type: "User" },
     author_association: "FIRST_TIME_CONTRIBUTOR",
     additions: 100, deletions: 30, title: "Add feature", body: "Does a thing",
@@ -1736,6 +1738,14 @@ describe("handlePullRequestEvent", () => {
     expect(api2.createCheckRun).toHaveBeenCalledWith("o/r", expect.objectContaining({
       head_sha: "sha2", status: "completed", conclusion: "success",
     }));
+  });
+
+  it("reads clawptcha.yml from the base SHA, not the PR head", async () => {
+    const getFileContent = vi.fn(async () => null);
+    const api = stubApi({ getFileContent });
+    const n = uniq + 8;
+    await handlePullRequestEvent(testEnv, api, payloadFor(n));
+    expect(getFileContent).toHaveBeenCalledWith("o/r", ".github/clawptcha.yml", "base000");
   });
 });
 
@@ -1884,7 +1894,7 @@ function challengeUrl(env: Env, challengeId: string): string {
   return `${env.APP_BASE_URL}/challenge/${challengeId}`;
 }
 
-function commentBody(env: Env, challengeId: string, status: string, cfg: ClawptchaConfig): string {
+function commentBody(env: Env, challengeId: string, status: string, cfg: ClawptchaConfig, authorLogin: string): string {
   const url = challengeUrl(env, challengeId);
   if (status === "awaiting_approval") {
     return [
@@ -1902,7 +1912,7 @@ function commentBody(env: Env, challengeId: string, status: string, cfg: Clawptc
   return [
     "## 🦞 Clawptcha",
     "",
-    `@-author: take a short comprehension quiz about this change to turn the check green (${cfg.max_attempts} attempts max):`,
+    `@${authorLogin}: take a short comprehension quiz about this change to turn the check green (${cfg.max_attempts} attempts max):`,
     "",
     `➡️ **[Start the challenge](${url})**`,
     "",
@@ -1920,12 +1930,14 @@ export async function handlePullRequestEvent(
   const installationId = payload.installation.id as number;
   const prNumber = payload.pull_request.number as number;
   const headSha = payload.pull_request.head.sha as string;
+  const baseSha = payload.pull_request.base.sha as string;
 
   // Idempotency: webhook redeliveries for a known (pr, sha) are no-ops.
   if (await getChallengeByPr(env.DB, repo, prNumber, headSha)) return;
 
   const pr = await api.getPr(repo, prNumber);
-  const configYaml = await api.getFileContent(repo, ".github/clawptcha.yml", headSha);
+  // Config comes from the merge target, never the PR branch — a PR must not be able to weaken its own gate.
+  const configYaml = await api.getFileContent(repo, ".github/clawptcha.yml", baseSha);
   const cfg = parseConfig(configYaml);
 
   const changedFiles = await api.listPrFiles(repo, prNumber);
@@ -1993,7 +2005,7 @@ export async function handlePullRequestEvent(
     config_json: JSON.stringify(cfg),
   });
 
-  await api.upsertPrComment(repo, prNumber, commentBody(env, challengeId, status, cfg));
+  await api.upsertPrComment(repo, prNumber, commentBody(env, challengeId, status, cfg, pr.author_login));
 }
 
 export async function handleIssueCommentEvent(
@@ -2024,7 +2036,7 @@ export async function handleIssueCommentEvent(
       },
     });
   }
-  await api.upsertPrComment(repo, prNumber, commentBody(env, challenge.id, "ready", storedCfg));
+  await api.upsertPrComment(repo, prNumber, commentBody(env, challenge.id, "ready", storedCfg, challenge.author_login));
 }
 ```
 
@@ -2054,6 +2066,14 @@ Expected: PASS.
 git add src/store.ts src/github/events.ts test/events.test.ts
 git commit -m "feat: webhook orchestration - checks, comments, approval gate, idempotency"
 ```
+
+**Post-review deltas (applied in code, authoritative over the blocks above):**
+- `supersedeOldChallenges` runs BEFORE the exempt and keep-pass early returns, so stale open challenges are always invalidated on a new SHA.
+- `insertChallenge` is wrapped in try/catch: on a UNIQUE-constraint race (concurrent duplicate delivery), the handler calls `updateChallengeCheckRun` (new store helper) to point the existing row at the newest check run, then returns without commenting.
+- Approve matching uses `/^\/clawptcha\s+approve\b/` instead of `startsWith`.
+- `getLatestChallengeForPr` orders by `created_at DESC, rowid DESC` (tie-break).
+- The queued check run's summary includes the challenge link (belt-and-braces if the PR comment fails).
+- Tests: the keep-pass test is renamed (it never exercised supersede); two added tests cover the supersede path and the `rechallenge_on_push: true` branch (10 tests total).
 
 ---
 
@@ -2795,6 +2815,14 @@ git add src/challenge.ts src/ui/session.ts src/ui/pages.ts test/challenge.test.t
 git commit -m "feat: challenge service - start gate, grading flow, finalize outcomes"
 ```
 
+**Post-review deltas (Task 13):**
+- `finalizeQuiz` now refuses to apply outcomes unless the challenge is still `ready` (new `challenge_closed` error) — a quiz finishing after the challenge closed can no longer override `failed_final`/`passed`/`neutral` or bypass the attempt cap.
+- `startQuizAttempt` voids any still-open quizzes for the challenge (sets `finished_at`) before inserting a new one, preventing question-variant farming via pre-started quizzes.
+- `submitAnswer` uses a guarded UPDATE (`AND current_question=? AND finished_at IS NULL`) and treats a lost race (`meta.changes === 0`) as `already_finished` — concurrent duplicate submits cannot double-record or double-finalize.
+- `submitAnswer` takes an explicit `questionIndex` (hidden `qi` field in `questionPage`); a stale/duplicate POST idempotently re-renders the current question instead of consuming the next one.
+- On advance, `question_served_at` is set to NULL — the next question's 90s window starts when the route first renders it (COALESCE stamp in Task 14), not at submit time.
+- Terminal DB state (status, score, question purge) is finalized before the `onChallengeResolved` GitHub callback, and answer option indices are clamped to 0–3 as defense in depth.
+
 ---
 
 ### Task 14: Wire everything — Hono app, OAuth routes, resolution side effects, cron sweep
@@ -2930,6 +2958,12 @@ export async function onChallengeResolved(env: Env, r: ResolvedChallenge): Promi
 
 // Cron: any check left pending >30 min gets neutralized so we never block on our own outage.
 export async function sweepStaleChallenges(env: Env, now: Date): Promise<void> {
+  // Rate-limit events older than the sliding window are dead weight — purge them
+  // (2h cutoff = WINDOW_MS + margin) so the table doesn't grow unboundedly.
+  await env.DB.prepare("DELETE FROM rate_events WHERE created_at < ?")
+    .bind(new Date(now.getTime() - 2 * 60 * 60_000).toISOString())
+    .run();
+
   const cutoff = new Date(now.getTime() - 30 * 60_000).toISOString();
   const { results } = await env.DB.prepare(
     `SELECT * FROM challenges
@@ -2959,6 +2993,8 @@ export async function sweepStaleChallenges(env: Env, now: Date): Promise<void> {
   }
 }
 ```
+
+**Task 14 additions from Task 13 review:** (a) the question route must stamp `question_served_at` via COALESCE at render (already in the route code) — this is now load-bearing since submitAnswer leaves it NULL; (b) the answer route must pass the hidden `qi` field as `questionIndex` to `submitAnswer`; (c) `currentSession` must reject sessions older than 1 hour (check `sessions.created_at`); (d) extend the cron: for challenges in terminal status (passed/failed_final/neutral) updated in the last 24h whose check run may not have completed (callback failure), re-issue the terminal `updateCheckRun` idempotently — reconstruct conclusion from status and score (quizzes.score is retained after purge).
 
 Note: the spec's "stale pending checks neutral after 30 minutes" is for checks stuck because the *service* failed mid-webhook. A challenge legitimately waiting for the contributor is not an outage — so the sweep neutralizes only after 24h of no attempt. Adjust `dayCutoff` if the spec owner prefers strict 30-minute semantics (ask during review).
 
@@ -3332,6 +3368,15 @@ Record outcomes in the PR description of the demo repo or a `docs/verification.m
 
 ## Post-plan notes for the implementer
 
+- **Data retention (spec: Data custody):** when a challenge reaches a terminal
+  state (`passed`, `failed_final`, `neutral`), delete its quiz question content:
+  in `finalizeQuiz` (Task 13) and the neutral path of `startQuizAttempt`, after
+  `onChallengeResolved`, run
+  `UPDATE quizzes SET questions_json='{"questions":[]}' WHERE challenge_id=?`
+  — keep `score`, `answers_json`, and `telemetry_json` (audit trail), drop the
+  question text derived from repo code. Diffs are never persisted anywhere.
+  Add a test in `test/challenge.test.ts`: after a pass, the quiz row's
+  `questions_json` no longer contains any prompt text.
 - **Model:** quiz generation uses `claude-sonnet-5` (spec choice, set via `CLAUDE_MODEL` var). Do not add `temperature` — Sonnet 5 rejects non-default sampling params.
 - **Adaptive thinking is on by default on Sonnet 5** and counts toward `max_tokens` — that's why generation uses `max_tokens: 16000` even though the quiz JSON is small.
 - **Never send `correct` indices to the browser.** Only `redactForClient` output may reach HTML. Grep the UI code for `correct` before finishing.
