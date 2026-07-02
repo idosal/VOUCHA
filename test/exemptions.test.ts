@@ -19,6 +19,29 @@ describe("matchesGlob", () => {
   });
 });
 
+describe("matchesGlob hardening", () => {
+  it("treats ? and regex metacharacters as literals", () => {
+    expect(matchesGlob("file?.md", "file?.md")).toBe(true);
+    expect(matchesGlob("file?.md", "fileX.md")).toBe(false);
+    expect(matchesGlob("*.md", "a+(b).md")).toBe(true);
+    expect(matchesGlob("a.b", "axb")).toBe(false);
+  });
+
+  it("lets ** match zero segments", () => {
+    expect(matchesGlob("**/*.md", "README.md")).toBe(true);
+    expect(matchesGlob("**/*.md", "a/b/c.md")).toBe(true);
+    expect(matchesGlob("**/*.md", "a/b/c.ts")).toBe(false);
+  });
+
+  it("is not vulnerable to catastrophic backtracking", () => {
+    const evil = Array(40).fill("a").join("**");
+    const path = Array(60).fill("a").join("x");
+    const start = performance.now();
+    matchesGlob(evil, path);
+    expect(performance.now() - start).toBeLessThan(200);
+  });
+});
+
 describe("evaluateExemption", () => {
   it("challenges a normal contributor PR", () => {
     expect(evaluateExemption(basePr, DEFAULT_CONFIG)).toEqual({ exempt: false });
@@ -60,5 +83,19 @@ describe("evaluateExemption", () => {
       DEFAULT_CONFIG
     );
     expect(r.exempt).toBe(false);
+  });
+
+  it("does not exempt an empty file list via skip_paths", () => {
+    expect(evaluateExemption({ ...basePr, changedFiles: [] }, DEFAULT_CONFIG).exempt).toBe(false);
+  });
+
+  it("matches skip_authors case-insensitively", () => {
+    const cfg = { ...DEFAULT_CONFIG, skip_authors: ["Contributor"] };
+    expect(evaluateExemption(basePr, cfg).exempt).toBe(true);
+  });
+
+  it("exempts an allowlisted bot even when skip_bots is false", () => {
+    const cfg = { ...DEFAULT_CONFIG, skip_bots: false, skip_authors: ["contributor"] };
+    expect(evaluateExemption({ ...basePr, authorType: "Bot" }, cfg).exempt).toBe(true);
   });
 });
