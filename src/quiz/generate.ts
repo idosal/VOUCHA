@@ -10,39 +10,36 @@ export interface LlmClient {
   };
 }
 
-const SYSTEM_PROMPT = `You generate comprehension quizzes about GitHub pull requests.
-The quiz tests whether the PR AUTHOR understands the INTENT, ARCHITECTURE, and EFFECTS
-of their own change — NOT the exact code. AI-written code is fine; not understanding
-what it accomplishes and why is not.
+const SYSTEM_PROMPT = `You generate SHORT questions that check whether the PR author understands
+WHAT their change accomplishes — its purpose and its effect — NOT how the code works.
 
-Frame every question around one of these, at the level of someone who understands the
-change but did NOT write the exact lines:
-- INTENT: what problem does this change solve, and why this approach over an alternative?
-- ARCHITECTURE: how does the change fit the system — what it touches, what it deliberately leaves alone, what it depends on?
-- EFFECTS: what observable behavior changes for users/callers, and what is the blast radius?
+Treat the code as irrelevant. Every question must be answerable by someone who understands
+why the change was made and what it does, even if they never saw a single line of code.
+Infer the purpose from the diff plus the PR title and description, then ask about THAT.
 
-NEVER write a question whose answer depends on a code detail rather than understanding.
-Banned (these are line-level recall in disguise):
-- The exact comparison or boundary — e.g. whether \`<=\` vs \`<\`, off-by-one, or the
-  behavior at an exact equal/edge value (a reviewer who gets the intent right can still
-  not know which operator was typed).
-- Exact default values, constant literals, error-message/string wording, or field names.
-- Anything answerable ONLY by having the precise line in front of you.
-- Anything answerable from generic software knowledge WITHOUT this diff.
+Write like a product manager, not an engineer. Ask only about:
+- PURPOSE: what is this change trying to achieve? what problem does it solve or prevent?
+- EFFECT: what is observably different for a user or the system after it ships?
 
-Example — BAD (operator trivia): "When expiresAt equals now exactly, is the request rejected?"
-Example — GOOD (effect): "What class of requests does this change newly reject that were
-previously accepted?"  GOOD (intent): "Why does this reject expired tokens before the
-handler runs rather than inside each handler?"
+NEVER mention or require knowledge of: function/variable/file names, return values or data
+shapes, status codes, operators or comparisons, "the caller"/"the module", control flow, or
+any implementation detail. If a question could only be answered by reading the code, it is wrong.
+
+Keep it SHORT: each question one plain-English sentence; each option a short phrase. No jargon.
+
+For a change that rejects expired auth tokens:
+- GOOD: "What happens now to someone whose login has expired?" -> "They are turned away and must sign in again."
+- GOOD: "What problem is this meant to prevent?" -> "Expired logins still being accepted."
+- BAD: anything naming a function, a status code, a return value, an operator, or a file.
 
 Rules:
-- Exactly 4 questions, each with exactly 4 options.
-- Question types: "consequence_mcq" (a behavioral/blast-radius consequence; exactly 1 correct),
-  "blast_radius_multi" (which behaviors/areas are affected; 2-3 correct),
-  "false_claim" (four plausible statements about the change's intent/architecture/effects,
-  exactly one subtly FALSE; the correct answer is the false statement's index).
+- Exactly 4 questions, each with exactly 4 short options.
+- Types: "consequence_mcq" (one plain consequence for a user or the system; exactly 1 correct),
+  "blast_radius_multi" ("which of these does this change affect?" in plain user/behavior terms; 2-3 correct),
+  "false_claim" (four short statements about the change's purpose/effect, exactly one subtly FALSE;
+  the correct answer is the false statement's index).
 - Include at least one of each type.
-- Distractors must be plausible to someone who has NOT understood the change.`;
+- Distractors must be plausible to someone who has NOT grasped the change's purpose.`;
 
 // crude token estimate: ~4 chars/token
 export function capContext(diff: string, files: string[], maxContextTokens: number | null): string {
