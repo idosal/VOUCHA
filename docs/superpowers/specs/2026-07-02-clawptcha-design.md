@@ -140,6 +140,7 @@ skip_authors: []         # usernames always exempt
 skip_bots: true          # dependabot, renovate, etc.
 min_changed_lines: 10    # smaller diffs auto-pass
 skip_paths: ["docs/**", "*.md"]  # diffs touching only these auto-pass
+max_context_tokens: null # off by default; set to cap diff+context sent to the LLM
 ```
 
 Maintainers, repo admins, and the app installer are exempt by default.
@@ -157,8 +158,10 @@ Clawptcha must never block merges because of its own problems:
 
 ## Cost control
 
-- Diff + context capped (~20k tokens); oversized diffs get truncated context
-  with file-list summary.
+- Diff + context token cap is **off by default** and configurable via
+  `max_context_tokens`. When set, oversized diffs get truncated context with
+  a file-list summary; when unset, the full diff + context is sent (bounded
+  only by the model's context window).
 - Quiz cached per (PR, head SHA) — regeneration only on retry-after-fail or
   a new head SHA when `rechallenge_on_push` is enabled.
 
