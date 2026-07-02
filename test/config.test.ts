@@ -33,4 +33,23 @@ describe("parseConfig", () => {
   it("returns defaults on malformed YAML", () => {
     expect(parseConfig(":: not yaml ::[")).toEqual(DEFAULT_CONFIG);
   });
+
+  it("returns defaults for top-level arrays and scalars", () => {
+    expect(parseConfig("- 1\n- 2\n")).toEqual(DEFAULT_CONFIG);
+    expect(parseConfig("42")).toEqual(DEFAULT_CONFIG);
+    expect(parseConfig("just a string")).toEqual(DEFAULT_CONFIG);
+  });
+
+  it("degrades out-of-range numbers to their defaults", () => {
+    const cfg = parseConfig("pass_threshold: 0\nmax_attempts: -3\n");
+    expect(cfg.pass_threshold).toBe(3);
+    expect(cfg.max_attempts).toBe(3);
+  });
+
+  it("returns a fresh object per call (no shared mutable state)", () => {
+    const a = parseConfig(null);
+    a.pass_threshold = 999;
+    expect(parseConfig(null).pass_threshold).toBe(3);
+    expect(DEFAULT_CONFIG.pass_threshold).toBe(3);
+  });
 });
