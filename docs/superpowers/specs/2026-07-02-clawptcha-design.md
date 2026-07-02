@@ -63,8 +63,9 @@ Contributor ──challenge link──▶ Quiz web UI (served by same Worker)
 - **GitHub App** — installed per repo/org by maintainers. Permissions:
   checks (read/write), pull requests (read/write, for comments), contents
   (read, for file context), metadata. Webhook events: `pull_request`
-  (opened, synchronize, reopened). OAuth used to identify the contributor
-  taking the quiz.
+  (opened, synchronize, reopened), `issue_comment` (for `/clawptcha approve`),
+  and `installation` (install bookkeeping). OAuth used to identify the
+  contributor taking the quiz.
 - **Service** — Cloudflare Worker (Hono router). Handles webhooks, quiz
   generation, quiz serving, grading, and check updates.
 - **Storage** — D1. Tables: `installations`, `quizzes` (per PR + head SHA,
@@ -168,9 +169,11 @@ Clawptcha must never block merges because of its own problems:
 
 - LLM error / invalid quiz after retry → check reports **neutral** with an
   explanatory summary.
-- Service errors on webhook → GitHub retries; persistent failure leaves the
-  check pending, and a scheduled sweep marks stale pending checks neutral
-  after 30 minutes.
+- Service errors on webhook → the scheduled sweep is the backstop. A challenge
+  left pending with no quiz attempt after 24h is marked **neutral**; a
+  terminal challenge whose check-run update failed after the DB was already
+  finalized is re-issued idempotently (the sweep only touches check runs that
+  never completed, so it never clobbers a real risk report).
 - Docs-only / tiny diffs auto-pass per config defaults.
 
 ## Cost control
@@ -193,7 +196,8 @@ costs for maintainers or the operator:
   contributor (matching the PR author) passes Turnstile and starts the quiz.
 - **Rate limits** — per-user, per-repo, and per-installation caps on quiz
   generations per hour, on top of the existing `max_attempts` + cooldown per
-  PR. Exceeding them leaves the check pending with an explanatory message.
+  PR. Exceeding them leaves the check pending; the quiz-taker sees an
+  explanatory message on the challenge page (the check itself is not updated).
 
 ## Security
 
@@ -222,8 +226,9 @@ transiently for quiz generation (never persisted), and the generated quiz
 questions + a config snapshot are stored in D1. For private repos, quiz
 questions are derived from private code — privacy-sensitive maintainers can
 self-host their own instance (the service is a single open-source Worker with
-their own GitHub App), and quiz rows are deleted once a challenge resolves
-(retention rule).
+their own GitHub App), and quiz *question content* is purged once a challenge
+resolves — the row is kept for audit (score, answers, telemetry) but the
+diff-derived question text is emptied (retention rule).
 
 ## Testing
 

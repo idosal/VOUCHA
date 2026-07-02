@@ -104,4 +104,22 @@ describe("sweepStaleChallenges", () => {
     const calls = (api.updateCheckRun as ReturnType<typeof vi.fn>).mock.calls;
     expect(calls.some(([, id]) => id === 502)).toBe(false);
   });
+
+  it("reconciles a challenge created >24h ago whose quiz finished recently", async () => {
+    // Attempts + cooldowns can push resolution well past 24h from PR open.
+    // Recency must key on quiz finished_at, not challenge created_at, or this
+    // stuck check would never be repaired.
+    await seedChallenge({ id: "ch-slow", status: "passed", createdAt: hoursAgo(30), checkRunId: 601 });
+    await testEnv.DB.prepare(
+      `INSERT INTO quizzes (id, challenge_id, attempt_number, questions_json, score, finished_at)
+       VALUES ('qz-slow', 'ch-slow', 2, '{"questions":[]}', 4, ?)`
+    ).bind(hoursAgo(1)).run();
+    const api = stubApi();
+
+    await sweepStaleChallenges(testEnv, NOW, async () => api);
+
+    expect(api.updateCheckRun).toHaveBeenCalledWith("o/r", 601, expect.objectContaining({
+      status: "completed", conclusion: "success",
+    }));
+  });
 });

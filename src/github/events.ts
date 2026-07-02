@@ -8,7 +8,7 @@ import {
   updateChallengeCheckRun, randomToken,
 } from "../store";
 
-export const CHECK_NAME = "clawptcha";
+const CHECK_NAME = "clawptcha";
 
 function challengeUrl(env: Env, challengeId: string): string {
   return `${env.APP_BASE_URL}/challenge/${challengeId}`;

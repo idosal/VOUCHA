@@ -136,15 +136,21 @@ export async function sweepStaleChallenges(
   // repairs ONLY check runs left incomplete by a failed resolution callback —
   // it must never touch a check run that already completed, or it will
   // clobber the real risk report with this generic placeholder on every tick.
-  // The challenges table has no updated_at, so recent created_at is the
-  // practical proxy for "recently resolved" — challenges are short-lived by design.
+  // Recency covers two resolution paths: a quiz that finished recently (a pass
+  // or failure can land well over 24h after the PR opened, via attempts +
+  // cooldowns — keying on challenge created_at alone would strand such a check
+  // forever), and a generation-failure `neutral` that has no quiz row at all
+  // (caught by the challenge's own created_at). Either recent signal qualifies.
   const recentCutoff = new Date(now.getTime() - 24 * 60 * 60_000).toISOString();
   const terminal = await env.DB.prepare(
-    `SELECT * FROM challenges
-     WHERE status IN ('passed','failed_final','neutral')
-       AND check_run_id IS NOT NULL AND created_at >= ?
+    `SELECT * FROM challenges c
+     WHERE c.status IN ('passed','failed_final','neutral')
+       AND c.check_run_id IS NOT NULL
+       AND (c.created_at >= ?
+            OR EXISTS (SELECT 1 FROM quizzes q WHERE q.challenge_id = c.id
+                       AND q.finished_at IS NOT NULL AND q.finished_at >= ?))
      LIMIT 100`
-  ).bind(recentCutoff).all<Challenge>();
+  ).bind(recentCutoff, recentCutoff).all<Challenge>();
 
   for (const ch of terminal.results) {
     const conclusion = conclusionForStatus(ch.status);

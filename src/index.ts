@@ -127,6 +127,19 @@ app.get("/oauth/callback", async (c) => {
   const session = await c.env.DB.prepare("SELECT * FROM sessions WHERE oauth_state=?")
     .bind(state).first<{ id: string; challenge_id: string }>();
   if (!session) return c.html(errorPage("OAuth error", "Unknown or expired state."), 400);
+  // Login-CSRF guard: the browser completing OAuth must be the same browser that
+  // started it. Without this, an attacker who holds a session's `state` could get
+  // the PR author to complete the flow and have the author's identity written into
+  // the attacker's session — forging an attestation in the author's name. Require
+  // the request's own signed session cookie to match the state-bound session row.
+  const cookie = getCookie(c, "clawptcha_session");
+  const cookieSessionId = cookie
+    ? await verifySessionCookie(c.env.SESSION_SIGNING_KEY, cookie)
+    : null;
+  if (cookieSessionId !== session.id) {
+    return c.html(errorPage("Sign-in error",
+      "This sign-in link doesn't match your session. Reopen the challenge link from the PR and try again."), 400);
+  }
   const login = await exchangeCodeForLogin(c.env, code);
   if (!login) return c.html(errorPage("OAuth error", "GitHub login failed. Try again."), 400);
   await c.env.DB.prepare("UPDATE sessions SET gh_login=?, oauth_state=NULL WHERE id=?")
@@ -162,6 +175,13 @@ app.get("/challenge/:id", async (c) => {
   }
   if (challenge.status === "passed") {
     return c.html(errorPage("✅ Already passed", "You already passed this challenge. The check is green."));
+  }
+  // Only a `ready` challenge is takeable. Stale/closed states get an explanation
+  // instead of the start page, so an author on an old link doesn't complete
+  // Turnstile only to be rejected at submit time.
+  if (challenge.status !== "ready") {
+    return c.html(errorPage("Challenge no longer active",
+      "This challenge is no longer active — a newer commit or outcome has replaced it. Check the PR for the current status."));
   }
   return c.html(startPage(
     `${challenge.repo_full_name}#${challenge.pr_number}`, c.env.TURNSTILE_SITE_KEY, challenge.id

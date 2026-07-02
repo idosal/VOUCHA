@@ -47,3 +47,40 @@ describe("GET /challenge/:id", () => {
     expect(res.headers.get("set-cookie")).toContain("clawptcha_session");
   });
 });
+
+describe("GET /oauth/callback (login-CSRF guard)", () => {
+  it("rejects a callback whose state matches a session but whose request has no matching cookie", async () => {
+    // A session + state exists (created by some browser), but the request
+    // completing OAuth carries no clawptcha_session cookie for that session —
+    // the login-CSRF scenario. gh_login must NOT be written.
+    await testEnv.DB.prepare(
+      `INSERT INTO challenges (id, installation_id, repo_full_name, pr_number, head_sha,
+        author_login, status, config_json) VALUES ('chCsrf', 1, 'o/r', 2, 's2', 'alice', 'ready', '{}')`
+    ).run();
+    await testEnv.DB.prepare(
+      "INSERT INTO sessions (id, challenge_id, oauth_state) VALUES ('sessCsrf', 'chCsrf', 'stateCsrf')"
+    ).run();
+    const ctx = createExecutionContext();
+    const res = await worker.fetch(
+      new Request("https://x/oauth/callback?code=abc&state=stateCsrf"),
+      testEnv,
+      ctx
+    );
+    expect(res.status).toBe(400);
+    const row = await testEnv.DB.prepare("SELECT gh_login, oauth_state FROM sessions WHERE id='sessCsrf'")
+      .first<{ gh_login: string | null; oauth_state: string | null }>();
+    expect(row?.gh_login).toBeNull();       // identity was not bound
+    expect(row?.oauth_state).toBe("stateCsrf"); // state not consumed
+  });
+
+  it("shows a canceled-sign-in page when GitHub returns error=access_denied", async () => {
+    const ctx = createExecutionContext();
+    const res = await worker.fetch(
+      new Request("https://x/oauth/callback?error=access_denied&state=whatever"),
+      testEnv,
+      ctx
+    );
+    expect(res.status).toBe(400);
+    expect(await res.text()).toContain("canceled");
+  });
+});

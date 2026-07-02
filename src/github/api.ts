@@ -1,5 +1,5 @@
 const API = "https://api.github.com";
-export const COMMENT_MARKER = "<!-- clawptcha -->";
+const COMMENT_MARKER = "<!-- clawptcha -->";
 
 export interface CheckRunCreate {
   name: string;
