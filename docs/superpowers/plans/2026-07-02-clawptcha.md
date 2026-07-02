@@ -79,7 +79,7 @@
 {
   "name": "clawptcha",
   "main": "src/index.ts",
-  "compatibility_date": "2026-06-01",
+  "compatibility_date": "2025-09-06", // latest supported by installed runtime; bump alongside wrangler upgrades
   "compatibility_flags": ["nodejs_compat"],
   "d1_databases": [
     { "binding": "DB", "database_name": "clawptcha", "database_id": "REPLACE_AFTER_wrangler_d1_create" }
