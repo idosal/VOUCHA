@@ -1253,12 +1253,14 @@ import { describe, it, expect } from "vitest";
 import { createAppJwt } from "../src/github/auth";
 
 async function generateTestKey(): Promise<{ pem: string; publicKey: CryptoKey }> {
-  const pair = await crypto.subtle.generateKey(
+  // workers-types can't narrow generateKey's union; algorithm dict guarantees a key pair
+  const pair = (await crypto.subtle.generateKey(
     { name: "RSASSA-PKCS1-v1_5", modulusLength: 2048, publicExponent: new Uint8Array([1, 0, 1]), hash: "SHA-256" },
     true,
     ["sign", "verify"]
-  );
-  const pkcs8 = await crypto.subtle.exportKey("pkcs8", pair.privateKey);
+  )) as CryptoKeyPair;
+  // workers-types can't narrow exportKey's union either; "pkcs8" format always yields an ArrayBuffer
+  const pkcs8 = (await crypto.subtle.exportKey("pkcs8", pair.privateKey)) as ArrayBuffer;
   const b64 = btoa(String.fromCharCode(...new Uint8Array(pkcs8)));
   const lines = b64.match(/.{1,64}/g)!.join("\n");
   const pem = `-----BEGIN PRIVATE KEY-----\n${lines}\n-----END PRIVATE KEY-----`;
