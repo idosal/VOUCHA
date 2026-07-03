@@ -1,49 +1,80 @@
-// Drives the REAL src/quiz/generate.ts against a real diff, using `claude -p`
-// as the LlmClient backend (no ANTHROPIC_API_KEY). The production path uses
-// output_config.format (structured outputs) to constrain the model to
-// QUIZ_JSON_SCHEMA; `claude -p` has no such channel, so we inline that same
-// schema into the prompt — the fair local equivalent of schema enforcement.
+// Drives the REAL src/quiz/generate.ts against a real diff, through any
+// QuizProvider. Providers:
+//   claude-cli (default) — shells out to `claude -p`; no API key needed.
+//   anthropic            — real API; needs LLM_API_KEY.
+//   openai-compat        — any /chat/completions endpoint; needs LLM_BASE_URL (+ LLM_API_KEY).
+//   workers-ai           — Workers AI via its OpenAI-compat REST endpoint
+//                          (bindings don't exist in Node); needs CF_ACCOUNT_ID + CF_API_TOKEN.
+// Usage:
+//   node scripts/localdev/local-quizgen.mts <diff-file> <meta.json> [raw-out] \
+//     [--provider claude-cli|anthropic|openai-compat|workers-ai] [--model <id>]
 import { execFileSync } from "node:child_process";
 import { readFileSync, writeFileSync } from "node:fs";
-import { generateQuiz, type LlmClient } from "../../src/quiz/generate.ts";
+import { parseArgs } from "node:util";
+import { generateQuiz } from "../../src/quiz/generate.ts";
 import { QUIZ_JSON_SCHEMA } from "../../src/quiz/schema.ts";
+import {
+  anthropicProvider, openAiCompatProvider, type QuizProvider,
+} from "../../src/quiz/providers.ts";
 
-const diff = readFileSync(process.argv[2], "utf8");
-const meta = JSON.parse(readFileSync(process.argv[3], "utf8"));
-const rawOut = process.argv[4]; // where to dump the raw model text
+const { values: flags, positionals } = parseArgs({
+  allowPositionals: true,
+  options: {
+    provider: { type: "string", default: "claude-cli" },
+    model: { type: "string", default: "claude-sonnet-5" },
+  },
+});
+const [diffPath, metaPath, rawOut] = positionals;
+const diff = readFileSync(diffPath, "utf8");
+const meta = JSON.parse(readFileSync(metaPath, "utf8"));
 
-const claude: LlmClient = {
-  messages: {
-    async create(params: Record<string, unknown>) {
-      const system = params.system as string;
-      const userPrompt = (params.messages as Array<{ content: string }>)[0].content;
-      const combined =
-        system +
-        "\n\n" +
-        userPrompt +
-        "\n\nYour output MUST be a single JSON object conforming EXACTLY to this JSON Schema " +
-        "(note the exact field names `prompt`, `options`, `correct`; `correct` is an ARRAY of integer indices):\n" +
-        JSON.stringify(QUIZ_JSON_SCHEMA) +
-        "\n\nReturn ONLY that JSON object — no markdown, no code fences, no commentary.";
-      let out = execFileSync("claude", ["-p", combined], {
-        encoding: "utf8",
-        maxBuffer: 10 * 1024 * 1024,
-      });
-      out = out.trim().replace(/^```(?:json)?\s*/i, "").replace(/\s*```$/i, "").trim();
-      if (rawOut) writeFileSync(rawOut, out);
-      return { content: [{ type: "text", text: out }], stop_reason: "end_turn" };
-    },
+const claudeCli: QuizProvider = {
+  async complete({ system, prompt }) {
+    // `claude -p` has no structured-output channel, so inline the schema —
+    // the fair local equivalent of schema enforcement.
+    const combined =
+      system + "\n\n" + prompt +
+      "\n\nYour output MUST be a single JSON object conforming EXACTLY to this JSON Schema " +
+      "(note the exact field names `prompt`, `options`, `correct`; `correct` is an ARRAY of integer indices):\n" +
+      JSON.stringify(QUIZ_JSON_SCHEMA) +
+      "\n\nReturn ONLY that JSON object — no markdown, no code fences, no commentary.";
+    let out = execFileSync("claude", ["-p", combined], {
+      encoding: "utf8",
+      maxBuffer: 10 * 1024 * 1024,
+    });
+    out = out.trim().replace(/^```(?:json)?\s*/i, "").replace(/\s*```$/i, "").trim();
+    if (rawOut) writeFileSync(rawOut, out);
+    return { ok: true, text: out };
   },
 };
 
+function pickProvider(): QuizProvider {
+  switch (flags.provider) {
+    case "claude-cli":
+      return claudeCli;
+    case "anthropic":
+      if (!process.env.LLM_API_KEY) throw new Error("anthropic provider needs LLM_API_KEY");
+      return anthropicProvider(process.env.LLM_API_KEY, flags.model!);
+    case "openai-compat":
+      if (!process.env.LLM_BASE_URL) throw new Error("openai-compat provider needs LLM_BASE_URL");
+      return openAiCompatProvider(process.env.LLM_BASE_URL, process.env.LLM_API_KEY, flags.model!);
+    case "workers-ai": {
+      const { CF_ACCOUNT_ID, CF_API_TOKEN } = process.env;
+      if (!CF_ACCOUNT_ID || !CF_API_TOKEN) throw new Error("workers-ai provider needs CF_ACCOUNT_ID + CF_API_TOKEN");
+      return openAiCompatProvider(
+        `https://api.cloudflare.com/client/v4/accounts/${CF_ACCOUNT_ID}/ai/v1`,
+        CF_API_TOKEN,
+        flags.model!
+      );
+    }
+    default:
+      throw new Error(`unknown --provider "${flags.provider}"`);
+  }
+}
+
 const result = await generateQuiz(
-  claude,
-  "claude-sonnet-5",
-  diff,
-  meta.title ?? "Local test PR",
-  meta.body ?? null,
-  ["(files from diff)"],
-  1500
+  pickProvider(), diff, meta.title ?? "Local test PR", meta.body ?? null,
+  ["(files from diff)"], 1500
 );
 
 if (!result.ok) {
