@@ -1,6 +1,5 @@
 import { Hono, type Context } from "hono";
 import { getCookie, setCookie } from "hono/cookie";
-import Anthropic from "@anthropic-ai/sdk";
 import type { Env, Challenge } from "./types";
 import { verifyWebhookSignature } from "./github/webhook";
 import { handlePullRequestEvent, handleIssueCommentEvent } from "./github/events";
@@ -10,9 +9,11 @@ import { signSessionCookie, verifySessionCookie } from "./ui/session";
 import { authorizeUrl, exchangeCodeForLogin } from "./github/oauth";
 import { startPage, questionPage, resultPage, errorPage } from "./ui/pages";
 import { startQuizAttempt, submitAnswer, type ChallengeDeps } from "./challenge";
-import { generateQuiz, type LlmClient } from "./quiz/generate";
+import { generateQuiz } from "./quiz/generate";
 import { redactForClient, type Quiz } from "./quiz/schema";
 import { QUESTION_TIME_LIMIT_MS } from "./quiz/grade";
+import { getMultipleChoiceGate } from "./config";
+import { providerFromEnv } from "./quiz/providers";
 
 const app = new Hono<{ Bindings: Env }>();
 
@@ -74,7 +75,6 @@ async function currentSession(
 }
 
 function challengeDeps(env: Env): ChallengeDeps {
-  const anthropic = new Anthropic({ apiKey: env.ANTHROPIC_API_KEY });
   return {
     now: () => new Date(),
     async fetchPrContext(ch: Challenge) {
@@ -87,9 +87,18 @@ function challengeDeps(env: Env): ChallengeDeps {
       return { diff, title: pr.title, body: pr.body, files };
     },
     async generateQuiz(ctx, cfg) {
+      const quizGate = getMultipleChoiceGate(cfg);
+      const selected = providerFromEnv(env);
+      if (!selected.ok) {
+        // Misconfiguration degrades exactly like an LLM outage: failed
+        // generation -> neutral check. Log loudly for the operator.
+        console.error("LLM provider misconfigured:", selected.error);
+        return { ok: false as const, error: selected.error };
+      }
       return generateQuiz(
-        anthropic as unknown as LlmClient, env.CLAUDE_MODEL,
-        ctx.diff, ctx.title, ctx.body, ctx.files, cfg.max_context_tokens
+        selected.provider,
+        ctx.diff, ctx.title, ctx.body, ctx.files, cfg.max_context_tokens,
+        quizGate.questions
       );
     },
     async verifyTurnstile(token: string) {

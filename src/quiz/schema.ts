@@ -11,7 +11,7 @@ const questionSchema = z.object({
 });
 
 const quizSchema = z.object({
-  questions: z.array(questionSchema).length(4),
+  questions: z.array(questionSchema),
 });
 
 export type Question = z.infer<typeof questionSchema>;
@@ -19,9 +19,12 @@ export type Quiz = z.infer<typeof quizSchema>;
 
 export type ValidateResult = { ok: true; quiz: Quiz } | { ok: false; error: string };
 
-export function validateQuiz(raw: unknown): ValidateResult {
+export function validateQuiz(raw: unknown, questionCount = 4): ValidateResult {
   const parsed = quizSchema.safeParse(raw);
   if (!parsed.success) return { ok: false, error: parsed.error.message };
+  if (parsed.data.questions.length !== questionCount) {
+    return { ok: false, error: `expected ${questionCount} questions, got ${parsed.data.questions.length}` };
+  }
   for (const [i, q] of parsed.data.questions.entries()) {
     const unique = new Set(q.correct);
     if (unique.size !== q.correct.length) {
@@ -51,7 +54,7 @@ export function redactForClient(q: Question): ClientQuestion {
   };
 }
 
-// JSON Schema for Anthropic structured outputs (output_config.format).
+// JSON Schema for provider structured outputs.
 // Keep it simple: no minItems/maxItems (unsupported constraints) — zod
 // validation above enforces counts after parsing.
 export const QUIZ_JSON_SCHEMA = {

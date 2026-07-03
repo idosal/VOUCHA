@@ -1,6 +1,7 @@
 {
   "name": "clawptcha",
   "version": "0.1.0",
+  "license": "MIT",
   "private": true,
   "type": "module",
   "scripts": {
@@ -12,7 +13,6 @@
     "db:migrate": "wrangler d1 migrations apply clawptcha --remote"
   },
   "dependencies": {
-    "@anthropic-ai/sdk": "^0.39.0",
     "hono": "^4.6.0",
     "yaml": "^2.6.0",
     "zod": "^3.24.0"
