@@ -6,14 +6,18 @@
   "d1_databases": [
     { "binding": "DB", "database_name": "clawptcha", "database_id": "REPLACE_AFTER_wrangler_d1_create" }
   ],
+  "ai": { "binding": "AI" },
   "triggers": { "crons": ["*/15 * * * *"] },
   "vars": {
     "APP_BASE_URL": "https://clawptcha.example.workers.dev",
-    "CLAUDE_MODEL": "claude-sonnet-5"
+    "LLM_PROVIDER": "workers-ai",
+    "LLM_MODEL": "@cf/moonshotai/kimi-k2.7-code"
+    // AI_GATEWAY_ID: set after creating an AI Gateway (spend caps + analytics)
   }
   // Secrets (set via `wrangler secret put`):
   //   GITHUB_APP_ID, GITHUB_PRIVATE_KEY (PKCS#8 PEM), GITHUB_WEBHOOK_SECRET,
   //   GITHUB_OAUTH_CLIENT_ID, GITHUB_OAUTH_CLIENT_SECRET,
-  //   ANTHROPIC_API_KEY, TURNSTILE_SITE_KEY, TURNSTILE_SECRET_KEY,
+  //   TURNSTILE_SITE_KEY, TURNSTILE_SECRET_KEY,
   //   SESSION_SIGNING_KEY (random 32+ bytes, hex)
+  //   LLM_API_KEY — only for LLM_PROVIDER=anthropic|openai-compat
 }
