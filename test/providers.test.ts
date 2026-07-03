@@ -1,5 +1,5 @@
 import { describe, it, expect, vi, afterEach } from "vitest";
-import { anthropicProvider, openAiCompatProvider } from "../src/quiz/providers";
+import { anthropicProvider, openAiCompatProvider, workersAiProvider } from "../src/quiz/providers";
 
 const PARAMS = {
   system: "SYS",
@@ -96,5 +96,56 @@ describe("openAiCompatProvider", () => {
     vi.stubGlobal("fetch", vi.fn(async () => new Response(JSON.stringify({ choices: [] }), { status: 200 })));
     const r = await openAiCompatProvider("https://x.test/v1", "k", "m").complete(PARAMS);
     expect(r.ok).toBe(false);
+  });
+});
+
+function aiStub(result: unknown, opts?: { throws?: boolean }) {
+  return {
+    run: vi.fn(async () => {
+      if (opts?.throws) throw new Error("model unavailable");
+      return result;
+    }),
+  } as unknown as Ai;
+}
+
+describe("workersAiProvider", () => {
+  it("calls AI.run with messages, max_tokens, and json_schema response_format", async () => {
+    const ai = aiStub({ response: '{"questions":[]}' });
+    const r = await workersAiProvider(ai, "@cf/moonshotai/kimi-k2.7-code").complete(PARAMS);
+    expect(r).toEqual({ ok: true, text: '{"questions":[]}' });
+    const [model, inputs, options] = (ai.run as ReturnType<typeof vi.fn>).mock.calls[0];
+    expect(model).toBe("@cf/moonshotai/kimi-k2.7-code");
+    expect(inputs.messages).toEqual([
+      { role: "system", content: "SYS" },
+      { role: "user", content: "PROMPT" },
+    ]);
+    expect(inputs.max_tokens).toBe(16000);
+    expect(inputs.response_format).toEqual({ type: "json_schema", json_schema: { type: "object" } });
+    expect(options).toBeUndefined();
+  });
+
+  it("passes the AI Gateway id when configured", async () => {
+    const ai = aiStub({ response: "{}" });
+    await workersAiProvider(ai, "m", "clawptcha-gw").complete(PARAMS);
+    const [, , options] = (ai.run as ReturnType<typeof vi.fn>).mock.calls[0];
+    expect(options).toEqual({ gateway: { id: "clawptcha-gw" } });
+  });
+
+  it("also accepts OpenAI-shaped binding responses", async () => {
+    const ai = aiStub({ choices: [{ message: { content: '{"questions":[]}' } }] });
+    const r = await workersAiProvider(ai, "m").complete(PARAMS);
+    expect(r).toEqual({ ok: true, text: '{"questions":[]}' });
+  });
+
+  it("maps an empty response to ok:false", async () => {
+    const ai = aiStub({ response: "" });
+    const r = await workersAiProvider(ai, "m").complete(PARAMS);
+    expect(r.ok).toBe(false);
+  });
+
+  it("maps a thrown binding error to ok:false", async () => {
+    const ai = aiStub(null, { throws: true });
+    const r = await workersAiProvider(ai, "m").complete(PARAMS);
+    expect(r).toEqual({ ok: false, error: "workers-ai: model unavailable" });
   });
 });

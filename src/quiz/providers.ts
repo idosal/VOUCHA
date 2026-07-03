@@ -89,3 +89,34 @@ export function openAiCompatProvider(
     },
   };
 }
+
+// The binding's inference response shape varies by model family: classic text
+// models return { response }, newer chat-completions-style large models can
+// return OpenAI-shaped { choices }. Accept both; verify the exact shape for
+// the chosen default model against the Workers AI model page when deploying.
+export function workersAiProvider(ai: Ai, model: string, gatewayId?: string): QuizProvider {
+  return {
+    async complete({ system, prompt, schema, maxTokens }) {
+      try {
+        const options = gatewayId ? { gateway: { id: gatewayId } } : undefined;
+        const result = (await ai.run(
+          model as Parameters<Ai["run"]>[0],
+          {
+            messages: [
+              { role: "system", content: system },
+              { role: "user", content: prompt },
+            ],
+            max_tokens: maxTokens,
+            response_format: { type: "json_schema", json_schema: schema },
+          } as Parameters<Ai["run"]>[1],
+          options
+        )) as { response?: string; choices?: Array<{ message?: { content?: string } }> };
+        const text = result?.response ?? result?.choices?.[0]?.message?.content;
+        if (!text) return { ok: false, error: "workers-ai: empty response" };
+        return { ok: true, text };
+      } catch (e) {
+        return errMsg("workers-ai", e);
+      }
+    },
+  };
+}
