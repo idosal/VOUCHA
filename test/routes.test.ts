@@ -1,8 +1,10 @@
-import { describe, it, expect } from "vitest";
+import { describe, it, expect, vi } from "vitest";
 import { env, createExecutionContext, waitOnExecutionContext } from "cloudflare:test";
-import worker from "../src/index";
+import worker, { challengeDeps } from "../src/index";
 import { signBody } from "../src/github/webhook";
+import { DEFAULT_CONFIG } from "../src/config";
 import type { Env } from "../src/types";
+import type { PrContext } from "../src/challenge";
 
 const testEnv = env as unknown as Env;
 
@@ -45,6 +47,35 @@ describe("GET /challenge/:id", () => {
     expect(res.status).toBe(302);
     expect(res.headers.get("location")).toContain("github.com/login/oauth/authorize");
     expect(res.headers.get("set-cookie")).toContain("clawptcha_session");
+  });
+});
+
+describe("challengeDeps.generateQuiz fail-open seam", () => {
+  // End-to-end proof (real challengeDeps, no mocked generateQuiz) that a broken
+  // LLM env degrades to a failed generation instead of throwing. The unit that
+  // needs coverage is the `if (!selected.ok)` branch inside challengeDeps —
+  // providerFromEnv is exercised in isolation elsewhere, and the mocked
+  // {ok:false} -> neutral path is covered in challenge.test.ts.
+  const fakeCtx: PrContext = { diff: "d", title: "t", body: null, files: ["a.ts"] };
+
+  it("resolves to {ok:false} (never rejects) when the provider is misconfigured", async () => {
+    // anthropic provider with LLM_API_KEY unset — the realistic misconfig.
+    const brokenEnv = { ...testEnv, LLM_PROVIDER: "anthropic", LLM_API_KEY: undefined } as unknown as Env;
+    const errorSpy = vi.spyOn(console, "error").mockImplementation(() => {});
+    try {
+      const deps = challengeDeps(brokenEnv);
+      const result = await deps.generateQuiz(fakeCtx, DEFAULT_CONFIG);
+      expect(result).toEqual({
+        ok: false,
+        error: 'LLM_PROVIDER "anthropic" requires LLM_API_KEY',
+      });
+      expect(errorSpy).toHaveBeenCalledWith(
+        "LLM provider misconfigured:",
+        'LLM_PROVIDER "anthropic" requires LLM_API_KEY'
+      );
+    } finally {
+      errorSpy.mockRestore();
+    }
   });
 });
 

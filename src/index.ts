@@ -74,7 +74,7 @@ async function currentSession(
   return { id: row.id, gh_login: row.gh_login };
 }
 
-function challengeDeps(env: Env): ChallengeDeps {
+export function challengeDeps(env: Env): ChallengeDeps {
   return {
     now: () => new Date(),
     async fetchPrContext(ch: Challenge) {
