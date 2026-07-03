@@ -11,7 +11,7 @@ Quiz generation is currently hardcoded to the Anthropic SDK
 a thin provider abstraction supporting three backends — Workers AI (binding),
 Anthropic (direct HTTP), and any OpenAI-compatible endpoint — and defines the
 hosted-instance deployment: an entirely-Cloudflare stack (Workers + D1 +
-Turnstile + Workers AI running GLM-5.2), free for public repos, positioned for
+Turnstile + Workers AI running Kimi K2.7 Code), free for public repos, positioned for
 end-to-end Cloudflare sponsorship (Project Alexandria for infra, a Workers AI
 credit pitch on top).
 
@@ -27,12 +27,17 @@ removed, not shimmed. This is v0.1.0 with one known deployment.
 - **Sponsorship:** a 100% Cloudflare stack is a single coherent pitch.
   Project Alexandria covers Workers/D1/Turnstile for OSS projects today;
   Workers AI credits are the ask once there are usage numbers. Meanwhile,
-  GLM-5.2 on Workers AI costs fractions of a cent per quiz — the unsponsored
-  interim is coffee money.
-- **Quality:** GLM-5.2 (added to Workers AI 2026-06-16, 262k context on the
-  platform) benchmarks within ~1 point of Claude Opus 4.8 on FrontierSWE.
-  Near-frontier diff comprehension no longer requires a frontier-lab API key.
-  This is validated, not assumed — see Quality gate.
+  Kimi K2.7 Code on Workers AI ($0.95/M in, $4.00/M out as of 2026-06, ~30%
+  cheaper than GLM-5.2 on the input-heavy quiz workload) costs fractions of
+  a cent per quiz — the unsponsored interim is coffee money.
+- **Quality:** Workers AI now hosts near-frontier open coding models —
+  Kimi K2.7 Code (added 2026-06-12, 256k context) and GLM-5.2 (added
+  2026-06-16, 262k context; within ~1 point of Claude Opus 4.8 on
+  FrontierSWE). Near-frontier diff comprehension no longer requires a
+  frontier-lab API key. This is validated, not assumed — see Quality gate.
+- **Default selection rule:** among models that pass the quality gate, the
+  cheapest wins. As of writing that ordering is Kimi K2.7 Code → GLM-5.2 →
+  claude-sonnet-5 (via `anthropic` provider).
 
 ## Design
 
@@ -75,11 +80,12 @@ Notes:
 - `workers-ai` passes an AI Gateway reference when `AI_GATEWAY_ID` is set
   (spend caps, analytics, logging; response caching stays off — every quiz
   prompt is unique).
-- GLM-5.2 reasoning effort: use the fast/balanced mode ("high"), not "max".
+- Reasoning effort: for models with thinking modes (Kimi K2.7 Code,
+  GLM-5.2), use the fast/balanced setting, never the extended/"max" mode.
   Generation happens while the contributor waits on the challenge page;
-  latency is part of quiz UX. Exact Workers AI parameter names for
-  reasoning effort and structured output are verified against the model
-  docs during implementation (they are Day-0-launch fresh).
+  latency is part of quiz UX. Exact Workers AI model IDs and parameter
+  names for reasoning effort and structured output are verified against
+  the model docs during implementation (both models are June-2026 fresh).
 
 ### 2. Configuration & Env
 
@@ -93,7 +99,7 @@ ANTHROPIC_API_KEY: string;
 // added
 AI?: Ai;                                  // Workers AI binding (hosted path)
 LLM_PROVIDER: "workers-ai" | "anthropic" | "openai-compat";
-LLM_MODEL: string;                        // e.g. "@cf/zai-org/glm-5.2", "claude-sonnet-5"
+LLM_MODEL: string;                        // e.g. "@cf/moonshotai/kimi-k2.7-code", "claude-sonnet-5"
 LLM_API_KEY?: string;                     // secret; unused for workers-ai
 LLM_BASE_URL?: string;                    // openai-compat only
 AI_GATEWAY_ID?: string;                   // optional, workers-ai only
@@ -107,7 +113,8 @@ AI_GATEWAY_ID?: string;                   // optional, workers-ai only
   Startup cannot hard-fail a Worker; fail-open is already the product's
   documented posture for LLM outages.
 - `wrangler.jsonc`: add `"ai": { "binding": "AI" }`; `vars` become
-  `LLM_PROVIDER: "workers-ai"`, `LLM_MODEL: "@cf/zai-org/glm-5.2"`.
+  `LLM_PROVIDER: "workers-ai"`, `LLM_MODEL: "@cf/moonshotai/kimi-k2.7-code"`
+  (exact ID confirmed against the Workers AI catalog during implementation).
   Hosted secret count drops from 9 to 8 (no LLM key).
 - README deploy runbook updated: hosted/default path needs no LLM secret;
   self-host BYO section documents all three providers with one example each.
@@ -115,8 +122,8 @@ AI_GATEWAY_ID?: string;                   // optional, workers-ai only
 ### 3. Hosted deployment & sponsorship sequence
 
 1. **Deploy hosted instance** on Workers with the `workers-ai` provider and
-   GLM-5.2 default (after the quality gate below passes). AI Gateway in
-   front with a monthly spend cap.
+   Kimi K2.7 Code default (after the quality gate below passes). AI Gateway
+   in front with a monthly spend cap.
 2. **Policy, stated in README:** hosted instance is free for public repos.
    Private/commercial use self-hosts (BYO endpoint) — revisit if demand
    appears.
@@ -132,15 +139,19 @@ AI_GATEWAY_ID?: string;                   // optional, workers-ai only
 
 Extend `scripts/localdev/local-quizgen.mts` with `--provider` / `--model`
 (and the env vars above). Run ~10 real PR diffs of varied size/type through
-GLM-5.2 and claude-sonnet-5 side by side; judge by hand against three
-criteria per question: **grounded** (answerable from the diff's
-purpose/effect), **unambiguous** (exactly one defensible correct answer),
-**fair** (no implementation-detail trivia).
+Kimi K2.7 Code, GLM-5.2, and claude-sonnet-5 side by side; judge by hand
+against three criteria per question: **grounded** (answerable from the
+diff's purpose/effect), **unambiguous** (exactly one defensible correct
+answer), **fair** (no implementation-detail trivia).
 
-- GLM-5.2 indistinguishable in fairness → it ships as hosted default.
-- Otherwise → hosted default stays `anthropic`/claude-sonnet-5 and the
-  economics revert to "Alexandria for infra, eat ~1–5¢/quiz". Nothing else
-  in this design changes — that is the point of the abstraction.
+The hosted default is the **cheapest model indistinguishable from
+claude-sonnet-5 on fairness**, evaluated in cost order:
+
+1. Kimi K2.7 Code passes → default.
+2. Else GLM-5.2 passes → default.
+3. Else hosted default is `anthropic`/claude-sonnet-5 and the economics
+   revert to "Alexandria for infra, eat ~1–5¢/quiz". Nothing else in this
+   design changes — that is the point of the abstraction.
 
 ### 5. Testing
 
