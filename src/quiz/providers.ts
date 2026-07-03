@@ -50,3 +50,42 @@ export function anthropicProvider(apiKey: string, model: string): QuizProvider {
     },
   };
 }
+
+export function openAiCompatProvider(
+  baseUrl: string,
+  apiKey: string | undefined,
+  model: string
+): QuizProvider {
+  return {
+    async complete({ system, prompt, schema, maxTokens }) {
+      try {
+        const res = await fetch(`${baseUrl.replace(/\/+$/, "")}/chat/completions`, {
+          method: "POST",
+          headers: {
+            "content-type": "application/json",
+            ...(apiKey ? { authorization: `Bearer ${apiKey}` } : {}),
+          },
+          body: JSON.stringify({
+            model,
+            max_tokens: maxTokens,
+            messages: [
+              { role: "system", content: system },
+              { role: "user", content: prompt },
+            ],
+            response_format: {
+              type: "json_schema",
+              json_schema: { name: "quiz", schema, strict: true },
+            },
+          }),
+        });
+        if (!res.ok) return { ok: false, error: `openai-compat: HTTP ${res.status}` };
+        const data = (await res.json()) as { choices?: Array<{ message?: { content?: string } }> };
+        const text = data.choices?.[0]?.message?.content;
+        if (!text) return { ok: false, error: "openai-compat: empty completion" };
+        return { ok: true, text };
+      } catch (e) {
+        return errMsg("openai-compat", e);
+      }
+    },
+  };
+}
