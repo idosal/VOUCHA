@@ -1,6 +1,6 @@
 // test/config.test.ts
 import { describe, it, expect } from "vitest";
-import { parseConfig, DEFAULT_CONFIG } from "../src/config";
+import { getLinkedIssueMatchExemption, getMultipleChoiceGate, parseConfig, DEFAULT_CONFIG } from "../src/config";
 
 describe("parseConfig", () => {
   it("returns defaults for null/empty input", () => {
@@ -11,8 +11,38 @@ describe("parseConfig", () => {
   it("merges partial YAML over defaults", () => {
     const cfg = parseConfig("pass_threshold: 4\nmax_attempts: 5\n");
     expect(cfg.pass_threshold).toBe(4);
+    expect(getMultipleChoiceGate(cfg)).toEqual({ type: "multiple_choice", questions: 4, pass_threshold: 4 });
     expect(cfg.max_attempts).toBe(5);
     expect(cfg.cooldown_minutes).toBe(15); // default preserved
+  });
+
+  it("parses configurable gates", () => {
+    const cfg = parseConfig(
+      "gates:\n  - type: multiple_choice\n    questions: 6\n    pass_threshold: 5\n"
+    );
+    expect(getMultipleChoiceGate(cfg)).toEqual({ type: "multiple_choice", questions: 6, pass_threshold: 5 });
+    expect(cfg.pass_threshold).toBe(5); // legacy compatibility mirror
+  });
+
+  it("caps a multiple-choice threshold at its question count", () => {
+    const cfg = parseConfig(
+      "gates:\n  - type: multiple_choice\n    questions: 3\n    pass_threshold: 9\n"
+    );
+    expect(getMultipleChoiceGate(cfg)).toEqual({ type: "multiple_choice", questions: 3, pass_threshold: 3 });
+  });
+
+  it("parses linked issue match exemptions", () => {
+    const cfg = parseConfig(
+      "exemptions:\n  - type: linked_issue_match\n    min_match_score: 0.8\n    trusted_labels: [accepted]\n"
+    );
+    expect(getLinkedIssueMatchExemption(cfg)).toEqual({
+      type: "linked_issue_match",
+      require_same_repo: true,
+      require_trusted_signal: true,
+      min_match_score: 0.8,
+      max_issues: 5,
+      trusted_labels: ["accepted"],
+    });
   });
 
   it("parses require_approval enum and rejects bad values", () => {
@@ -51,10 +81,12 @@ describe("parseConfig", () => {
     a.pass_threshold = 999;
     a.skip_paths.push("mutated/**");
     a.skip_authors.push("mallory");
+    a.gates.push({ type: "multiple_choice", questions: 2, pass_threshold: 2 });
     const b = parseConfig(null);
     expect(b.pass_threshold).toBe(3);
     expect(b.skip_paths).toEqual(["docs/**", "*.md"]);
     expect(b.skip_authors).toEqual([]);
+    expect(b.gates).toEqual([{ type: "multiple_choice", questions: 4, pass_threshold: 3 }]);
     expect(DEFAULT_CONFIG.pass_threshold).toBe(3);
   });
 
