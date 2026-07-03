@@ -1,5 +1,6 @@
 import { describe, it, expect, vi, afterEach } from "vitest";
-import { anthropicProvider, openAiCompatProvider, workersAiProvider } from "../src/quiz/providers";
+import { anthropicProvider, openAiCompatProvider, workersAiProvider, providerFromEnv } from "../src/quiz/providers";
+import type { Env } from "../src/types";
 
 const PARAMS = {
   system: "SYS",
@@ -147,5 +148,41 @@ describe("workersAiProvider", () => {
     const ai = aiStub(null, { throws: true });
     const r = await workersAiProvider(ai, "m").complete(PARAMS);
     expect(r).toEqual({ ok: false, error: "workers-ai: model unavailable" });
+  });
+});
+
+function envWith(overrides: Record<string, unknown>): Env {
+  return { LLM_PROVIDER: "anthropic", LLM_MODEL: "m", LLM_API_KEY: "k", ...overrides } as unknown as Env;
+}
+
+describe("providerFromEnv", () => {
+  it("selects anthropic when configured with a key", () => {
+    const r = providerFromEnv(envWith({ LLM_PROVIDER: "anthropic", LLM_API_KEY: "k" }));
+    expect(r.ok).toBe(true);
+  });
+
+  it("rejects anthropic without LLM_API_KEY", () => {
+    const r = providerFromEnv(envWith({ LLM_PROVIDER: "anthropic", LLM_API_KEY: undefined }));
+    expect(r).toEqual({ ok: false, error: 'LLM_PROVIDER "anthropic" requires LLM_API_KEY' });
+  });
+
+  it("rejects workers-ai without the AI binding", () => {
+    const r = providerFromEnv(envWith({ LLM_PROVIDER: "workers-ai" }));
+    expect(r).toEqual({ ok: false, error: 'LLM_PROVIDER "workers-ai" requires the AI binding (wrangler.jsonc `ai`)' });
+  });
+
+  it("selects workers-ai when the binding exists", () => {
+    const r = providerFromEnv(envWith({ LLM_PROVIDER: "workers-ai", AI: { run: async () => ({}) } as unknown as Ai }));
+    expect(r.ok).toBe(true);
+  });
+
+  it("rejects openai-compat without LLM_BASE_URL", () => {
+    const r = providerFromEnv(envWith({ LLM_PROVIDER: "openai-compat", LLM_BASE_URL: undefined }));
+    expect(r).toEqual({ ok: false, error: 'LLM_PROVIDER "openai-compat" requires LLM_BASE_URL' });
+  });
+
+  it("rejects an unknown provider value", () => {
+    const r = providerFromEnv(envWith({ LLM_PROVIDER: "openai" as Env["LLM_PROVIDER"] }));
+    expect(r).toEqual({ ok: false, error: 'unknown LLM_PROVIDER "openai" (expected workers-ai | anthropic | openai-compat)' });
   });
 });

@@ -1,13 +1,17 @@
 export interface Env {
   DB: D1Database;
+  AI?: Ai;
   APP_BASE_URL: string;
-  CLAUDE_MODEL: string;
+  LLM_PROVIDER: "workers-ai" | "anthropic" | "openai-compat";
+  LLM_MODEL: string;
+  LLM_API_KEY?: string;
+  LLM_BASE_URL?: string;
+  AI_GATEWAY_ID?: string;
   GITHUB_APP_ID: string;
   GITHUB_PRIVATE_KEY: string;
   GITHUB_WEBHOOK_SECRET: string;
   GITHUB_OAUTH_CLIENT_ID: string;
   GITHUB_OAUTH_CLIENT_SECRET: string;
-  ANTHROPIC_API_KEY: string;
   TURNSTILE_SITE_KEY: string;
   TURNSTILE_SECRET_KEY: string;
   SESSION_SIGNING_KEY: string;

@@ -9,11 +9,12 @@ declare module "cloudflare:test" {
     GITHUB_WEBHOOK_SECRET: string;
     GITHUB_OAUTH_CLIENT_ID: string;
     GITHUB_OAUTH_CLIENT_SECRET: string;
-    ANTHROPIC_API_KEY: string;
+    LLM_PROVIDER: string;
+    LLM_MODEL: string;
+    LLM_API_KEY: string;
     TURNSTILE_SITE_KEY: string;
     TURNSTILE_SECRET_KEY: string;
     SESSION_SIGNING_KEY: string;
     APP_BASE_URL: string;
-    CLAUDE_MODEL: string;
   }
 }

@@ -1,3 +1,5 @@
+import type { Env } from "../types";
+
 // Provider-neutral LLM access for quiz generation. Every provider maps ALL
 // failure modes (non-2xx, missing content, network, thrown) to { ok: false }
 // — a provider error must degrade to a failed generation attempt, which the
@@ -119,4 +121,24 @@ export function workersAiProvider(ai: Ai, model: string, gatewayId?: string): Qu
       }
     },
   };
+}
+
+export type ProviderSelection = { ok: true; provider: QuizProvider } | { ok: false; error: string };
+
+// Selected per-request, validated lazily: a misconfigured provider yields a
+// failed generation (-> neutral check), because a Worker cannot fail startup.
+export function providerFromEnv(env: Env): ProviderSelection {
+  switch (env.LLM_PROVIDER) {
+    case "workers-ai":
+      if (!env.AI) return { ok: false, error: 'LLM_PROVIDER "workers-ai" requires the AI binding (wrangler.jsonc `ai`)' };
+      return { ok: true, provider: workersAiProvider(env.AI, env.LLM_MODEL, env.AI_GATEWAY_ID) };
+    case "anthropic":
+      if (!env.LLM_API_KEY) return { ok: false, error: 'LLM_PROVIDER "anthropic" requires LLM_API_KEY' };
+      return { ok: true, provider: anthropicProvider(env.LLM_API_KEY, env.LLM_MODEL) };
+    case "openai-compat":
+      if (!env.LLM_BASE_URL) return { ok: false, error: 'LLM_PROVIDER "openai-compat" requires LLM_BASE_URL' };
+      return { ok: true, provider: openAiCompatProvider(env.LLM_BASE_URL, env.LLM_API_KEY, env.LLM_MODEL) };
+    default:
+      return { ok: false, error: `unknown LLM_PROVIDER "${env.LLM_PROVIDER}" (expected workers-ai | anthropic | openai-compat)` };
+  }
 }
