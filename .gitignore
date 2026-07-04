@@ -2,3 +2,24 @@ node_modules/
 .wrangler/
 dist/
 .dev.vars
+.env
+.env.*
+
+# OS
+.DS_Store
+Thumbs.db
+
+# Logs
+*.log
+npm-debug.log*
+
+# Test/coverage output
+coverage/
+output/
+
+# Local agent-tool config/cache (not project content)
+.agents/
+.codex/
+.impeccable/
+.claude/settings.local.json
+.claude/skills/impeccable/

@@ -98,8 +98,7 @@ segment (split on `/`) — no regex, so it can't backtrack pathologically:
 
 ## Deploy
 
-[![Deploy to Cloudflare](https://deploy.workers.cloudflare.com/button)](https://deploy.workers.cloudflare.com/?url=REPLACE_WITH_PUBLIC_GITHUB_URL)
-<!-- TODO(publish): replace REPLACE_WITH_PUBLIC_GITHUB_URL with this repo's public GitHub URL when it's pushed. -->
+[![Deploy to Cloudflare](https://deploy.workers.cloudflare.com/button)](https://deploy.workers.cloudflare.com/?url=https://github.com/idosal/CLAWPTCHA)
 
 Two easy paths — both end with the same wizard:
 
