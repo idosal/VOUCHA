@@ -43,3 +43,18 @@ export function manifestFormHtml(manifest: object, state: string): string {
   <script>document.getElementById("f").submit()</script>
 </body></html>`;
 }
+
+export function parseDeployedUrl(wranglerOutput: string): string | null {
+  const m = wranglerOutput.match(/https:\/\/[a-z0-9][a-z0-9.-]*\.workers\.dev/i);
+  return m ? m[0] : null;
+}
+
+// Targeted string edit so JSONC comments and formatting survive (a JSON
+// parse/re-stringify would destroy them).
+export function patchAppBaseUrl(jsonc: string, newUrl: string): { text: string; changed: boolean } {
+  const re = /("APP_BASE_URL"\s*:\s*")([^"]*)(")/;
+  const m = jsonc.match(re);
+  if (!m) throw new Error("APP_BASE_URL not found in wrangler.jsonc");
+  if (m[2] === newUrl) return { text: jsonc, changed: false };
+  return { text: jsonc.replace(re, `$1${newUrl}$3`), changed: true };
+}
