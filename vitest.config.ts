@@ -2,28 +2,80 @@ import fs from "node:fs";
 import path from "node:path";
 import { defineWorkersConfig, readD1Migrations } from "@cloudflare/vitest-pool-workers/config";
 
+/**
+ * Strip // and slash-star comments from JSONC without touching string contents.
+ * Note: does not handle trailing commas — JSON.parse fails loudly on those.
+ */
+function stripJsonComments(input: string): string {
+  let out = "";
+  let i = 0;
+  let inString = false;
+  while (i < input.length) {
+    const ch = input[i];
+    if (inString) {
+      out += ch;
+      if (ch === "\\") {
+        out += input[i + 1] ?? "";
+        i += 2;
+        continue;
+      }
+      if (ch === '"') inString = false;
+      i++;
+      continue;
+    }
+    if (ch === '"') {
+      inString = true;
+      out += ch;
+      i++;
+      continue;
+    }
+    if (ch === "/" && input[i + 1] === "/") {
+      while (i < input.length && input[i] !== "\n") i++;
+      continue;
+    }
+    if (ch === "/" && input[i + 1] === "*") {
+      i += 2;
+      while (i < input.length && !(input[i] === "*" && input[i + 1] === "/")) i++;
+      i += 2;
+      continue;
+    }
+    out += ch;
+    i++;
+  }
+  return out;
+}
+
 export default defineWorkersConfig(async () => {
   const migrationsPath = path.join(__dirname, "migrations");
   const migrations = await readD1Migrations(migrationsPath);
-  // Raw configs injected for test/wrangler-config.test.ts, which polices drift
-  // between the real config and its test-only twin (see wrangler.test.jsonc).
-  const wranglerJsonc = fs.readFileSync(path.join(__dirname, "wrangler.jsonc"), "utf8");
-  const wranglerTestJsonc = fs.readFileSync(path.join(__dirname, "wrangler.test.jsonc"), "utf8");
+
+  // The pool's bundled wrangler refuses to parse a D1 binding without a
+  // database_id, but the deployable wrangler.jsonc must omit it so Cloudflare
+  // auto-provisions the database (and the Deploy-to-Cloudflare button can
+  // provision it). Generate a test-only config from the real one at config
+  // time — dummy id injected — so wrangler.jsonc stays the single source of
+  // truth and the test config can never drift from it.
+  const config = JSON.parse(
+    stripJsonComments(fs.readFileSync(path.join(__dirname, "wrangler.jsonc"), "utf8"))
+  ) as { main: string; d1_databases: Array<Record<string, unknown>> };
+  config.d1_databases[0].database_id = "00000000-0000-0000-0000-000000000000";
+  // Relative paths in a wrangler config resolve against the config file's
+  // directory; the generated file lives in .wrangler/tmp/, so make main absolute.
+  config.main = path.resolve(__dirname, config.main);
+  const generatedDir = path.join(__dirname, ".wrangler", "tmp");
+  fs.mkdirSync(generatedDir, { recursive: true });
+  const generatedConfigPath = path.join(generatedDir, "wrangler.test.generated.jsonc");
+  fs.writeFileSync(generatedConfigPath, JSON.stringify(config, null, 2) + "\n");
 
   return {
     test: {
       setupFiles: ["./test/apply-migrations.ts"],
       poolOptions: {
         workers: {
-          // wrangler.test.jsonc, not wrangler.jsonc: the pool's bundled wrangler
-          // rejects a D1 binding without database_id, but the deployable config
-          // must omit it so Cloudflare auto-provisions the database.
-          wrangler: { configPath: "./wrangler.test.jsonc" },
+          wrangler: { configPath: generatedConfigPath },
           miniflare: {
             bindings: {
               TEST_MIGRATIONS: migrations,
-              WRANGLER_JSONC_RAW: wranglerJsonc,
-              WRANGLER_TEST_JSONC_RAW: wranglerTestJsonc,
               GITHUB_APP_ID: "12345",
               GITHUB_WEBHOOK_SECRET: "test-webhook-secret",
               GITHUB_OAUTH_CLIENT_ID: "test-client-id",

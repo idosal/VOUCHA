@@ -6,7 +6,10 @@
   "d1_databases": [
     // no database_id: Wrangler auto-provisions the database on first deploy
     // (also lets the Deploy-to-Cloudflare button provision it).
-    // Tests use wrangler.test.jsonc (the pool requires a database_id).
+    // `npm run deploy` therefore deploys first, then applies migrations — the
+    // database only exists after deploy; the brief unmigrated window on a
+    // first deploy is cushioned by the app's fail-open behavior.
+    // Tests auto-generate a temp config with a dummy id (see vitest.config.ts).
     { "binding": "DB", "database_name": "clawptcha" }
   ],
   "ai": { "binding": "AI" },
