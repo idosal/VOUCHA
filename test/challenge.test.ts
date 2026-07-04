@@ -34,6 +34,10 @@ const quiz = {
   ],
 };
 
+const twoQuestionQuiz = {
+  questions: quiz.questions.slice(0, 2),
+};
+
 function deps(overrides: Partial<ChallengeDeps> = {}): ChallengeDeps {
   return {
     generateQuiz: vi.fn(async () => ({ ok: true as const, quiz })),
@@ -45,13 +49,13 @@ function deps(overrides: Partial<ChallengeDeps> = {}): ChallengeDeps {
   };
 }
 
-async function makeChallenge(status = "ready"): Promise<string> {
+async function makeChallenge(status = "ready", config = DEFAULT_CONFIG): Promise<string> {
   const id = randomToken();
   await insertChallenge(testEnv.DB, {
     id, installation_id: 1, repo_full_name: "o/r", pr_number: 1,
     head_sha: randomToken(8), author_login: "alice", check_run_id: 42,
     status: status as any, approved_by: null, attempts_used: 0,
-    cooldown_until: null, config_json: JSON.stringify(DEFAULT_CONFIG),
+    cooldown_until: null, config_json: JSON.stringify(config),
   });
   return id;
 }
@@ -134,6 +138,21 @@ describe("submitAnswer", () => {
     expect(d.onChallengeResolved).toHaveBeenCalledWith(
       expect.objectContaining({ outcome: "passed", score: 3 })
     );
+  });
+
+  it("uses the configured multiple-choice gate threshold", async () => {
+    const config = {
+      ...DEFAULT_CONFIG,
+      pass_threshold: 2,
+      gates: [{ type: "multiple_choice" as const, questions: 2, pass_threshold: 2 }],
+    };
+    const id = await makeChallenge("ready", config);
+    const d = deps({ generateQuiz: vi.fn(async () => ({ ok: true as const, quiz: twoQuestionQuiz })) });
+    const started = await startQuizAttempt(testEnv, d, id, "alice", "tok");
+    if (!started.ok) throw new Error("setup failed");
+    await answerQ(d, started.quizId, 0, [0]);
+    const final = await answerQ(d, started.quizId, 1, [1, 2]);
+    expect(final).toEqual({ done: true, passed: true, score: 2, total: 2 });
   });
 
   it("fails below threshold, sets cooldown, increments attempts", async () => {

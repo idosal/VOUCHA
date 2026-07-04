@@ -1,6 +1,6 @@
 import type { Env, Challenge } from "./types";
 import { getChallenge, setChallengeStatus, randomToken } from "./store";
-import { resolveConfig, type ClawptchaConfig } from "./config";
+import { getMultipleChoiceGate, resolveConfig, type ClawptchaConfig } from "./config";
 import type { Quiz, Question } from "./quiz/schema";
 import {
   canStartAttempt, scoreQuiz, nextCooldown, answerWithinTimeLimit, type Answer,
@@ -181,7 +181,8 @@ async function finalizeQuiz(
     return { done: true, error: "challenge_closed" };
   }
   const cfg = resolveConfig(challenge.config_json);
-  const { score, passed } = scoreQuiz(questions, answers, cfg.pass_threshold);
+  const quizGate = getMultipleChoiceGate(cfg);
+  const { score, passed } = scoreQuiz(questions, answers, quizGate.pass_threshold);
 
   await env.DB.prepare("UPDATE quizzes SET score=? WHERE id=?").bind(score, quiz.id).run();
 

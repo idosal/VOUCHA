@@ -40,6 +40,11 @@ describe("validateQuiz", () => {
     expect(r.ok).toBe(false);
   });
 
+  it("accepts a configured question count", () => {
+    const r = validateQuiz({ questions: validQuiz.questions.slice(0, 2) }, 2);
+    expect(r.ok).toBe(true);
+  });
+
   it("rejects single-answer types with multiple correct indices", () => {
     const bad = structuredClone(validQuiz);
     bad.questions[0].correct = [0, 1];
