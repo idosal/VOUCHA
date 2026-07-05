@@ -15,7 +15,7 @@
   "ai": { "binding": "AI" },
   "triggers": { "crons": ["*/15 * * * *"] },
   "vars": {
-    "APP_BASE_URL": "https://clawptcha.example.workers.dev",
+    "APP_BASE_URL": "https://clawptcha.idosalomon.workers.dev",
     "LLM_PROVIDER": "workers-ai",
     "LLM_MODEL": "@cf/moonshotai/kimi-k2.7-code"
     // AI_GATEWAY_ID: set after creating an AI Gateway (spend caps + analytics)
