@@ -28,6 +28,23 @@ const pr: PrDetails = {
   additions: 100, deletions: 30, title: "Add feature", body: "Does a thing",
 };
 
+const codeHoneypotYaml = [
+  "signals:",
+  "  - type: code_honeypot",
+  "    patterns:",
+  "      - CLAWPTCHA_DO_NOT_ADD_THIS",
+  "    paths:",
+  "      - '**'",
+  "",
+].join("\n");
+
+const codeHoneypotDiff = [
+  "diff --git a/src/app.ts b/src/app.ts",
+  "+++ b/src/app.ts",
+  "+const marker = 'CLAWPTCHA_DO_NOT_ADD_THIS';",
+  "",
+].join("\n");
+
 const prPayload = {
   action: "opened",
   installation: { id: 1 },
@@ -86,8 +103,28 @@ describe("handlePullRequestEvent", () => {
     expect(await getChallengeByPr(testEnv.DB, "o/r", n, "abc123")).toBeNull();
   });
 
+  it("surfaces code honeypot matches on normally exempt PRs", async () => {
+    const api = stubApi({
+      getFileContent: vi.fn(async () => codeHoneypotYaml),
+      getPrDiff: vi.fn(async () => codeHoneypotDiff),
+      listPrFiles: vi.fn(async () => ["docs/x.md", "README.md"]),
+    });
+    const n = uniq + 12;
+    await handlePullRequestEvent(testEnv, api, payloadFor(n));
+    expect(api.createCheckRun).toHaveBeenCalledWith("o/r", expect.objectContaining({
+      status: "completed",
+      conclusion: "success",
+      output: expect.objectContaining({
+        title: "Exempt",
+        summary: expect.stringContaining("configured code honeypot marker"),
+      }),
+    }));
+    expect(await getChallengeByPr(testEnv.DB, "o/r", n, "abc123")).toBeNull();
+  });
+
   it("exempts a PR that matches a trusted linked issue", async () => {
     const yaml = [
+      codeHoneypotYaml.trimEnd(),
       "exemptions:",
       "  - type: linked_issue_match",
       "    min_match_score: 0.7",
@@ -95,6 +132,7 @@ describe("handlePullRequestEvent", () => {
     ].join("\n");
     const api = stubApi({
       getFileContent: vi.fn(async () => yaml),
+      getPrDiff: vi.fn(async () => codeHoneypotDiff),
       getPr: vi.fn(async () => ({
         ...pr,
         title: "Implement dashboard dark mode",
@@ -118,7 +156,10 @@ describe("handlePullRequestEvent", () => {
     expect(api.getIssue).toHaveBeenCalledWith("o/r", 12);
     expect(api.createCheckRun).toHaveBeenCalledWith("o/r", expect.objectContaining({
       status: "completed", conclusion: "success",
-      output: expect.objectContaining({ title: "Exempt" }),
+      output: expect.objectContaining({
+        title: "Exempt",
+        summary: expect.stringContaining("configured code honeypot marker"),
+      }),
     }));
     expect(await getChallengeByPr(testEnv.DB, "o/r", n, "abc123")).toBeNull();
   });
@@ -141,11 +182,19 @@ describe("handlePullRequestEvent", () => {
     ).bind(n).run();
     const p2 = payloadFor(n, "sha2");
     p2.action = "synchronize";
-    const api2 = stubApi({ getPr: vi.fn(async () => ({ ...pr, number: n, head_sha: "sha2" })) });
+    const api2 = stubApi({
+      getFileContent: vi.fn(async () => codeHoneypotYaml),
+      getPrDiff: vi.fn(async () => codeHoneypotDiff),
+      getPr: vi.fn(async () => ({ ...pr, number: n, head_sha: "sha2" })),
+    });
     await handlePullRequestEvent(testEnv, api2, p2);
     // rechallenge_on_push=false → new sha keeps success because prior pass exists
     expect(api2.createCheckRun).toHaveBeenCalledWith("o/r", expect.objectContaining({
       head_sha: "sha2", status: "completed", conclusion: "success",
+      output: expect.objectContaining({
+        title: "Passed",
+        summary: expect.stringContaining("configured code honeypot marker"),
+      }),
     }));
   });
 

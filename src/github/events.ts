@@ -1,11 +1,13 @@
 import type { Env } from "../types";
 import type { GitHubApi } from "./api";
 import {
+  getCodeHoneypotSignals,
   getLinkedIssueMatchExemption,
   parseConfig,
   resolveConfig,
   type ClawptchaConfig,
 } from "../config";
+import { evaluateCodeHoneypotSignals, type CodeHoneypotResult } from "../policy/code-honeypot";
 import { evaluateExemption } from "../policy/exemptions";
 import { evaluateLinkedIssueExemption } from "../policy/linked-issue";
 import {
@@ -15,6 +17,38 @@ import {
 } from "../store";
 
 const CHECK_NAME = "clawptcha";
+const CODE_HONEYPOT_SIGNAL = "the PR introduced a configured code honeypot marker";
+
+function emptyCodeHoneypotResult(): CodeHoneypotResult {
+  return { triggered: false, matches: [] };
+}
+
+async function evaluatePrCodeHoneypot(
+  api: GitHubApi,
+  repo: string,
+  prNumber: number,
+  cfg: ClawptchaConfig
+): Promise<CodeHoneypotResult> {
+  const signals = getCodeHoneypotSignals(cfg);
+  if (signals.length === 0 || signals.every((signal) => signal.patterns.length === 0)) {
+    return emptyCodeHoneypotResult();
+  }
+  try {
+    return evaluateCodeHoneypotSignals(await api.getPrDiff(repo, prNumber), signals);
+  } catch {
+    // Report-only signals must not prevent check creation or exemption handling.
+    return emptyCodeHoneypotResult();
+  }
+}
+
+function withCodeHoneypotSummary(summary: string, result: CodeHoneypotResult): string {
+  if (!result.triggered) return summary;
+  return [
+    summary,
+    "",
+    `Passive signal: ${CODE_HONEYPOT_SIGNAL}. This does not change the check conclusion.`,
+  ].join("\n");
+}
 
 function challengeUrl(env: Env, challengeId: string): string {
   return `${env.APP_BASE_URL}/challenge/${challengeId}`;
@@ -71,6 +105,7 @@ export async function handlePullRequestEvent(
   await supersedeOldChallenges(env.DB, repo, prNumber, headSha);
 
   const changedFiles = await api.listPrFiles(repo, prNumber);
+  const codeHoneypot = await evaluatePrCodeHoneypot(api, repo, prNumber, cfg);
   const exemption = evaluateExemption(
     {
       authorLogin: pr.author_login,
@@ -85,7 +120,10 @@ export async function handlePullRequestEvent(
   if (exemption.exempt) {
     await api.createCheckRun(repo, {
       name: CHECK_NAME, head_sha: headSha, status: "completed", conclusion: "success",
-      output: { title: "Exempt", summary: `No challenge required: ${exemption.reason}.` },
+      output: {
+        title: "Exempt",
+        summary: withCodeHoneypotSummary(`No challenge required: ${exemption.reason}.`, codeHoneypot),
+      },
     });
     return;
   }
@@ -108,7 +146,13 @@ export async function handlePullRequestEvent(
     if (linkedIssueExemption.exempt) {
       await api.createCheckRun(repo, {
         name: CHECK_NAME, head_sha: headSha, status: "completed", conclusion: "success",
-        output: { title: "Exempt", summary: `No challenge required: ${linkedIssueExemption.reason}.` },
+        output: {
+          title: "Exempt",
+          summary: withCodeHoneypotSummary(
+            `No challenge required: ${linkedIssueExemption.reason}.`,
+            codeHoneypot
+          ),
+        },
       });
       return;
     }
@@ -119,7 +163,10 @@ export async function handlePullRequestEvent(
     if (await hasPassedChallenge(env.DB, repo, prNumber)) {
       await api.createCheckRun(repo, {
         name: CHECK_NAME, head_sha: headSha, status: "completed", conclusion: "success",
-        output: { title: "Passed", summary: "Author previously passed the challenge for this PR." },
+        output: {
+          title: "Passed",
+          summary: withCodeHoneypotSummary("Author previously passed the challenge for this PR.", codeHoneypot),
+        },
       });
       return;
     }

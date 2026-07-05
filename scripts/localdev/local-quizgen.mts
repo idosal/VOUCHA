@@ -89,5 +89,6 @@ const result = await generateQuiz(
 if (!result.ok) {
   console.error("GENERATION FAILED:", result.error);
   process.exit(1);
+} else {
+  console.log(JSON.stringify(result.quiz, null, 2));
 }
-console.log(JSON.stringify(result.quiz, null, 2));

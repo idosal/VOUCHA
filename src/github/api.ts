@@ -167,6 +167,28 @@ export class GitHubApi {
     if (!res.ok) throw new Error(`upsertPrComment POST ${res.status}`);
   }
 
+  async addLabels(repo: string, issueNumber: number, labels: string[]): Promise<void> {
+    const res = await this.req(`/repos/${repo}/issues/${issueNumber}/labels`, {
+      method: "POST",
+      body: JSON.stringify({ labels }),
+    });
+    if (!res.ok) throw new Error(`addLabels ${res.status}: ${await res.text()}`);
+  }
+
+  async ensureLabel(repo: string, name: string, color: string, description: string): Promise<void> {
+    const encodedName = encodeURIComponent(name);
+    const existing = await this.req(`/repos/${repo}/labels/${encodedName}`);
+    if (existing.ok) return;
+    if (existing.status !== 404) throw new Error(`ensureLabel GET ${existing.status}: ${await existing.text()}`);
+
+    const created = await this.req(`/repos/${repo}/labels`, {
+      method: "POST",
+      body: JSON.stringify({ name, color, description }),
+    });
+    if (created.ok || created.status === 422) return;
+    throw new Error(`ensureLabel POST ${created.status}: ${await created.text()}`);
+  }
+
   // Permission of a user on a repo ("admin" | "write" | "read" | "none").
   async getUserPermission(repo: string, username: string): Promise<string> {
     const res = await this.req(`/repos/${repo}/collaborators/${encodeURIComponent(username)}/permission`);

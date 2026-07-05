@@ -12,7 +12,9 @@ Passing posts a public attestation; maintainers get a behavioral risk report.
    `require_approval`).
 3. The PR author opens the challenge link, signs in with GitHub, passes
    Turnstile, and takes a 4-question quiz generated from the diff (intent /
-   blast radius / spot-the-false-claim).
+   blast radius / spot-the-false-claim). Passive signals such as Turnstile,
+   timing, browser automation hints, and a report-only honeypot feed the risk
+   report, not the quiz score.
 4. Pass (3 of 4 by default) → green check + attestation comment. Fail →
    15-minute cooldown, fresh quiz on retry, up to 3 attempts by default.
 5. The check run summary includes a risk report (timings, Turnstile verdict,
@@ -38,6 +40,16 @@ exemptions:
   - type: linked_issue_match
     min_match_score: 0.7
 
+signals:
+  # Enabled by default. This is a passive risk signal, never a scoring rule.
+  - type: honeypot
+    report_only: true
+  # Optional. Maintainer-authored literal canaries scanned only in added diff lines.
+  - type: code_honeypot
+    report_only: true
+    patterns: ["CLAWPTCHA_DO_NOT_ADD_THIS"]
+    paths: ["src/**", "*.md"]
+
 max_attempts: 3
 cooldown_minutes: 15
 require_approval: first_time  # first_time | always | never
@@ -53,6 +65,7 @@ max_context_tokens: null
 |---|---|---|
 | `gates` | `[{ type: "multiple_choice", questions: 4, pass_threshold: 3 }]` | Author-facing challenge stages. Today Clawptcha supports `multiple_choice`, with `questions` as an integer 1–10 and `pass_threshold` capped at the question count. |
 | `exemptions` | `[]` | Structured reasons no challenge is required. Today Clawptcha supports `linked_issue_match`, which can exempt a PR when it closes a trusted issue and the issue intent matches the PR. |
+| `signals` | `[{ type: "honeypot", report_only: true }]` | Passive risk signals that appear in the maintainer report. Today Clawptcha supports `honeypot`, an off-screen decoy form field that can flag broad automated form filling, and `code_honeypot`, maintainer-authored literal canary patterns scanned only in added diff lines. Set `signals: []` to disable passive honeypot collection. |
 | `pass_threshold` | `3` | Legacy shortcut for the default multiple-choice gate's threshold when `gates` is omitted. New configs should prefer `gates[0].pass_threshold`. |
 | `max_attempts` | `3` | Integer, 1–10. Total quiz attempts allowed per challenge before the check becomes `failed_final` and stays failed for maintainers to review manually. |
 | `cooldown_minutes` | `15` | Integer, ≥ 0. Minutes an author must wait after a failed (non-final) attempt before starting a retry. |
@@ -82,6 +95,30 @@ issue, and exempts the PR only when:
 
 If the issue is missing, untrusted, or only weakly related, Clawptcha falls back
 to the configured `gates`; it does not fail the PR for an uncertain exemption.
+
+### Passive risk signals
+
+`honeypot` renders an off-screen, unfocusable decoy text field in challenge
+forms. A normal author should never touch it. If broad form-filling automation
+submits a value, Clawptcha records "a hidden form field was submitted" in the
+risk report.
+
+`code_honeypot` lets maintainers configure literal canary strings that should
+never be introduced by a careful contributor. Clawptcha scans the PR's unified
+diff and only matches added lines in the configured `paths`; removed lines and
+context lines do not count. If an added line contains a canary, the risk report
+records "the PR introduced a configured code honeypot marker" without exposing
+the exact marker in the PR comment. If the PR is exempt or reuses a prior pass,
+the same report-only signal is shown in the success check summary.
+
+Like Turnstile, timing, pointer summaries, and `webdriver`, passive honeypots
+are report-only. A filled form honeypot or matched code canary never changes
+the quiz score and never silently fails an otherwise correct challenge on its
+own.
+
+When a passed quiz has multiple passive risk signals, Clawptcha marks the check
+title and PR comment, and best-effort creates/applies the `clawptcha:flagged`
+label so maintainers can spot it from the PR list.
 
 ### Glob semantics (`skip_paths`)
 
@@ -218,10 +255,12 @@ If you prefer doing it by hand, or a wizard phase fails and points you here:
   trail.
 - Telemetry captured during the quiz is **summary statistics only** —
   per-question timings, answer-change counts, aggregate pointer-movement
-  distance/sample counts, focus-loss counts, and automation fingerprints
-  (e.g. a `webdriver` flag). There is no keystroke logging or content
-  capture, and its collection is disclosed on the quiz page. Turnstile and
-  telemetry inform the risk report; neither one blocks a pass on its own.
+  distance/sample counts, focus-loss counts, whether the report-only honeypot
+  was submitted, whether configured code canaries appeared in added diff lines,
+  and automation fingerprints (e.g. a `webdriver` flag). There is no keystroke
+  logging or content capture, and its collection is disclosed on the quiz page.
+  Turnstile and telemetry inform the risk report; neither one blocks a pass on
+  its own.
 - Webhook payloads are authenticated via HMAC-SHA256 signature verification
   (`x-hub-signature-256`) before any processing happens.
 

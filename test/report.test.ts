@@ -14,6 +14,8 @@ const humanTelemetry: Telemetry = {
   focusLossCount: 1,
   webdriver: false,
   turnstileOk: true,
+  honeypotTriggered: false,
+  codeHoneypotTriggered: false,
 };
 
 const botTelemetry: Telemetry = {
@@ -24,6 +26,8 @@ const botTelemetry: Telemetry = {
   focusLossCount: 0,
   webdriver: true,
   turnstileOk: false,
+  honeypotTriggered: true,
+  codeHoneypotTriggered: true,
 };
 
 describe("buildRiskReport", () => {
@@ -33,28 +37,62 @@ describe("buildRiskReport", () => {
     expect(r.signals).toEqual([]);
   });
 
-  it("flags automation fingerprints and fast uniform answers", () => {
+  it("flags automation fingerprints and fast uniform answers, in plain language", () => {
     const r = buildRiskReport(botTelemetry);
     expect(r.automationLikely).toBe(true);
-    expect(r.signals).toContain("webdriver flag present");
-    expect(r.signals).toContain("turnstile failed or missing");
-    expect(r.signals).toContain("all answers under 10s");
-    expect(r.signals).toContain("negligible pointer movement");
+    expect(r.signals).toContain("the browser identified itself as automated software");
+    expect(r.signals).toContain("the bot check (Turnstile) did not pass");
+    expect(r.signals).toContain("every answer took under 10 seconds");
+    expect(r.signals).toContain("almost no mouse movement");
+    expect(r.signals).toContain("a hidden form field was submitted");
+    expect(r.signals).toContain("the PR introduced a configured code honeypot marker");
   });
 
   it("handles missing telemetry gracefully (reports unknown, not low-risk)", () => {
     const r = buildRiskReport(null);
     expect(r.automationLikely).toBe(false);
-    expect(r.signals).toContain("no telemetry received");
+    expect(r.signals).toContain("no interaction data was received");
+  });
+
+  it("treats honeypot alone as a signal, not a verdict", () => {
+    const r = buildRiskReport({ ...humanTelemetry, honeypotTriggered: true });
+    expect(r.automationLikely).toBe(false);
+    expect(r.signals).toEqual(["a hidden form field was submitted"]);
+  });
+
+  it("combines honeypot with another independent signal", () => {
+    const r = buildRiskReport({
+      ...humanTelemetry,
+      pointerDistancePx: 0,
+      pointerSamples: 0,
+      honeypotTriggered: true,
+    });
+    expect(r.automationLikely).toBe(true);
+    expect(r.signals).toContain("a hidden form field was submitted");
+    expect(r.signals).toContain("almost no mouse movement");
+  });
+
+  it("treats code honeypot alone as a signal, not a verdict", () => {
+    const r = buildRiskReport({ ...humanTelemetry, codeHoneypotTriggered: true });
+    expect(r.automationLikely).toBe(false);
+    expect(r.signals).toEqual(["the PR introduced a configured code honeypot marker"]);
   });
 });
 
 describe("renderRiskReportMarkdown", () => {
-  it("includes timings, verdict and signals", () => {
+  it("describes a flagged pass in human terms, with timings and signals", () => {
     const md = renderRiskReportMarkdown(buildRiskReport(botTelemetry), botTelemetry);
-    expect(md).toContain("automation-likely");
+    expect(md).toContain("completed by a script");
+    expect(md).not.toContain("automation-likely");
     expect(md).toContain("Q1: 4s");
     expect(md).toContain("Turnstile");
+    expect(md).toContain("Hidden field: submitted");
+    expect(md).toContain("Code honeypot: matched");
+  });
+
+  it("describes a clean pass as nothing unusual", () => {
+    const md = renderRiskReportMarkdown(buildRiskReport(humanTelemetry), humanTelemetry);
+    expect(md).toContain("Nothing unusual");
   });
 });
 
@@ -68,6 +106,8 @@ describe("telemetrySchema hardening", () => {
       focusLossCount: 0,
       webdriver: false,
       turnstileOk: true,
+      honeypotTriggered: false,
+      codeHoneypotTriggered: false,
     });
     expect(t.perQuestionMs).toEqual([]);
     expect(t.answerChanges).toBe(0);
@@ -77,8 +117,8 @@ describe("telemetrySchema hardening", () => {
 
   it("renders the null-telemetry report without crashing", () => {
     const md = renderRiskReportMarkdown(buildRiskReport(null), null);
-    expect(md).toContain("inconclusive");
-    expect(md).toContain("no telemetry received");
+    expect(md).toContain("Mixed signals");
+    expect(md).toContain("no interaction data was received");
     expect(md).not.toContain("Total time");
   });
 });

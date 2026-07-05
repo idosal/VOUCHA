@@ -1,6 +1,13 @@
 // test/config.test.ts
 import { describe, it, expect } from "vitest";
-import { getLinkedIssueMatchExemption, getMultipleChoiceGate, parseConfig, DEFAULT_CONFIG } from "../src/config";
+import {
+  getLinkedIssueMatchExemption,
+  getCodeHoneypotSignals,
+  getMultipleChoiceGate,
+  hasHoneypotSignal,
+  parseConfig,
+  DEFAULT_CONFIG,
+} from "../src/config";
 
 describe("parseConfig", () => {
   it("returns defaults for null/empty input", () => {
@@ -45,6 +52,53 @@ describe("parseConfig", () => {
     });
   });
 
+  it("enables report-only honeypot signals by default and supports opt-out", () => {
+    expect(hasHoneypotSignal(parseConfig(null))).toBe(true);
+    expect(parseConfig(null).signals).toEqual([{ type: "honeypot", report_only: true }]);
+    expect(hasHoneypotSignal(parseConfig("signals: []\n"))).toBe(false);
+  });
+
+  it("parses honeypot signals as report-only even if a config tries to make them blocking", () => {
+    const cfg = parseConfig(
+      "signals:\n  - type: honeypot\n    report_only: false\n"
+    );
+    expect(cfg.signals).toEqual([{ type: "honeypot", report_only: true }]);
+  });
+
+  it("parses code honeypot signals with literal patterns and path filters", () => {
+    const cfg = parseConfig([
+      "signals:",
+      "  - type: code_honeypot",
+      "    report_only: false",
+      "    patterns: [CLAWPTCHA_DO_NOT_ADD_THIS, CLAWPTCHA_DO_NOT_ADD_THIS]",
+      "    paths: ['src/**', '*.md', 'src/**']",
+      "",
+    ].join("\n"));
+
+    expect(getCodeHoneypotSignals(cfg)).toEqual([{
+      type: "code_honeypot",
+      report_only: true,
+      patterns: ["CLAWPTCHA_DO_NOT_ADD_THIS"],
+      paths: ["src/**", "*.md"],
+    }]);
+  });
+
+  it("keeps invalid code honeypot patterns inert", () => {
+    const cfg = parseConfig([
+      "signals:",
+      "  - type: code_honeypot",
+      "    patterns: []",
+      "",
+    ].join("\n"));
+
+    expect(getCodeHoneypotSignals(cfg)).toEqual([{
+      type: "code_honeypot",
+      report_only: true,
+      patterns: [],
+      paths: ["**"],
+    }]);
+  });
+
   it("parses require_approval enum and rejects bad values", () => {
     expect(parseConfig("require_approval: always").require_approval).toBe("always");
     // invalid value falls back to default rather than crashing webhook handling
@@ -82,11 +136,21 @@ describe("parseConfig", () => {
     a.skip_paths.push("mutated/**");
     a.skip_authors.push("mallory");
     a.gates.push({ type: "multiple_choice", questions: 2, pass_threshold: 2 });
+    a.signals.push({ type: "honeypot", report_only: true });
+    a.signals.push({
+      type: "code_honeypot",
+      report_only: true,
+      patterns: ["MUTATE_ME"],
+      paths: ["src/**"],
+    });
+    const codeSignal = a.signals.find((signal) => signal.type === "code_honeypot");
+    codeSignal?.patterns.push("changed");
     const b = parseConfig(null);
     expect(b.pass_threshold).toBe(3);
     expect(b.skip_paths).toEqual(["docs/**", "*.md"]);
     expect(b.skip_authors).toEqual([]);
     expect(b.gates).toEqual([{ type: "multiple_choice", questions: 4, pass_threshold: 3 }]);
+    expect(b.signals).toEqual([{ type: "honeypot", report_only: true }]);
     expect(DEFAULT_CONFIG.pass_threshold).toBe(3);
   });
 

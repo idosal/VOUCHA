@@ -73,6 +73,54 @@ describe("GitHubApi", () => {
     expect(JSON.parse(String(patchCall![1]!.body)).body).toContain("<!-- clawptcha -->");
   });
 
+  it("adds labels to a PR via the issues labels endpoint", async () => {
+    const f = mockFetch(200, [{ name: "clawptcha:flagged" }]);
+    const api = new GitHubApi("tok", f as unknown as typeof fetch);
+    await api.addLabels("o/r", 5, ["clawptcha:flagged"]);
+    const [url, init] = f.mock.calls[0];
+    expect(String(url)).toBe("https://api.github.com/repos/o/r/issues/5/labels");
+    expect(init!.method).toBe("POST");
+    expect(JSON.parse(init!.body as string)).toEqual({ labels: ["clawptcha:flagged"] });
+  });
+
+  it("creates a missing label before it is used", async () => {
+    const f = vi.fn(async (url: RequestInfo | URL, init?: RequestInit) => {
+      if (!init?.method || init.method === "GET") {
+        return new Response(JSON.stringify({ message: "Not Found" }), { status: 404 });
+      }
+      return new Response(JSON.stringify({ name: "clawptcha:flagged" }), { status: 201 });
+    });
+    const api = new GitHubApi("tok", f as unknown as typeof fetch);
+    await api.ensureLabel("o/r", "clawptcha:flagged", "b60205", "Flagged by Clawptcha");
+
+    expect(String(f.mock.calls[0][0])).toBe("https://api.github.com/repos/o/r/labels/clawptcha%3Aflagged");
+    expect(String(f.mock.calls[1][0])).toBe("https://api.github.com/repos/o/r/labels");
+    expect(JSON.parse(f.mock.calls[1][1]!.body as string)).toEqual({
+      name: "clawptcha:flagged",
+      color: "b60205",
+      description: "Flagged by Clawptcha",
+    });
+  });
+
+  it("does not recreate an existing label", async () => {
+    const f = mockFetch(200, { name: "clawptcha:flagged" });
+    const api = new GitHubApi("tok", f as unknown as typeof fetch);
+    await api.ensureLabel("o/r", "clawptcha:flagged", "b60205", "Flagged by Clawptcha");
+    expect(f).toHaveBeenCalledTimes(1);
+  });
+
+  it("tolerates a concurrent label creation race", async () => {
+    const f = vi.fn(async (_url: RequestInfo | URL, init?: RequestInit) => {
+      if (!init?.method || init.method === "GET") {
+        return new Response(JSON.stringify({ message: "Not Found" }), { status: 404 });
+      }
+      return new Response(JSON.stringify({ message: "already_exists" }), { status: 422 });
+    });
+    const api = new GitHubApi("tok", f as unknown as typeof fetch);
+    await expect(api.ensureLabel("o/r", "clawptcha:flagged", "b60205", "Flagged by Clawptcha"))
+      .resolves.toBeUndefined();
+  });
+
   it("gets a check run's status and conclusion", async () => {
     const f = mockFetch(200, { status: "completed", conclusion: "success", id: 55 });
     const api = new GitHubApi("tok", f as unknown as typeof fetch);

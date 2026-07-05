@@ -1,11 +1,18 @@
 import type { Env, Challenge } from "./types";
 import { getChallenge, setChallengeStatus, randomToken } from "./store";
-import { getMultipleChoiceGate, resolveConfig, type ClawptchaConfig } from "./config";
+import {
+  getCodeHoneypotSignals,
+  getMultipleChoiceGate,
+  hasHoneypotSignal,
+  resolveConfig,
+  type ClawptchaConfig,
+} from "./config";
 import type { Quiz, Question } from "./quiz/schema";
 import {
   canStartAttempt, scoreQuiz, nextCooldown, answerWithinTimeLimit, type Answer,
 } from "./quiz/grade";
 import { checkAndRecordRate } from "./policy/ratelimit";
+import { evaluateCodeHoneypotSignals } from "./policy/code-honeypot";
 import { telemetrySchema, type Telemetry } from "./risk/report";
 import type { GenerateResult } from "./quiz/generate";
 
@@ -42,7 +49,8 @@ async function purgeQuizQuestions(env: Env, challengeId: string): Promise<void> 
 }
 
 export async function startQuizAttempt(
-  env: Env, deps: ChallengeDeps, challengeId: string, ghLogin: string, turnstileToken: string
+  env: Env, deps: ChallengeDeps, challengeId: string, ghLogin: string, turnstileToken: string,
+  honeypotTriggered = false
 ): Promise<StartResult> {
   const challenge = await getChallenge(env.DB, challengeId);
   if (!challenge) return { ok: false, error: "not_found" };
@@ -65,6 +73,7 @@ export async function startQuizAttempt(
   const turnstileOk = await deps.verifyTurnstile(turnstileToken);
 
   const ctx = await deps.fetchPrContext(challenge);
+  const codeHoneypot = evaluateCodeHoneypotSignals(ctx.diff, getCodeHoneypotSignals(cfg));
   const generated = await deps.generateQuiz(ctx, cfg);
   if (!generated.ok) {
     // Never block merges on our own failure: neutralize.
@@ -85,12 +94,16 @@ export async function startQuizAttempt(
   ).bind(deps.now().toISOString(), challenge.id).run();
 
   const quizId = randomToken();
+  const initialTelemetry: { honeypotTriggered?: boolean; codeHoneypotTriggered?: boolean } = {};
+  if (hasHoneypotSignal(cfg) && honeypotTriggered) initialTelemetry.honeypotTriggered = true;
+  if (codeHoneypot.triggered) initialTelemetry.codeHoneypotTriggered = true;
   await env.DB.prepare(
-    `INSERT INTO quizzes (id, challenge_id, attempt_number, questions_json, question_served_at, turnstile_ok)
-     VALUES (?, ?, ?, ?, ?, ?)`
+    `INSERT INTO quizzes (id, challenge_id, attempt_number, questions_json, question_served_at, turnstile_ok, telemetry_json)
+     VALUES (?, ?, ?, ?, ?, ?, ?)`
   ).bind(
     quizId, challenge.id, challenge.attempts_used + 1,
-    JSON.stringify(generated.quiz), deps.now().toISOString(), turnstileOk ? 1 : 0
+    JSON.stringify(generated.quiz), deps.now().toISOString(), turnstileOk ? 1 : 0,
+    JSON.stringify(initialTelemetry)
   ).run();
   return { ok: true, quizId };
 }
@@ -111,14 +124,43 @@ interface PerQuestionTelemetry {
   pointerSamples: number; focusLossCount: number; webdriver: boolean;
 }
 
+interface StoredTelemetry {
+  perQuestion: PerQuestionTelemetry[];
+  honeypotTriggered: boolean;
+  codeHoneypotTriggered: boolean;
+}
+
+function parseStoredTelemetry(json: string): StoredTelemetry {
+  try {
+    const parsed = JSON.parse(json || "{}") as {
+      perQuestion?: unknown;
+      honeypotTriggered?: unknown;
+      codeHoneypotTriggered?: unknown;
+    };
+    return {
+      perQuestion: Array.isArray(parsed.perQuestion)
+        ? parsed.perQuestion as PerQuestionTelemetry[]
+        : [],
+      honeypotTriggered: parsed.honeypotTriggered === true,
+      codeHoneypotTriggered: parsed.codeHoneypotTriggered === true,
+    };
+  } catch {
+    return { perQuestion: [], honeypotTriggered: false, codeHoneypotTriggered: false };
+  }
+}
+
 export async function submitAnswer(
   env: Env, deps: ChallengeDeps, quizId: string, questionIndex: number,
-  answer: number[], telemetryJson: string
+  answer: number[], telemetryJson: string, honeypotTriggered = false
 ): Promise<SubmitResult> {
   // Defense in depth: option indices outside the rendered range are discarded.
   answer = answer.filter((n) => Number.isInteger(n) && n >= 0 && n <= 3);
 
-  const quiz = await env.DB.prepare("SELECT * FROM quizzes WHERE id=?").bind(quizId).first<QuizRow>();
+  const quiz = await env.DB.prepare(
+    `SELECT q.*, ch.config_json
+     FROM quizzes q JOIN challenges ch ON ch.id = q.challenge_id
+     WHERE q.id=?`
+  ).bind(quizId).first<QuizRow & { config_json: string }>();
   if (!quiz) return { done: true, error: "not_found" };
   if (quiz.finished_at) return { done: true, error: "already_finished" };
 
@@ -137,8 +179,11 @@ export async function submitAnswer(
   answers.push(withinTime ? answer : null);
 
   // accumulate per-question telemetry (best-effort; malformed input → skipped)
-  const stored = JSON.parse(quiz.telemetry_json || "{}") as { perQuestion?: PerQuestionTelemetry[] };
-  const perQuestion = stored.perQuestion ?? [];
+  const cfg = resolveConfig(quiz.config_json);
+  const stored = parseStoredTelemetry(quiz.telemetry_json);
+  const perQuestion = stored.perQuestion;
+  const sawHoneypot = stored.honeypotTriggered || (hasHoneypotSignal(cfg) && honeypotTriggered);
+  const sawCodeHoneypot = stored.codeHoneypotTriggered;
   try {
     perQuestion.push(JSON.parse(telemetryJson) as PerQuestionTelemetry);
   } catch { /* missing telemetry is itself a signal, handled at report time */ }
@@ -155,7 +200,11 @@ export async function submitAnswer(
      WHERE id=? AND current_question=? AND finished_at IS NULL`
   ).bind(
     JSON.stringify(answers),
-    JSON.stringify({ perQuestion }),
+    JSON.stringify({
+      perQuestion,
+      honeypotTriggered: sawHoneypot,
+      codeHoneypotTriggered: sawCodeHoneypot,
+    }),
     nextIndex,
     null,
     isLast ? now.toISOString() : null,
@@ -165,12 +214,13 @@ export async function submitAnswer(
   if (updated.meta.changes === 0) return { done: true, error: "already_finished" };
 
   if (!isLast) return { done: false, nextQuestion: nextIndex };
-  return finalizeQuiz(env, deps, quiz, questions, answers, perQuestion, now);
+  return finalizeQuiz(env, deps, quiz, questions, answers, perQuestion, sawHoneypot, sawCodeHoneypot, now);
 }
 
 async function finalizeQuiz(
   env: Env, deps: ChallengeDeps, quiz: QuizRow, questions: Question[],
-  answers: Answer[], perQuestion: PerQuestionTelemetry[], now: Date
+  answers: Answer[], perQuestion: PerQuestionTelemetry[], honeypotTriggered: boolean,
+  codeHoneypotTriggered: boolean, now: Date
 ): Promise<SubmitResult> {
   const challenge = (await getChallenge(env.DB, quiz.challenge_id))!;
   // Outcomes only apply to a live challenge. A quiz finishing after the
@@ -186,15 +236,20 @@ async function finalizeQuiz(
 
   await env.DB.prepare("UPDATE quizzes SET score=? WHERE id=?").bind(score, quiz.id).run();
 
-  const telemetry: Telemetry | null = perQuestion.length === 0 ? null : telemetrySchema.parse({
-    perQuestionMs: perQuestion.map((t) => t.elapsedMs),
-    answerChanges: perQuestion.reduce((a, t) => a + t.answerChanges, 0),
-    pointerDistancePx: perQuestion.reduce((a, t) => a + t.pointerDistancePx, 0),
-    pointerSamples: perQuestion.reduce((a, t) => a + t.pointerSamples, 0),
-    focusLossCount: perQuestion.reduce((a, t) => a + t.focusLossCount, 0),
-    webdriver: perQuestion.some((t) => t.webdriver),
-    turnstileOk: quiz.turnstile_ok === 1,
-  });
+  const telemetry: Telemetry | null =
+    perQuestion.length === 0 && !honeypotTriggered && !codeHoneypotTriggered
+      ? null
+      : telemetrySchema.parse({
+        perQuestionMs: perQuestion.map((t) => t.elapsedMs),
+        answerChanges: perQuestion.reduce((a, t) => a + t.answerChanges, 0),
+        pointerDistancePx: perQuestion.reduce((a, t) => a + t.pointerDistancePx, 0),
+        pointerSamples: perQuestion.reduce((a, t) => a + t.pointerSamples, 0),
+        focusLossCount: perQuestion.reduce((a, t) => a + t.focusLossCount, 0),
+        webdriver: perQuestion.some((t) => t.webdriver),
+        turnstileOk: quiz.turnstile_ok === 1,
+        honeypotTriggered,
+        codeHoneypotTriggered,
+      });
 
   let outcome: ResolvedChallenge["outcome"];
   if (passed) {

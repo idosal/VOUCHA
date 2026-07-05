@@ -4,13 +4,20 @@ import { GitHubApi } from "./github/api";
 import { getInstallationToken } from "./github/auth";
 import { buildRiskReport, renderRiskReportMarkdown } from "./risk/report";
 
+const FLAGGED_LABEL = "clawptcha:flagged";
+const FLAGGED_LABEL_COLOR = "b60205";
+const FLAGGED_LABEL_DESCRIPTION = "Clawptcha saw multiple passive risk signals on a passed challenge.";
+
 export async function apiForInstallation(env: Env, installationId: number): Promise<GitHubApi> {
   const token = await getInstallationToken(env.GITHUB_APP_ID, env.GITHUB_PRIVATE_KEY, installationId);
   return new GitHubApi(token);
 }
 
-export async function onChallengeResolved(env: Env, r: ResolvedChallenge): Promise<void> {
-  const api = await apiForInstallation(env, r.challenge.installation_id);
+export async function onChallengeResolved(
+  env: Env, r: ResolvedChallenge,
+  apiFactory: (env: Env, installationId: number) => Promise<GitHubApi> = apiForInstallation
+): Promise<void> {
+  const api = await apiFactory(env, r.challenge.installation_id);
   const repo = r.challenge.repo_full_name;
   const pr = r.challenge.pr_number;
   const checkId = r.challenge.check_run_id;
@@ -23,27 +30,39 @@ export async function onChallengeResolved(env: Env, r: ResolvedChallenge): Promi
       if (checkId) await api.updateCheckRun(repo, checkId, {
         status: "completed", conclusion: "success",
         output: {
-          title: report.automationLikely ? "Passed (automation-likely)" : "Passed",
+          title: report.automationLikely ? "Passed — but the quiz looks scripted" : "Passed",
           summary: `Score ${r.score}/${r.total}.\n\n${riskMd}`,
         },
       });
+      if (report.automationLikely) {
+        // Comment edits don't notify anyone; the label is what makes a flagged
+        // pass visible from the PR list. Best-effort: a labeling failure (e.g.
+        // missing permission) must not block the attestation below.
+        try {
+          await api.ensureLabel(repo, FLAGGED_LABEL, FLAGGED_LABEL_COLOR, FLAGGED_LABEL_DESCRIPTION);
+          await api.addLabels(repo, pr, [FLAGGED_LABEL]);
+        } catch { /* attestation still posts; check title carries the flag */ }
+      }
       await api.upsertPrComment(repo, pr, [
         "## 🦞 Clawptcha — passed ✅",
         "",
         `@${r.challenge.author_login} certified under challenge that they personally understand this change (score ${r.score}/${r.total}).`,
         "",
         report.automationLikely
-          ? "> ⚠️ The behavioral risk report flagged this pass as **automation-likely**. Maintainers: see the check run details."
+          ? `> ⚠️ **Worth a second look before merging:** this quiz was completed in a way that looks scripted — ${report.signals.join("; ")}.`
           : "_Behavioral risk report attached to the check run for maintainers._",
       ].join("\n"));
       break;
     }
     case "failed_retry": {
+      // No risk report while attempts remain: per-attempt signal feedback is a
+      // training signal for evasion (fail → read fired signals → adjust →
+      // retry). The full behavioral report ships with the final verdict only.
       if (checkId) await api.updateCheckRun(repo, checkId, {
         status: "completed", conclusion: "failure",
         output: {
           title: `Failed (attempt ${r.challenge.attempts_used}/${r.cfg.max_attempts})`,
-          summary: `Score ${r.score}/${r.total}. Retry available after cooldown (${r.cfg.cooldown_minutes} min) with a freshly generated quiz.\n\n${riskMd}`,
+          summary: `Score ${r.score}/${r.total}. Retry available after cooldown (${r.cfg.cooldown_minutes} min) with a freshly generated quiz. A behavioral report accompanies the final result.`,
         },
       });
       break;

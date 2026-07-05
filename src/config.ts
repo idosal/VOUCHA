@@ -7,6 +7,11 @@ const DEFAULT_MULTIPLE_CHOICE_GATE = Object.freeze({
   pass_threshold: 3,
 });
 
+const DEFAULT_HONEYPOT_SIGNAL = Object.freeze({
+  type: "honeypot" as const,
+  report_only: true,
+});
+
 const multipleChoiceGateSchema = z.object({
   type: z.literal("multiple_choice"),
   questions: z.number().int().min(1).max(10).catch(DEFAULT_MULTIPLE_CHOICE_GATE.questions),
@@ -15,6 +20,31 @@ const multipleChoiceGateSchema = z.object({
   ...gate,
   pass_threshold: Math.min(gate.pass_threshold, gate.questions),
 }));
+
+const honeypotSignalSchema = z.object({
+  type: z.literal("honeypot"),
+  report_only: z.boolean().catch(DEFAULT_HONEYPOT_SIGNAL.report_only),
+}).transform((signal) => ({
+  ...signal,
+  report_only: true,
+}));
+
+const codeHoneypotSignalSchema = z.object({
+  type: z.literal("code_honeypot"),
+  patterns: z.array(z.string().trim().min(1).max(200)).max(20).catch(() => []),
+  paths: z.array(z.string().trim().min(1).max(200)).max(50).catch(() => ["**"]),
+  report_only: z.boolean().catch(true),
+}).transform((signal) => ({
+  ...signal,
+  patterns: [...new Set(signal.patterns)],
+  paths: [...new Set(signal.paths)],
+  report_only: true,
+}));
+
+const signalSchema = z.union([
+  honeypotSignalSchema,
+  codeHoneypotSignalSchema,
+]);
 
 const linkedIssueMatchExemptionSchema = z.object({
   type: z.literal("linked_issue_match"),
@@ -28,6 +58,7 @@ const linkedIssueMatchExemptionSchema = z.object({
 const configSchema = z.object({
   pass_threshold: z.number().int().min(1).max(4).catch(3),
   gates: z.array(multipleChoiceGateSchema).min(1).catch(() => [{ ...DEFAULT_MULTIPLE_CHOICE_GATE }]),
+  signals: z.array(signalSchema).catch(() => [{ ...DEFAULT_HONEYPOT_SIGNAL }]),
   exemptions: z.array(linkedIssueMatchExemptionSchema).catch(() => []),
   max_attempts: z.number().int().min(1).max(10).catch(3),
   cooldown_minutes: z.number().int().min(0).catch(15),
@@ -49,7 +80,21 @@ const configSchema = z.object({
 type RawClawptchaConfig = z.infer<typeof configSchema>;
 export type ClawptchaConfig = RawClawptchaConfig;
 export type MultipleChoiceGate = z.infer<typeof multipleChoiceGateSchema>;
+export type ClawptchaSignal = z.infer<typeof signalSchema>;
+export type HoneypotSignal = Extract<ClawptchaSignal, { type: "honeypot" }>;
+export type CodeHoneypotSignal = Extract<ClawptchaSignal, { type: "code_honeypot" }>;
 export type LinkedIssueMatchExemption = z.infer<typeof linkedIssueMatchExemptionSchema>;
+
+function cloneSignal(signal: ClawptchaSignal): ClawptchaSignal {
+  if (signal.type === "code_honeypot") {
+    return {
+      ...signal,
+      patterns: [...signal.patterns],
+      paths: [...signal.paths],
+    };
+  }
+  return { ...signal };
+}
 
 function normalizeConfig(
   parsed: RawClawptchaConfig,
@@ -59,6 +104,7 @@ function normalizeConfig(
   const cfg: ClawptchaConfig = {
     ...parsed,
     gates,
+    signals: parsed.signals.map(cloneSignal),
     exemptions: parsed.exemptions.map((exemption) => ({
       ...exemption,
       trusted_labels: [...exemption.trusted_labels],
@@ -81,11 +127,19 @@ function normalizeConfig(
 
 function freezeConfig(cfg: ClawptchaConfig): ClawptchaConfig {
   for (const gate of cfg.gates) Object.freeze(gate);
+  for (const signal of cfg.signals) {
+    if (signal.type === "code_honeypot") {
+      Object.freeze(signal.patterns);
+      Object.freeze(signal.paths);
+    }
+    Object.freeze(signal);
+  }
   for (const exemption of cfg.exemptions) {
     Object.freeze(exemption.trusted_labels);
     Object.freeze(exemption);
   }
   Object.freeze(cfg.gates);
+  Object.freeze(cfg.signals);
   Object.freeze(cfg.exemptions);
   Object.freeze(cfg.skip_authors);
   Object.freeze(cfg.skip_paths);
@@ -100,6 +154,14 @@ export const DEFAULT_CONFIG: ClawptchaConfig = freezeConfig(freshDefaults());
 
 export function getMultipleChoiceGate(cfg: ClawptchaConfig): MultipleChoiceGate {
   return cfg.gates.find((gate) => gate.type === "multiple_choice") ?? { ...DEFAULT_MULTIPLE_CHOICE_GATE };
+}
+
+export function hasHoneypotSignal(cfg: ClawptchaConfig): boolean {
+  return cfg.signals.some((signal) => signal.type === "honeypot");
+}
+
+export function getCodeHoneypotSignals(cfg: ClawptchaConfig): CodeHoneypotSignal[] {
+  return cfg.signals.filter((signal) => signal.type === "code_honeypot");
 }
 
 export function getLinkedIssueMatchExemption(

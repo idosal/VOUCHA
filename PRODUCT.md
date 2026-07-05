@@ -54,4 +54,4 @@ Target WCAG AA for user-facing surfaces. Preserve readable contrast, visible foc
 
 The quiz should remain usable under time pressure without becoming hostile. Timers must be visible and understandable, but the interface should avoid panic-inducing effects or inaccessible motion.
 
-Telemetry disclosure should stay plain and privacy-respecting: Clawptcha records summary timing and interaction statistics for risk reporting, not keystrokes, written content, webcam data, or hidden surveillance.
+Telemetry disclosure should stay plain and privacy-respecting: Clawptcha records summary timing and interaction statistics for risk reporting, plus whether report-only decoy fields were submitted or maintainer-configured code canaries appeared in added diff lines. It does not record keystrokes, written content, webcam data, or invasive surveillance.

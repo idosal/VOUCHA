@@ -7,12 +7,12 @@ import { apiForInstallation, onChallengeResolved, sweepStaleChallenges } from ".
 import { getChallenge, randomToken } from "./store";
 import { signSessionCookie, verifySessionCookie } from "./ui/session";
 import { authorizeUrl, exchangeCodeForLogin } from "./github/oauth";
-import { startPage, questionPage, resultPage, errorPage } from "./ui/pages";
+import { startPage, questionPage, resultPage, errorPage, HONEYPOT_FIELD_NAME } from "./ui/pages";
 import { startQuizAttempt, submitAnswer, type ChallengeDeps } from "./challenge";
 import { generateQuiz } from "./quiz/generate";
 import { redactForClient, type Quiz } from "./quiz/schema";
 import { QUESTION_TIME_LIMIT_MS } from "./quiz/grade";
-import { getMultipleChoiceGate } from "./config";
+import { getMultipleChoiceGate, hasHoneypotSignal, resolveConfig } from "./config";
 import { providerFromEnv } from "./quiz/providers";
 
 const app = new Hono<{ Bindings: Env }>();
@@ -57,6 +57,13 @@ app.post("/webhook", async (c) => {
 
 // ---------- session helpers ----------
 const SESSION_MAX_AGE_MS = 60 * 60_000;
+
+function hasSubmittedHoneypot(form: Record<string, unknown>): boolean {
+  const raw = form[HONEYPOT_FIELD_NAME];
+  if (Array.isArray(raw)) return raw.some((value) => String(value ?? "").trim().length > 0);
+  if (typeof raw === "string") return raw.trim().length > 0;
+  return raw !== undefined && raw !== null;
+}
 
 async function currentSession(
   c: Context<{ Bindings: Env }>
@@ -192,8 +199,10 @@ app.get("/challenge/:id", async (c) => {
     return c.html(errorPage("Challenge no longer active",
       "This challenge is no longer active — a newer commit or outcome has replaced it. Check the PR for the current status."));
   }
+  const cfg = resolveConfig(challenge.config_json);
   return c.html(startPage(
-    `${challenge.repo_full_name}#${challenge.pr_number}`, c.env.TURNSTILE_SITE_KEY, challenge.id
+    `${challenge.repo_full_name}#${challenge.pr_number}`, c.env.TURNSTILE_SITE_KEY, challenge.id,
+    hasHoneypotSignal(cfg)
   ));
 });
 
@@ -203,7 +212,8 @@ app.post("/challenge/:id/start", async (c) => {
   const form = await c.req.parseBody();
   const result = await startQuizAttempt(
     c.env, challengeDeps(c.env), c.req.param("id"),
-    session.gh_login, String(form["cf-turnstile-response"] ?? "")
+    session.gh_login, String(form["cf-turnstile-response"] ?? ""),
+    hasSubmittedHoneypot(form)
   );
   if (!result.ok) {
     const messages: Record<string, string> = {
@@ -232,10 +242,11 @@ app.get("/challenge/:id/question", async (c) => {
   const quizId = getCookie(c, "clawptcha_quiz");
   if (!session?.gh_login || !quizId) return c.redirect(`/challenge/${c.req.param("id")}`);
   const quiz = await c.env.DB.prepare(
-    `SELECT q.questions_json, q.current_question, q.finished_at, ch.author_login
+    `SELECT q.questions_json, q.current_question, q.finished_at, ch.author_login, ch.config_json
      FROM quizzes q JOIN challenges ch ON ch.id = q.challenge_id WHERE q.id=?`
   ).bind(quizId).first<{
-    questions_json: string; current_question: number; finished_at: string | null; author_login: string;
+    questions_json: string; current_question: number; finished_at: string | null;
+    author_login: string; config_json: string;
   }>();
   // The quiz cookie is a capability token, but still bind it to the signed-in
   // author — a leaked/transplanted cookie must not expose questions to others.
@@ -253,7 +264,8 @@ app.get("/challenge/:id/question", async (c) => {
   ).bind(new Date().toISOString(), quizId).run();
   return c.html(questionPage(
     c.req.param("id"), quiz.current_question, questions.length,
-    redactForClient(q), QUESTION_TIME_LIMIT_MS
+    redactForClient(q), QUESTION_TIME_LIMIT_MS,
+    hasHoneypotSignal(resolveConfig(quiz.config_json))
   ));
 });
 
@@ -282,7 +294,8 @@ app.post("/challenge/:id/answer", async (c) => {
   const telemetryRaw = form["telemetry"];
   const result = await submitAnswer(
     c.env, challengeDeps(c.env), quizId, questionIndex, answer,
-    String((Array.isArray(telemetryRaw) ? telemetryRaw[0] : telemetryRaw) ?? "")
+    String((Array.isArray(telemetryRaw) ? telemetryRaw[0] : telemetryRaw) ?? ""),
+    hasSubmittedHoneypot(form)
   );
   if ("error" in result) return c.redirect(`/challenge/${c.req.param("id")}`);
   if (!result.done) return c.redirect(`/challenge/${c.req.param("id")}/question`);

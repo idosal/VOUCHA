@@ -1,8 +1,10 @@
 import { describe, it, expect, vi } from "vitest";
 import { env } from "cloudflare:test";
-import { sweepStaleChallenges } from "../src/resolve";
-import type { Env } from "../src/types";
+import { onChallengeResolved, sweepStaleChallenges } from "../src/resolve";
+import { parseConfig } from "../src/config";
+import type { Challenge, Env } from "../src/types";
 import type { GitHubApi } from "../src/github/api";
+import type { Telemetry } from "../src/risk/report";
 
 const testEnv = env as unknown as Env;
 
@@ -11,6 +13,8 @@ function stubApi(overrides: Partial<Record<keyof GitHubApi, any>> = {}): GitHubA
     updateCheckRun: vi.fn(async () => {}),
     getCheckRun: vi.fn(async () => ({ status: "queued", conclusion: null })),
     upsertPrComment: vi.fn(async () => {}),
+    ensureLabel: vi.fn(async () => {}),
+    addLabels: vi.fn(async () => {}),
     ...overrides,
   } as unknown as GitHubApi;
 }
@@ -27,6 +31,112 @@ async function seedChallenge(opts: {
      VALUES (?, 1, 'o/r', 1, ?, 'alice', ?, ?, '{}', ?)`
   ).bind(opts.id, `sha-${opts.id}`, opts.checkRunId ?? null, opts.status, opts.createdAt).run();
 }
+
+const scriptedTelemetry: Telemetry = {
+  perQuestionMs: [4000, 5000, 3500, 4200],
+  answerChanges: 0,
+  pointerDistancePx: 30,
+  pointerSamples: 4,
+  focusLossCount: 0,
+  webdriver: true,
+  turnstileOk: false,
+  honeypotTriggered: true,
+  codeHoneypotTriggered: true,
+};
+
+function passedChallenge(): Challenge {
+  return {
+    id: "ch-1", installation_id: 1, repo_full_name: "o/r", pr_number: 1,
+    head_sha: "sha-1", author_login: "alice", check_run_id: 42, status: "passed",
+    approved_by: null, attempts_used: 1, cooldown_until: null,
+    config_json: "{}", created_at: "2026-07-02T10:00:00.000Z",
+  };
+}
+
+describe("onChallengeResolved", () => {
+  it("ensures and applies a flagged-pass label, then inlines the signals in the comment", async () => {
+    const api = stubApi();
+    await onChallengeResolved(testEnv, {
+      challenge: passedChallenge(), outcome: "passed", score: 4, total: 4,
+      telemetry: scriptedTelemetry, cfg: parseConfig(null),
+    }, async () => api);
+
+    expect(api.ensureLabel).toHaveBeenCalledWith(
+      "o/r",
+      "clawptcha:flagged",
+      "b60205",
+      "Clawptcha saw multiple passive risk signals on a passed challenge."
+    );
+    expect(api.addLabels).toHaveBeenCalledWith("o/r", 1, ["clawptcha:flagged"]);
+
+    const [, , patch] = (api.updateCheckRun as ReturnType<typeof vi.fn>).mock.calls[0];
+    expect(patch.output.title).toBe("Passed — but the quiz looks scripted");
+
+    const [, , comment] = (api.upsertPrComment as ReturnType<typeof vi.fn>).mock.calls[0];
+    expect(comment).toContain("looks scripted");
+    expect(comment).toContain("every answer took under 10 seconds");
+    expect(comment).not.toContain("see the check run details");
+  });
+
+  it("does not label a clean pass and keeps the plain title", async () => {
+    const api = stubApi();
+    await onChallengeResolved(testEnv, {
+      challenge: passedChallenge(), outcome: "passed", score: 4, total: 4,
+      telemetry: null, cfg: parseConfig(null),
+    }, async () => api);
+
+    expect(api.ensureLabel).not.toHaveBeenCalled();
+    expect(api.addLabels).not.toHaveBeenCalled();
+    const [, , patch] = (api.updateCheckRun as ReturnType<typeof vi.fn>).mock.calls[0];
+    expect(patch.output.title).toBe("Passed");
+  });
+
+  it("withholds the risk report on a retryable failure (no mid-challenge signal feedback)", async () => {
+    const api = stubApi();
+    await onChallengeResolved(testEnv, {
+      challenge: { ...passedChallenge(), status: "ready" }, outcome: "failed_retry",
+      score: 1, total: 4, telemetry: scriptedTelemetry, cfg: parseConfig(null),
+    }, async () => api);
+
+    const [, , patch] = (api.updateCheckRun as ReturnType<typeof vi.fn>).mock.calls[0];
+    expect(patch.output.summary).toContain("Score 1/4");
+    expect(patch.output.summary).not.toContain("Risk report");
+    expect(patch.output.summary).not.toContain("under 10 seconds");
+  });
+
+  it("includes the full risk report on final failure", async () => {
+    const api = stubApi();
+    await onChallengeResolved(testEnv, {
+      challenge: { ...passedChallenge(), status: "failed_final" }, outcome: "failed_final",
+      score: 1, total: 4, telemetry: scriptedTelemetry, cfg: parseConfig(null),
+    }, async () => api);
+
+    const [, , patch] = (api.updateCheckRun as ReturnType<typeof vi.fn>).mock.calls[0];
+    expect(patch.output.summary).toContain("Risk report");
+    expect(patch.output.summary).toContain("every answer took under 10 seconds");
+  });
+
+  it("still posts the attestation comment when labeling fails", async () => {
+    const api = stubApi({ addLabels: vi.fn(async () => { throw new Error("403"); }) });
+    await onChallengeResolved(testEnv, {
+      challenge: passedChallenge(), outcome: "passed", score: 4, total: 4,
+      telemetry: scriptedTelemetry, cfg: parseConfig(null),
+    }, async () => api);
+
+    expect(api.upsertPrComment).toHaveBeenCalled();
+  });
+
+  it("still posts the attestation comment when label creation fails", async () => {
+    const api = stubApi({ ensureLabel: vi.fn(async () => { throw new Error("403"); }) });
+    await onChallengeResolved(testEnv, {
+      challenge: passedChallenge(), outcome: "passed", score: 4, total: 4,
+      telemetry: scriptedTelemetry, cfg: parseConfig(null),
+    }, async () => api);
+
+    expect(api.addLabels).not.toHaveBeenCalled();
+    expect(api.upsertPrComment).toHaveBeenCalled();
+  });
+});
 
 describe("sweepStaleChallenges", () => {
   it("purges rate_events older than 2h and keeps fresh ones", async () => {

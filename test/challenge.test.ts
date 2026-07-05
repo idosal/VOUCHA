@@ -88,6 +88,73 @@ describe("startQuizAttempt", () => {
     expect(r.ok).toBe(true);
   });
 
+  it("records a report-only honeypot hit from the start form", async () => {
+    const id = await makeChallenge();
+    const r = await startQuizAttempt(testEnv, deps(), id, "alice", "tok", true);
+    if (!r.ok) throw new Error("setup failed");
+    const row = await testEnv.DB.prepare("SELECT telemetry_json FROM quizzes WHERE id=?")
+      .bind(r.quizId).first<{ telemetry_json: string }>();
+    expect(JSON.parse(row!.telemetry_json)).toEqual({ honeypotTriggered: true });
+  });
+
+  it("records a report-only code honeypot hit from the PR diff", async () => {
+    const id = await makeChallenge("ready", {
+      ...DEFAULT_CONFIG,
+      signals: [{
+        type: "code_honeypot" as const,
+        report_only: true,
+        patterns: ["CLAWPTCHA_DO_NOT_ADD_THIS"],
+        paths: ["src/**"],
+      }],
+    });
+    const d = deps({
+      fetchPrContext: vi.fn(async () => ({
+        diff: [
+          "diff --git a/src/app.ts b/src/app.ts",
+          "+++ b/src/app.ts",
+          "+const marker = 'CLAWPTCHA_DO_NOT_ADD_THIS';",
+        ].join("\n"),
+        title: "t",
+        body: null,
+        files: ["src/app.ts"],
+      })),
+    });
+    const r = await startQuizAttempt(testEnv, d, id, "alice", "tok");
+    if (!r.ok) throw new Error("setup failed");
+    const row = await testEnv.DB.prepare("SELECT telemetry_json FROM quizzes WHERE id=?")
+      .bind(r.quizId).first<{ telemetry_json: string }>();
+    expect(JSON.parse(row!.telemetry_json)).toEqual({ codeHoneypotTriggered: true });
+  });
+
+  it("does not record a code honeypot hit when the canary is only removed", async () => {
+    const id = await makeChallenge("ready", {
+      ...DEFAULT_CONFIG,
+      signals: [{
+        type: "code_honeypot" as const,
+        report_only: true,
+        patterns: ["CLAWPTCHA_DO_NOT_ADD_THIS"],
+        paths: ["src/**"],
+      }],
+    });
+    const d = deps({
+      fetchPrContext: vi.fn(async () => ({
+        diff: [
+          "diff --git a/src/app.ts b/src/app.ts",
+          "+++ b/src/app.ts",
+          "-const marker = 'CLAWPTCHA_DO_NOT_ADD_THIS';",
+        ].join("\n"),
+        title: "t",
+        body: null,
+        files: ["src/app.ts"],
+      })),
+    });
+    const r = await startQuizAttempt(testEnv, d, id, "alice", "tok");
+    if (!r.ok) throw new Error("setup failed");
+    const row = await testEnv.DB.prepare("SELECT telemetry_json FROM quizzes WHERE id=?")
+      .bind(r.quizId).first<{ telemetry_json: string }>();
+    expect(JSON.parse(row!.telemetry_json)).toEqual({});
+  });
+
   it("neutralizes the check when LLM generation fails twice", async () => {
     const id = await makeChallenge();
     const d = deps({ generateQuiz: vi.fn(async () => ({ ok: false as const, error: "boom" })) });
@@ -118,11 +185,13 @@ describe("submitAnswer", () => {
   // the question route stamps it via COALESCE when the question is first
   // rendered. This helper simulates that render-time stamp before answering
   // (COALESCE preserves an explicitly pre-set served_at, e.g. the over-time test).
-  async function answerQ(d: ChallengeDeps, quizId: string, index: number, ans: number[]) {
+  async function answerQ(
+    d: ChallengeDeps, quizId: string, index: number, ans: number[], honeypotTriggered = false
+  ) {
     await testEnv.DB.prepare(
       "UPDATE quizzes SET question_served_at=COALESCE(question_served_at, ?) WHERE id=?"
     ).bind(d.now().toISOString(), quizId).run();
-    return submitAnswer(testEnv, d, quizId, index, ans, telemetry);
+    return submitAnswer(testEnv, d, quizId, index, ans, telemetry, honeypotTriggered);
   }
 
   it("passes with 3+ correct answers, resolves challenge as passed", async () => {
@@ -153,6 +222,58 @@ describe("submitAnswer", () => {
     await answerQ(d, started.quizId, 0, [0]);
     const final = await answerQ(d, started.quizId, 1, [1, 2]);
     expect(final).toEqual({ done: true, passed: true, score: 2, total: 2 });
+  });
+
+  it("carries a report-only honeypot hit into final telemetry without changing score", async () => {
+    const { quizId, d } = await startedQuiz();
+    await answerQ(d, quizId, 0, [0]);
+    await answerQ(d, quizId, 1, [1, 2]);
+    await answerQ(d, quizId, 2, [3]);
+    const final = await answerQ(d, quizId, 3, [2], true);
+    expect(final).toEqual({ done: true, passed: true, score: 4, total: 4 });
+    expect(d.onChallengeResolved).toHaveBeenCalledWith(
+      expect.objectContaining({
+        outcome: "passed",
+        telemetry: expect.objectContaining({ honeypotTriggered: true }),
+      })
+    );
+  });
+
+  it("carries a report-only code honeypot hit into final telemetry without changing score", async () => {
+    const id = await makeChallenge("ready", {
+      ...DEFAULT_CONFIG,
+      signals: [{
+        type: "code_honeypot" as const,
+        report_only: true,
+        patterns: ["CLAWPTCHA_DO_NOT_ADD_THIS"],
+        paths: ["src/**"],
+      }],
+    });
+    const d = deps({
+      fetchPrContext: vi.fn(async () => ({
+        diff: [
+          "diff --git a/src/app.ts b/src/app.ts",
+          "+++ b/src/app.ts",
+          "+const marker = 'CLAWPTCHA_DO_NOT_ADD_THIS';",
+        ].join("\n"),
+        title: "t",
+        body: null,
+        files: ["src/app.ts"],
+      })),
+    });
+    const started = await startQuizAttempt(testEnv, d, id, "alice", "tok");
+    if (!started.ok) throw new Error("setup failed");
+    await answerQ(d, started.quizId, 0, [0]);
+    await answerQ(d, started.quizId, 1, [1, 2]);
+    await answerQ(d, started.quizId, 2, [3]);
+    const final = await answerQ(d, started.quizId, 3, [2]);
+    expect(final).toEqual({ done: true, passed: true, score: 4, total: 4 });
+    expect(d.onChallengeResolved).toHaveBeenCalledWith(
+      expect.objectContaining({
+        outcome: "passed",
+        telemetry: expect.objectContaining({ codeHoneypotTriggered: true }),
+      })
+    );
   });
 
   it("fails below threshold, sets cooldown, increments attempts", async () => {

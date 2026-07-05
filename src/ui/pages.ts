@@ -3,6 +3,8 @@ import type { ClientQuestion } from "../quiz/schema";
 const esc = (s: string) =>
   s.replace(/&/g, "&amp;").replace(/</g, "&lt;").replace(/>/g, "&gt;").replace(/"/g, "&quot;");
 
+export const HONEYPOT_FIELD_NAME = "contact_url";
+
 const questionMeta: Record<ClientQuestion["type"], { label: string; hint: string }> = {
   consequence_mcq: {
     label: "Consequence check",
@@ -406,6 +408,7 @@ h1{
   display:flex;
   flex:1;
   flex-direction:column;
+  position:relative;
   margin-top:30px;
 }
 .opts{
@@ -422,6 +425,20 @@ h1{
   overflow:hidden;
   clip:rect(0,0,0,0);
   white-space:nowrap;
+}
+.honeypot-field{
+  position:absolute;
+  left:-10000px;
+  top:auto;
+  width:1px;
+  height:1px;
+  overflow:hidden;
+  opacity:0;
+  pointer-events:none;
+}
+.honeypot-field input{
+  width:1px;
+  height:1px;
 }
 .opt{
   position:relative;
@@ -537,6 +554,7 @@ h1{
 .start-actions{
   display:flex;
   flex-wrap:wrap;
+  position:relative;
   gap:12px;
   margin-top:30px;
 }
@@ -899,7 +917,7 @@ function contextPanel(prRef: string, variant: "start" | "question"): string {
   <section class="state-card">
     <h3>${variant === "start" ? "Privacy line" : "Answer what the PR does"}</h3>
     <p>${variant === "start"
-      ? "Clawptcha reports summary timing and interaction statistics to maintainers. It never records keystrokes, answer text, webcam data, or hidden surveillance."
+      ? "Clawptcha reports summary timing, interaction statistics, and passive canary signals to maintainers. It never records keystrokes, answer text, webcam data, or invasive browser data."
       : "The quiz tests intent, effects, and affected areas rather than line-by-line recall. Correct answers stay server-side."}</p>
   </section>
   <div class="status-strip info">
@@ -925,7 +943,19 @@ function statusSymbol(tone: "ok" | "warn" | "crit" | "info"): string {
   return "!";
 }
 
-export function startPage(prRef: string, turnstileSiteKey: string, challengeId: string): string {
+function honeypotField(enabled: boolean): string {
+  if (!enabled) return "";
+  return `
+          <div class="honeypot-field" aria-hidden="true">
+            <label>Leave this field blank
+              <input type="text" name="${HONEYPOT_FIELD_NAME}" tabindex="-1" autocomplete="off">
+            </label>
+          </div>`;
+}
+
+export function startPage(
+  prRef: string, turnstileSiteKey: string, challengeId: string, honeypotEnabled = true
+): string {
   return layout("Challenge", `
 <div class="app">
   ${commandBar("Comprehension gate", prRef)}
@@ -937,6 +967,7 @@ export function startPage(prRef: string, turnstileSiteKey: string, challengeId: 
         <h1 id="challenge-title">Show you understand this change before it merges.</h1>
         <p class="lead">Clawptcha asks PR-specific questions about <b>intent, behavior, and blast radius</b>. It does not prove you are human. It records that you stood behind the change.</p>
         <form class="start-actions" method="POST" action="/challenge/${esc(challengeId)}/start" id="startForm">
+          ${honeypotField(honeypotEnabled)}
           <div class="turnstile-box"><div class="cf-turnstile" data-sitekey="${esc(turnstileSiteKey)}"></div><span class="turnstile-fallback">Turnstile check</span></div>
           <button class="btn" type="submit" id="startButton">Begin challenge</button>
         </form>
@@ -960,7 +991,8 @@ export function startPage(prRef: string, turnstileSiteKey: string, challengeId: 
 }
 
 export function questionPage(
-  challengeId: string, index: number, total: number, q: ClientQuestion, timeLimitMs: number
+  challengeId: string, index: number, total: number, q: ClientQuestion, timeLimitMs: number,
+  honeypotEnabled = true
 ): string {
   const inputType = q.multiSelect ? "checkbox" : "radio";
   const meta = questionMeta[q.type];
@@ -984,6 +1016,7 @@ export function questionPage(
       <h1 class="qh" id="question-title">${esc(q.prompt)}</h1>
       <p class="hint">${esc(meta.hint)} Correct answers are never sent to the browser.</p>
       <form class="answer-form" method="POST" action="/challenge/${esc(challengeId)}/answer" id="f" data-answer-form>
+        ${honeypotField(honeypotEnabled)}
         <fieldset class="opts">
           <legend class="sr-only">Answer choices</legend>
           ${options}
