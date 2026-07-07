@@ -147,13 +147,13 @@ describe("parseConfig", () => {
     }]);
   });
 
-  it("enables report-only honeypot signals by default and supports opt-out", () => {
+  it("enables honeypot signals by default and supports opt-out", () => {
     expect(hasHoneypotSignal(parseConfig(null))).toBe(true);
     expect(parseConfig(null).signals).toEqual([{ type: "honeypot", report_only: true }]);
     expect(hasHoneypotSignal(parseConfig("signals: []\n"))).toBe(false);
   });
 
-  it("parses honeypot signals as report-only even if a config tries to make them blocking", () => {
+  it("normalizes honeypot signal report_only for backward-compatible config", () => {
     const cfg = parseConfig(
       "signals:\n  - type: honeypot\n    report_only: false\n"
     );
@@ -211,7 +211,6 @@ describe("parseConfig", () => {
       "  ignore_paths: ['docs/**', 'docs/**']",
       "output:",
       "  comments: detailed",
-      "  labels: false",
       "context:",
       "  ignore_paths: ['dist/**', '*.lock', 'dist/**']",
       "",
@@ -222,7 +221,7 @@ describe("parseConfig", () => {
     expect(cfg.bot_policy).toEqual({ default: "challenge", trusted_logins: ["dependabot[bot]"] });
     expect(cfg.rechallenge_on_push).toBe(true);
     expect(cfg.rechallenge).toEqual({ on_push: "included_paths", ignore_paths: ["docs/**"] });
-    expect(cfg.output).toEqual({ comments: "detailed", labels: false });
+    expect(cfg.output).toEqual({ comments: "detailed" });
     expect(cfg.context.ignore_paths).toEqual(["dist/**", "*.lock"]);
   });
 

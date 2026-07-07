@@ -2,9 +2,9 @@
 
 A repo governance layer for GitHub PRs: maintainers choose which contributions
 need extra proof before merge, from diff-specific checks to issue-backed
-exemptions and report-only honeypots. AI-written code is fine; unreviewed slop
-is not. Passing posts a public attestation; maintainers get a behavioral risk
-report.
+exemptions, challenge-assistance signals, and code canaries. AI-written code can
+be reviewed; AI or agent help answering the challenge is not allowed. Passing
+posts a public attestation; maintainers get a behavioral risk report.
 
 ## How it works
 
@@ -13,16 +13,19 @@ report.
 2. When a PR opens, CLAWPTCHA resolves the repo's governance preferences:
    draft handling, optional PR-body accountability fields, maintainer/bot/path/
    size exemptions, team and repository-role trust, prior contributor history,
-   trusted linked-issue exemptions, passive signals, and any configured gates.
+   trusted linked-issue exemptions, signals, and any configured gates.
 3. If a challenge is required, the PR author opens the link, signs in with
    GitHub, passes Turnstile, and completes the configured gate. CLAWPTCHA
    first builds a cached PR investigation from the file map and selected patch
    evidence, then generates the author-facing quiz from that artifact. Today
    the shipped gate is a multiple-choice quiz about intent, behavior, and
-   blast radius. Passive signals such as Turnstile, timing, browser automation
-   hints, and report-only honeypots feed the risk report, not the quiz score.
-4. Pass (3 of 4 by default) → green check + attestation comment. Fail →
-   15-minute cooldown, fresh quiz on retry, up to 3 attempts by default.
+   blast radius. Challenge-taking signals such as Turnstile, timing, browser
+   automation hints, and honeypots feed the risk report and can invalidate an
+   otherwise correct quiz when they indicate automation or outside assistance.
+   Code canaries remain maintainer-facing PR evidence.
+4. Pass (3 of 4 by default, with no challenge-assistance verdict) → green check
+   + attestation comment. Fail → 15-minute cooldown, fresh quiz on retry, up to
+   3 attempts by default.
 5. The check run summary includes a risk report (timings, Turnstile verdict,
    automation fingerprints). CLAWPTCHA never blocks merges on its own outages —
    failures report `neutral`.
@@ -39,9 +42,10 @@ the built-in defaults committed explicitly. The default template uses
 `draft_prs: ignore`, so draft PRs stay quiet until they are marked ready for
 review. Copy [templates/contributing-policy.md](templates/contributing-policy.md)
 and [templates/pull_request_template.md](templates/pull_request_template.md)
-when maintainers want matching human-facing policy: AI assistance is allowed,
-but the submitter is accountable for understanding, testing, and supporting the
-PR.
+when maintainers want matching human-facing policy: AI assistance in PR
+authoring can be permitted by repository policy, but challenge answers must
+come from the PR author's own understanding. The submitter remains accountable
+for understanding, testing, and supporting the PR.
 
 ```yaml
 gates:
@@ -87,7 +91,7 @@ exemptions:
     min_match_score: 0.7
 
 signals:
-  # Enabled by default. This is a passive risk signal, never a scoring rule.
+  # Enabled by default. This helps detect challenge-answering automation.
   - type: honeypot
     report_only: true
   # Optional. Maintainer-authored literal canaries scanned only in added diff lines.
@@ -126,7 +130,6 @@ context:
 max_context_tokens: null
 output:
   comments: normal        # quiet | normal | detailed
-  labels: true
 ```
 
 | Field | Default | Behavior |
@@ -134,9 +137,9 @@ output:
 | `gates` | `[{ type: "multiple_choice", questions: 4, pass_threshold: 3 }]` | Author-facing challenge stages. Today CLAWPTCHA supports `multiple_choice`, with `questions` as an integer 1–10 and `pass_threshold` capped at the question count. |
 | `path_rules` | `[]` | First matching path-specific policy override. Supports `paths`, `gates`, `require_approval`, `max_attempts`, `cooldown_minutes`, `min_changed_lines`, `skip_paths`, and `include_paths`. |
 | `exemptions` | `[]` | Structured reasons no challenge is required. Today CLAWPTCHA supports `author_login`, `author_association`, `repository_permission`, `github_team`, `prior_merged_prs`, and `linked_issue_match`. |
-| `signals` | `[{ type: "honeypot", report_only: true }]` | Passive risk signals that appear in the maintainer report. Today CLAWPTCHA supports `honeypot`, an off-screen decoy form field that can flag broad automated form filling, and `code_honeypot`, maintainer-authored literal canary patterns scanned only in added diff lines. Set `signals: []` to disable passive honeypot collection. |
+| `signals` | `[{ type: "honeypot", report_only: true }]` | Risk signals that appear in the maintainer report. Today CLAWPTCHA supports `honeypot`, an off-screen decoy form field that can flag broad automated form filling during the challenge, and `code_honeypot`, maintainer-authored literal canary patterns scanned only in added diff lines. Set `signals: []` to disable honeypot collection. |
 | `pass_threshold` | `3` | Legacy shortcut for the default multiple-choice gate's threshold when `gates` is omitted. New configs should prefer `gates[0].pass_threshold`. |
-| `max_attempts` | `3` | Integer, 1–10. Total quiz attempts allowed per challenge before the check becomes `failed_final` and stays failed for maintainers to review manually. |
+| `max_attempts` | `3` | Integer, 1–10. Total quiz attempts allowed per challenge before the check becomes `failed_final` and stays failed for maintainers to review manually. Challenge-assistance detection is terminal immediately as `failed_assisted`. |
 | `cooldown_minutes` | `15` | Integer, ≥ 0. Minutes an author must wait after a failed (non-final) attempt before starting a retry. |
 | `draft_prs` | `"ignore"` | Enum: `challenge` \| `neutral` \| `ignore`. Controls whether draft PRs get the normal challenge, a neutral check, or no check. The default keeps drafts quiet until `ready_for_review`. |
 | `require_approval` | `"first_time"` | Enum: `first_time` \| `always` \| `never`. `first_time` requires maintainer approval (`/clawptcha approve` PR comment) only when the author's GitHub `author_association` is `FIRST_TIME_CONTRIBUTOR`, `FIRST_TIMER`, or `NONE`; `always` requires approval for every PR; `never` skips the approval gate entirely. An invalid value falls back to `first_time`. |
@@ -148,7 +151,7 @@ output:
 | `include_paths` | `[]` | Optional glob list for opt-in scope. When non-empty, a PR is exempt unless at least one changed file matches one of these patterns. PRs with zero reported changed files are never exempted this way. |
 | `context` | `{ strategy: "adaptive", investigator: "auto", map_tokens: 8000, detail_tokens: 24000, max_files: 12, max_model_calls: 3, ignore_paths: [], large_pr: { changed_files: 100, changed_lines: 5000 } }` | Controls PR investigation before quiz generation. `context.ignore_paths` removes low-signal files from quiz evidence without changing whether the PR is challenged. `context.investigator: auto` uses the Flue investigator for large PRs when configured. |
 | `max_context_tokens` | `null` | Legacy/direct-generation cap used when `context.strategy: truncate`. `null` = uncapped: the full diff is sent to the LLM (bounded only by the model's context window). If set to a positive integer, the diff sent to the LLM is truncated to roughly that many tokens (~4 chars/token estimate) and replaced past that point with a full list of changed filenames. Invalid values fall back to `null`. Adaptive fallback uses a bounded cap from `context.detail_tokens`; large/Flue investigation failures do not fall back to direct raw-diff generation. |
-| `output` | `{ comments: "normal", labels: true }` | Controls PR comment volume and whether flagged-pass labels are applied. `comments: quiet` relies on check-run output only; `detailed` includes risk detail in outcome comments. |
+| `output` | `{ comments: "normal" }` | Controls PR comment volume. `comments: quiet` relies on check-run output only; `detailed` includes risk detail in outcome comments. |
 
 Maintainers, repo admins, and users with `OWNER`/`MEMBER`/`COLLABORATOR`
 `author_association` are exempt by default regardless of config (checked
@@ -340,16 +343,13 @@ diff and only matches added lines in the configured `paths`; removed lines and
 context lines do not count. If an added line contains a canary, the risk report
 records "the PR introduced a configured code honeypot marker" without exposing
 the exact marker in the PR comment. If the PR is exempt or reuses a prior pass,
-the same report-only signal is shown in the success check summary.
+the same maintainer-facing signal is shown in the success check summary.
 
-Like Turnstile, timing, pointer summaries, and `webdriver`, passive honeypots
-are report-only. A filled form honeypot or matched code canary never changes
-the quiz score and never silently fails an otherwise correct challenge on its
-own.
-
-When a passed quiz has multiple passive risk signals, CLAWPTCHA marks the check
-title and PR comment, and best-effort creates/applies the `clawptcha:flagged`
-label so maintainers can spot it from the PR list.
+Challenge-taking signals such as Turnstile, timing, pointer summaries,
+`webdriver`, and form honeypots never change the quiz score, but multiple
+independent signals can fail an otherwise correct quiz because the challenge
+must be answered by the PR author. Code canaries remain PR-risk evidence and do
+not count toward the challenge-assistance verdict.
 
 ### Path scope
 
@@ -526,7 +526,7 @@ If you prefer doing it by hand, or a wizard phase fails and points you here:
   snapshot, active challenge state, generated quiz questions (with correct
   answers, server-side only), and derived investigation summaries from public
   PR context.
-- Once a challenge reaches a terminal state (`passed` or `failed_final`), its
+- Once a challenge reaches a terminal state (`passed`, `failed_assisted`, or `failed_final`), its
   stored quiz question text is purged (`questions_json` is overwritten to an
   empty list) while score, answers, and telemetry are retained as an audit
   trail.
@@ -539,12 +539,12 @@ If you prefer doing it by hand, or a wizard phase fails and points you here:
   for maintainers rather than a separate public profile.
 - Telemetry captured during the quiz is **summary statistics only** —
   per-question timings, answer-change counts, aggregate pointer-movement
-  distance/sample counts, focus-loss counts, whether the report-only honeypot
-  was submitted, whether configured code canaries appeared in added diff lines,
-  and automation fingerprints (e.g. a `webdriver` flag). There is no keystroke
+  distance/sample counts, focus-loss counts, whether the honeypot was
+  submitted, whether configured code canaries appeared in added diff lines, and
+  automation fingerprints (e.g. a `webdriver` flag). There is no keystroke
   logging or content capture, and its collection is disclosed on the quiz page.
-  Turnstile and telemetry inform the risk report; neither one blocks a pass on
-  its own.
+  No single signal blocks a pass on its own; multiple independent
+  challenge-assistance signals can fail the challenge.
 - Webhook payloads are authenticated via HMAC-SHA256 signature verification
   (`x-hub-signature-256`) before any processing happens.
 

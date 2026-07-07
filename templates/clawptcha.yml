@@ -2,11 +2,13 @@
 # Copy to .github/clawptcha.yml when you want explicit defaults in a repo.
 #
 # Maintainer posture:
-# - AI assistance is allowed; unreviewed, unsupported PRs are not.
+# - AI-written code may be allowed by repo policy, but the challenge must be
+#   answered from the PR author's own understanding.
 # - First-time or unknown human authors need maintainer approval before taking
 #   the challenge. Prior GitHub contributors can take it directly.
 # - Draft PRs stay quiet until they are marked ready for review.
-# - Passive signals are report-only; they inform review but never auto-fail.
+# - Challenge-assistance signals can fail an otherwise correct quiz. Code
+#   canaries remain maintainer-facing PR evidence.
 
 gates:
   - type: multiple_choice
@@ -79,4 +81,3 @@ max_context_tokens: null
 
 output:
   comments: normal
-  labels: true

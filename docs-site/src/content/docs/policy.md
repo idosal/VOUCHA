@@ -182,6 +182,3 @@ comment volume:
 - `quiet`: check-run output only;
 - `normal`: standard lifecycle comments;
 - `detailed`: lifecycle comments plus risk detail.
-
-`output.labels` controls whether a passed quiz with multiple passive risk
-signals gets the best-effort `clawptcha:flagged` label.

@@ -35,7 +35,7 @@ Keep the challenge backbone text-first:
 - explanation-style prompts where the author must state intent, effect, or risk
   in their own words when/if that format is supported;
 - strong rationales and maintainer-visible review context;
-- passive risk signals as report-only evidence, not hidden pass/fail rules.
+- challenge-taking signals as author-attestation evidence; multiple independent signals can fail an otherwise correct quiz.
 
 The question generator should continue to avoid code trivia. Questions should
 ask about system behavior, responsibility boundaries, user impact, operational

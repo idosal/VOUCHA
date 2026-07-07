@@ -77,10 +77,21 @@ describe("buildRiskReport", () => {
     expect(r.automationLikely).toBe(false);
     expect(r.signals).toEqual(["the PR introduced a configured code honeypot marker"]);
   });
+
+  it("keeps code honeypot evidence out of the challenge-assistance verdict", () => {
+    const r = buildRiskReport({
+      ...humanTelemetry,
+      turnstileOk: false,
+      codeHoneypotTriggered: true,
+    });
+    expect(r.automationLikely).toBe(false);
+    expect(r.signals).toContain("the bot check (Turnstile) did not pass");
+    expect(r.signals).toContain("the PR introduced a configured code honeypot marker");
+  });
 });
 
 describe("renderRiskReportMarkdown", () => {
-  it("describes a flagged pass in human terms, with timings and signals", () => {
+  it("describes an assisted challenge in human terms, with timings and signals", () => {
     const md = renderRiskReportMarkdown(buildRiskReport(botTelemetry), botTelemetry);
     expect(md).toContain("completed by a script");
     expect(md).not.toContain("automation-likely");

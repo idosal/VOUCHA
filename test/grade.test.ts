@@ -82,7 +82,7 @@ describe("canStartAttempt", () => {
   });
 
   it("blocks when not in ready state", () => {
-    for (const status of ["awaiting_approval", "passed", "failed_final", "neutral", "superseded"] as const) {
+    for (const status of ["awaiting_approval", "passed", "failed_assisted", "failed_final", "neutral", "superseded"] as const) {
       const r = canStartAttempt({ ...base, status }, DEFAULT_CONFIG, now);
       expect(r.allowed).toBe(false);
     }

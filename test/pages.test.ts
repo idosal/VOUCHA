@@ -14,7 +14,7 @@ describe("challenge pages", () => {
 
     expect(html).toContain("<h1 id=\"home-title\">Proof before<br>review.</h1>");
     expect(html).toContain("Free open-source PR governance for maintainers.");
-    expect(html).toContain("Unowned diffs are not.");
+    expect(html).toContain("Challenge help is not allowed.");
     expect(html).toContain("complements code review, CI, tests, and branch protection");
     expect(html).toContain("Use free managed service");
     expect(html).toContain("Free managed");

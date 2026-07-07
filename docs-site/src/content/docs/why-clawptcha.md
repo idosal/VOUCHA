@@ -53,7 +53,7 @@ CLAWPTCHA moves common review questions earlier:
 - Did the PR body include the repository's required accountability fields?
 - Did the PR only touch paths the repository has chosen to skip?
 - Did the author pass a challenge about the change itself?
-- Did passive signals suggest that the pass deserves a second look?
+- Did challenge-taking signals suggest automation or outside assistance?
 
 The result is a check run with a reasoned outcome: exempt, awaiting approval,
 awaiting challenge, passed, failed, or neutral. The maintainer remains the

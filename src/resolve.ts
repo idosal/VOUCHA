@@ -4,10 +4,6 @@ import { GitHubApi } from "./github/api";
 import { getInstallationToken } from "./github/auth";
 import { buildRiskReport, renderRiskReportMarkdown } from "./risk/report";
 
-const FLAGGED_LABEL = "clawptcha:flagged";
-const FLAGGED_LABEL_COLOR = "b60205";
-const FLAGGED_LABEL_DESCRIPTION = "Clawptcha saw multiple passive risk signals on a passed challenge.";
-
 export async function apiForInstallation(env: Env, installationId: number): Promise<GitHubApi> {
   const token = await getInstallationToken(env.GITHUB_APP_ID, env.GITHUB_PRIVATE_KEY, installationId);
   return new GitHubApi(token);
@@ -32,28 +28,37 @@ export async function onChallengeResolved(
       if (checkId) await api.updateCheckRun(repo, checkId, {
         status: "completed", conclusion: "success",
         output: {
-          title: report.automationLikely ? "Passed — but the quiz looks scripted" : "Passed",
+          title: "Passed",
           summary: `Score ${r.score}/${r.total}.\n\n${riskMd}`,
         },
       });
-      if (report.automationLikely && r.cfg.output.labels) {
-        // Comment edits don't notify anyone; the label is what makes a flagged
-        // pass visible from the PR list. Best-effort: a labeling failure (e.g.
-        // missing permission) must not block the attestation below.
-        try {
-          await api.ensureLabel(repo, FLAGGED_LABEL, FLAGGED_LABEL_COLOR, FLAGGED_LABEL_DESCRIPTION);
-          await api.addLabels(repo, pr, [FLAGGED_LABEL]);
-        } catch { /* attestation still posts; check title carries the flag */ }
-      }
       if (commentsEnabled) {
         await api.upsertPrComment(repo, pr, [
           "## 🦞 Clawptcha — passed ✅",
           "",
           `@${r.challenge.author_login} certified under challenge that they personally understand this change (score ${r.score}/${r.total}).`,
           "",
-          report.automationLikely
-            ? `> ⚠️ **Worth a second look before merging:** this quiz was completed in a way that looks scripted — ${report.signals.join("; ")}.`
-            : "_Behavioral risk report attached to the check run for maintainers._",
+          "_Behavioral risk report attached to the check run for maintainers._",
+          ...(detailedComments ? ["", riskMd] : []),
+        ].join("\n"));
+      }
+      break;
+    }
+    case "failed_assisted": {
+      if (checkId) await api.updateCheckRun(repo, checkId, {
+        status: "completed", conclusion: "failure",
+        output: {
+          title: "Failed — challenge assistance detected",
+          summary: `Score ${r.score}/${r.total}, but this quiz looks like it was completed with automation or outside assistance.\n\n${riskMd}`,
+        },
+      });
+      if (commentsEnabled) {
+        await api.upsertPrComment(repo, pr, [
+          "## 🦞 Clawptcha — challenge failed ❌",
+          "",
+          `@${r.challenge.author_login} answered enough questions correctly, but the challenge showed signs of automation or outside assistance.`,
+          "",
+          "Maintainers: please review this PR manually before merging.",
           ...(detailedComments ? ["", riskMd] : []),
         ].join("\n"));
       }
@@ -109,6 +114,7 @@ export async function onChallengeResolved(
 function conclusionForStatus(status: Challenge["status"]): "success" | "failure" | "neutral" | null {
   switch (status) {
     case "passed": return "success";
+    case "failed_assisted": return "failure";
     case "failed_final": return "failure";
     case "neutral": return "neutral";
     default: return null;
@@ -171,7 +177,7 @@ export async function sweepStaleChallenges(
   const recentCutoff = new Date(now.getTime() - 24 * 60 * 60_000).toISOString();
   const terminal = await env.DB.prepare(
     `SELECT * FROM challenges c
-     WHERE c.status IN ('passed','failed_final','neutral')
+     WHERE c.status IN ('passed','failed_assisted','failed_final','neutral')
        AND c.check_run_id IS NOT NULL
        AND (c.created_at >= ?
             OR EXISTS (SELECT 1 FROM quizzes q WHERE q.challenge_id = c.id
@@ -195,6 +201,7 @@ export async function sweepStaleChallenges(
         status: "completed", conclusion,
         output: {
           title: conclusion === "success" ? "Passed"
+            : ch.status === "failed_assisted" ? "Failed — challenge assistance detected"
             : conclusion === "failure" ? "Failed — attempts exhausted"
             : "Clawptcha unavailable",
           summary: `Reconciled by scheduled sweep: challenge resolved as '${ch.status}'.${scoreLine}`,

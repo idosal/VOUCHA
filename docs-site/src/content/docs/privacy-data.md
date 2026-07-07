@@ -30,7 +30,7 @@ CLAWPTCHA stores:
 - contributor answer selections, quiz score, and terminal challenge outcome;
 - summary challenge signals such as timing, answer-change counts, aggregate
   pointer movement, focus-loss counts, Turnstile outcome, browser automation
-  hints, and report-only honeypot or code-canary findings;
+  hints, honeypot state, and code-canary findings;
 - short-lived session, OAuth state, and rate-limit rows needed to serve the
   challenge safely.
 

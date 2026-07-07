@@ -93,7 +93,7 @@ review manually.
 | Outcome | Check behavior |
 | --- | --- |
 | Passed | Green check with an attestation summary. |
-| Passed with multiple passive signals | Green check, explicit risk title, and optional `clawptcha:flagged` label. |
+| Correct answers with assisted-challenge signals | Failed check, explicit assistance-detected title, and maintainer review requested. |
 | Failed attempt | Cooldown and retry policy apply; detailed signal feedback is withheld until final outcome. |
 | Attempts exhausted | Maintainer review is requested. |
 | Generation failure | Neutral check; the PR is not blocked by service failure. |

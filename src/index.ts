@@ -458,11 +458,15 @@ app.post("/challenge/:id/answer", async (c) => {
   );
   if ("error" in result) return c.redirect(`/challenge/${c.req.param("id")}`);
   if (!result.done) return c.redirect(`/challenge/${c.req.param("id")}/question`);
+  const resultMessage = result.passed
+    ? "The check is now green and an attestation was posted to the PR."
+    : result.reason === "assistance_detected"
+      ? "This quiz showed signs of automation or outside assistance, so the check failed for maintainer review."
+      : "Check the PR for retry availability (cooldown applies; retries get a fresh quiz).";
   return c.html(resultPage(
     result.passed, result.score, result.total,
-    result.passed
-      ? "The check is now green and an attestation was posted to the PR."
-      : "Check the PR for retry availability (cooldown applies; retries get a fresh quiz)."
+    resultMessage,
+    result.reason
   ));
 });
 

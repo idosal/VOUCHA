@@ -47,7 +47,6 @@ skip_paths: ["docs/**", "*.md"]
 min_changed_lines: 10
 output:
   comments: normal
-  labels: true
 ```
 
 This gives first-time contributors a maintainer checkpoint before the quiz,

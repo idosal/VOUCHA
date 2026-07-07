@@ -14,7 +14,7 @@ CREATE TABLE challenges (
   author_login TEXT NOT NULL,
   check_run_id INTEGER,
   status TEXT NOT NULL DEFAULT 'awaiting_approval',
-    -- awaiting_approval | ready | passed | failed_final | neutral | superseded
+    -- awaiting_approval | ready | passed | failed_assisted | failed_final | neutral | superseded
   approved_by TEXT,
   attempts_used INTEGER NOT NULL DEFAULT 0,
   cooldown_until TEXT,

@@ -3691,7 +3691,7 @@ function contextPanel(prRef: string, variant: "start" | "question"): string {
   </section>
   <div class="status-strip info">
     <span class="status-dot">i</span>
-    <span class="status-copy"><b>Telemetry informs review</b><span>It never auto-fails an otherwise correct quiz.</span></span>
+    <span class="status-copy"><b>Author-only answers</b><span>Challenge assistance can fail a correct quiz.</span></span>
   </div>
 </aside>`;
 }
@@ -3740,7 +3740,7 @@ export function homePage(servedOrigin = "https://clawptcha.idosalomon.workers.de
     <div class="claw-copy">
       <p class="claw-kicker">Free open-source PR governance for maintainers.</p>
       <h1 id="home-title">Proof before<br>review.</h1>
-      <p class="claw-lead">Let good PRs through. Ask contextless changes to prove ownership first. CLAWPTCHA complements code review, CI, tests, and branch protection.<br><b>AI is welcome. Unowned diffs are not.</b></p>
+      <p class="claw-lead">Let good PRs through. Ask contextless changes to prove ownership first. CLAWPTCHA complements code review, CI, tests, and branch protection.<br><b>AI-authored diffs can be reviewed. Challenge help is not allowed.</b></p>
       <div class="claw-actions">
         <a class="claw-button primary" href="#install">Use free managed service</a>
         <a class="claw-button" href="https://deploy.workers.cloudflare.com/?url=https://github.com/idosal/CLAWPTCHA" target="_blank" rel="noopener noreferrer">Self-deploy</a>
@@ -3754,7 +3754,7 @@ export function homePage(servedOrigin = "https://clawptcha.idosalomon.workers.de
         <div class="receipt-line"><b>✓</b><span><strong>Policy loaded</strong><small>accountability, trust tiers, gates</small></span></div>
         <div class="receipt-line"><b>!</b><span><strong>Linked issue missing</strong><small>first-time contributor path</small></span></div>
         <div class="receipt-line"><b>!</b><span><strong>Proof required</strong><small>author explanation before review</small></span></div>
-        <div class="receipt-line"><b>i</b><span><strong>Signals recorded</strong><small>honeypots stay report-only</small></span></div>
+        <div class="receipt-line"><b>i</b><span><strong>Signals recorded</strong><small>challenge assistance blocks attestation</small></span></div>
       </div>
       <p class="receipt-foot">Check run posted to the PR.</p>
     </aside>
@@ -3770,7 +3770,7 @@ export function homePage(servedOrigin = "https://clawptcha.idosalomon.workers.de
   <section class="claw-section" id="why">
     <div>
       <h2>Keep maintainers in control.</h2>
-      <p>CLAWPTCHA is a free open-source PR governance layer that fits alongside existing maintainer workflows. You choose the directories, draft behavior, contributor trust tiers, and accountability checks that should trigger proof. Honeypot and canary signals stay report-only. The default is fail-open.</p>
+      <p>CLAWPTCHA is a free open-source PR governance layer that fits alongside existing maintainer workflows. You choose the directories, draft behavior, contributor trust tiers, and accountability checks that should trigger proof. Challenge-assistance signals can block attestation; code canaries stay maintainer evidence. The default is fail-open.</p>
     </div>
     <aside class="install-ticket" id="install" aria-label="Install CLAWPTCHA">
       <h3>Install path</h3>
@@ -3790,7 +3790,7 @@ export function homePage(servedOrigin = "https://clawptcha.idosalomon.workers.de
     <div class="docs-intro">
       <div>
         <h2 id="docs-title">Docs built for operators.</h2>
-        <p>The documentation now lives in a Starlight docs site with sidebar navigation, generated routes, anchored headings, tables, and code examples. Start with why the gate exists, roll out a first policy, then use the operator guides for issue triage, accountability, trust tiers, draft and path scope, passive signals, common practices, and configuration.</p>
+        <p>The documentation now lives in a Starlight docs site with sidebar navigation, generated routes, anchored headings, tables, and code examples. Start with why the gate exists, roll out a first policy, then use the operator guides for issue triage, accountability, trust tiers, draft and path scope, challenge signals, common practices, and configuration.</p>
       </div>
       <nav class="docs-index" aria-label="Documentation sections">
         <b>Documentation</b>
@@ -3835,7 +3835,7 @@ export function homePage(servedOrigin = "https://clawptcha.idosalomon.workers.de
       </a>
       <a href="/docs/passive-signals/">
         <b>Passive signals</b>
-        <span>Honeypot fields, code canaries, added-line matching, and report-only review evidence.</span>
+        <span>Challenge-assistance signals, code canaries, added-line matching, and maintainer review evidence.</span>
       </a>
       <a href="/docs/common-practices/">
         <b>Common practices</b>
@@ -4028,17 +4028,34 @@ export function questionPage(
 </script>`);
 }
 
-export function resultPage(passed: boolean, score: number, total: number, message: string): string {
-  const tone = passed ? "ok" : "warn";
+export function resultPage(
+  passed: boolean,
+  score: number,
+  total: number,
+  message: string,
+  reason?: "assistance_detected"
+): string {
+  const assisted = reason === "assistance_detected";
+  const tone = passed ? "ok" : assisted ? "crit" : "warn";
+  const tag = passed ? "Attestation ready" : assisted ? "Challenge failed" : "Needs retry";
+  const label = passed ? "Comprehension attested" : assisted ? "Assistance detected" : "Threshold not met";
+  const title = passed ? "The check is green." : assisted ? "This challenge failed." : "This attempt did not pass.";
+  const status = passed ? "Passed" : assisted ? "Failed" : "Needs retry";
+  const nextTitle = passed ? "What happens next" : assisted ? "Maintainer review" : "Retry policy";
+  const nextCopy = passed
+    ? "The PR receives an attestation that you understand this change. Maintainers still see summary risk signals."
+    : assisted
+      ? "The PR check stays failed because the challenge must be answered from the author's own understanding."
+      : "Retry timing is controlled by the repository policy. A retry receives a fresh quiz.";
   return layout(passed ? "Passed" : "Not passed", `
 <div class="app">
-  ${commandBar(passed ? "Attestation ready" : "Needs retry")}
+  ${commandBar(tag)}
   <div class="result-layout">
     <section class="result-main" aria-labelledby="result-title">
       <div class="result-panel">
         <div class="badge ${tone}" aria-hidden="true">${passed ? "✓" : "!"}</div>
-        <p class="result-label">${passed ? "Comprehension attested" : "Threshold not met"}</p>
-        <h1 id="result-title">${passed ? "The check is green." : "This attempt did not pass."}</h1>
+        <p class="result-label">${label}</p>
+        <h1 id="result-title">${title}</h1>
         <div class="score">${score}<span class="of">/${total}</span></div>
         <p class="result-copy">${esc(message)}</p>
       </div>
@@ -4046,13 +4063,11 @@ export function resultPage(passed: boolean, score: number, total: number, messag
     <aside class="result-side" aria-label="Result details">
       <div class="status-strip ${tone}">
         <span class="status-dot">${passed ? "✓" : "!"}</span>
-        <span class="status-copy"><b>${passed ? "Passed" : "Needs retry"}</b><span>${score}/${total} correct</span></span>
+        <span class="status-copy"><b>${status}</b><span>${score}/${total} correct</span></span>
       </div>
       <section class="state-card">
-        <h2>${passed ? "What happens next" : "Retry policy"}</h2>
-        <p>${passed
-          ? "The PR receives an attestation that you understand this change. Maintainers still see summary risk signals."
-          : "Retry timing is controlled by the repository policy. A retry receives a fresh quiz."}</p>
+        <h2>${nextTitle}</h2>
+        <p>${nextCopy}</p>
       </section>
       <div class="status-strip info">
         <span class="status-dot">i</span>

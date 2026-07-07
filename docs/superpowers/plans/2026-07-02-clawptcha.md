@@ -986,7 +986,7 @@ export interface RiskReport {
   signals: string[];
 }
 
-// Simple heuristics only in v1 (spec: telemetry informs, never auto-fails).
+// Simple heuristics only in v1 (challenge-assistance signals can block attestation).
 export function buildRiskReport(t: Telemetry | null): RiskReport {
   if (t === null) {
     return { automationLikely: false, signals: ["no telemetry received"] };
@@ -3381,7 +3381,6 @@ Record outcomes in the PR description of the demo repo or a `docs/verification.m
 - **Adaptive thinking is on by default on Sonnet 5** and counts toward `max_tokens` — that's why generation uses `max_tokens: 16000` even though the quiz JSON is small.
 - **Never send `correct` indices to the browser.** Only `redactForClient` output may reach HTML. Grep the UI code for `correct` before finishing.
 - **Spec traceability:** approval gate → Task 11; lazy generation + rate limits → Tasks 7/12/13; risk report + Turnstile + telemetry → Tasks 6/13/14; attestation → Task 14; neutral-on-failure + sweep → Tasks 13/14; config + exemptions → Tasks 2/3; cost cap off by default → Task 2 (`max_context_tokens: null`) + Task 12 (`capContext`).
-
 
 
 

@@ -13,7 +13,7 @@ import {
 } from "./quiz/grade";
 import { checkAndRecordRate } from "./policy/ratelimit";
 import { evaluateCodeHoneypotSignals } from "./policy/code-honeypot";
-import { telemetrySchema, type Telemetry } from "./risk/report";
+import { buildRiskReport, telemetrySchema, type Telemetry } from "./risk/report";
 import type { GenerateResult } from "./quiz/generate";
 
 export interface PrFilePatch {
@@ -40,7 +40,7 @@ export interface PrContext {
 
 export interface ResolvedChallenge {
   challenge: Challenge;
-  outcome: "passed" | "failed_retry" | "failed_final" | "neutral";
+  outcome: "passed" | "failed_retry" | "failed_assisted" | "failed_final" | "neutral";
   score?: number;
   total?: number;
   telemetry: Telemetry | null;
@@ -136,7 +136,7 @@ interface QuizRow {
 
 export type SubmitResult =
   | { done: false; nextQuestion: number }
-  | { done: true; passed: boolean; score: number; total: number }
+  | { done: true; passed: boolean; score: number; total: number; reason?: "assistance_detected" }
   | { done: true; error: "not_found" | "already_finished" | "challenge_closed" };
 
 interface PerQuestionTelemetry {
@@ -244,8 +244,8 @@ async function finalizeQuiz(
 ): Promise<SubmitResult> {
   const challenge = (await getChallenge(env.DB, quiz.challenge_id))!;
   // Outcomes only apply to a live challenge. A quiz finishing after the
-  // challenge left `ready` (failed_final, superseded, passed via another quiz,
-  // neutral) must not override that state — pre-starting multiple quizzes
+  // challenge left `ready` (failed_assisted, failed_final, superseded, passed
+  // via another quiz, neutral) must not override that state — pre-starting multiple quizzes
   // would otherwise bypass the attempt cap and cooldown entirely.
   if (challenge.status !== "ready") {
     return { done: true, error: "challenge_closed" };
@@ -271,10 +271,16 @@ async function finalizeQuiz(
         codeHoneypotTriggered,
       });
 
+  const assistanceDetected = passed && buildRiskReport(telemetry).automationLikely;
+
   let outcome: ResolvedChallenge["outcome"];
-  if (passed) {
+  if (passed && !assistanceDetected) {
     outcome = "passed";
     await setChallengeStatus(env.DB, challenge.id, "passed");
+  } else if (assistanceDetected) {
+    outcome = "failed_assisted";
+    await env.DB.prepare("UPDATE challenges SET status='failed_assisted', attempts_used=? WHERE id=?")
+      .bind(challenge.attempts_used + 1, challenge.id).run();
   } else {
     const attemptsUsed = challenge.attempts_used + 1;
     if (attemptsUsed >= cfg.max_attempts) {
@@ -292,7 +298,7 @@ async function finalizeQuiz(
   // but the challenge itself is still live.
   // DB state (status, score, purge) is finalized before the GitHub callback —
   // a callback failure leaves consistent state for the cron sweep to reconcile.
-  if (outcome === "passed" || outcome === "failed_final") {
+  if (outcome === "passed" || outcome === "failed_assisted" || outcome === "failed_final") {
     await purgeQuizQuestions(env, challenge.id);
   }
 
@@ -300,5 +306,11 @@ async function finalizeQuiz(
   await deps.onChallengeResolved({
     challenge: fresh, outcome, score, total: questions.length, telemetry, cfg,
   });
-  return { done: true, passed, score, total: questions.length };
+  return {
+    done: true,
+    passed: passed && !assistanceDetected,
+    score,
+    total: questions.length,
+    ...(assistanceDetected ? { reason: "assistance_detected" as const } : {}),
+  };
 }

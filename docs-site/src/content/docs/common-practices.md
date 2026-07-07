@@ -12,8 +12,9 @@ what should still go to human review.
 Low-effort PRs are expensive because maintainers have to infer intent, check
 whether the author can iterate, and separate plausible-looking output from
 maintained work. Do not frame policy as "no AI." Frame it as responsibility:
-AI assistance is allowed, but the submitter must understand, test, explain, and
-support the change.
+AI assistance in authoring may be allowed by repository policy, but Clawptcha
+answers must come from the PR author's own understanding. The submitter must
+understand, test, explain, and support the change.
 
 Use `templates/contributing-policy.md` as a starting point for `CONTRIBUTING.md`
 and `templates/pull_request_template.md` as a PR template. CLAWPTCHA should
@@ -57,15 +58,16 @@ Team checks require Members read permission on the GitHub App. Merged-PR counts
 use GitHub search. If either signal is unavailable, CLAWPTCHA falls back to the
 normal gate.
 
-## Keep passive signals report-only
+## Treat challenge help as disqualifying
 
-Use passive signals to decide where maintainers should look harder, not to
-silently fail a PR. Form honeypots, code canaries, Turnstile state, timings,
-pointer summaries, and `webdriver` all have legitimate edge cases.
+Use challenge-taking signals carefully, but do not make AI or agent help on the
+challenge configurable. Form honeypots, Turnstile state, timings, pointer
+summaries, and `webdriver` all have legitimate edge cases, so CLAWPTCHA requires
+multiple independent signals before failing an otherwise correct quiz.
 
-CLAWPTCHA currently forces `honeypot` and `code_honeypot` signals to
-`report_only: true`. A matched signal can appear in check-run summaries, risk
-reports, and flagged-pass labels, but it does not change the quiz score.
+Code honeypots are PR-risk evidence, not proof that the author used help on the
+challenge. They can appear in check-run summaries and risk reports without
+counting toward the assisted-challenge verdict.
 
 ## Use code honeypots as canaries, not traps
 
@@ -152,10 +154,6 @@ passes.
 During rollout, `output.comments: normal` makes the workflow easy to inspect.
 Use `detailed` briefly when maintainers need risk detail in PR comments. Use
 `quiet` for high-volume repositories where check-run output is enough.
-
-Keep `output.labels: true` if maintainers triage from the PR list. When a quiz
-passes but multiple passive risk signals fire, CLAWPTCHA best-effort applies
-`clawptcha:flagged` so the pass is visible without opening the check run.
 
 ## Treat large PRs as investigation problems
 

@@ -52,7 +52,7 @@ Walk each scenario that the repository intends to rely on:
 - configured `github_team` or `repository_permission` exemptions work for a
   known account;
 - `prior_merged_prs` exempts an author with enough merged PRs;
-- configured `code_honeypot` patterns appear as report-only findings when
+- configured `code_honeypot` patterns appear as maintainer-facing findings when
   introduced in added diff lines;
 - a passed PR keeps or loses its pass according to `rechallenge`.
 

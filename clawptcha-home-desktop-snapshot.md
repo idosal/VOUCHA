@@ -20,7 +20,7 @@
           - text: review.
         - paragraph [ref=e16] [box=160,389,587,55]:
           - text: Welcome real work without rewarding slop.
-          - text: AI is welcome. Unowned changes are not.
+          - text: AI-authored diffs can be reviewed. Challenge help is not allowed.
         - generic [ref=e17] [box=160,468,650,44]:
           - link "Use managed free" [ref=e18] [cursor=pointer] [box=160,468,181,44]:
             - /url: "#install"
@@ -54,7 +54,7 @@
     - generic [ref=e62] [box=160,722,1120,623]:
       - generic [ref=e63] [box=160,762,696,125]:
         - heading "Keep the door open." [level=2] [ref=e64] [box=160,762,414,38]
-        - paragraph [ref=e65] [box=160,812,650,75]: CLAWPTCHA helps maintainers welcome real contributions without handing review time to contextless PRs. Gates ask for proof, issue-backed work gets trust, and honeypots stay report-only.
+        - paragraph [ref=e65] [box=160,812,650,75]: CLAWPTCHA helps maintainers welcome real contributions without handing review time to contextless PRs. Gates ask for proof, issue-backed work gets trust, and challenge-assistance signals protect attestation.
       - complementary "Install CLAWPTCHA" [ref=e66] [box=890,762,390,545]:
         - heading "Run it your way" [level=3] [ref=e67] [box=908,780,354,26]
         - generic [ref=e68] [box=908,818,354,87]:

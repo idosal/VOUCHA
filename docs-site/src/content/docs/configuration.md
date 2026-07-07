@@ -1,6 +1,6 @@
 ---
 title: Configuration
-description: The current CLAWPTCHA policy surface for accountability, gates, exemptions, passive signals, path rules, investigation, retries, and output.
+description: The current CLAWPTCHA policy surface for accountability, gates, exemptions, signals, path rules, investigation, retries, and output.
 ---
 
 Store repository policy in `.github/clawptcha.yml` on the default branch or
@@ -103,7 +103,6 @@ max_context_tokens: null
 
 output:
   comments: normal
-  labels: true
 ```
 
 ## Capability map
@@ -114,9 +113,9 @@ output:
 | Scope | `skip_paths`, `include_paths`, `min_changed_lines`, `path_rules` | Which PRs should skip, enter, or receive stricter policy. |
 | Trust | `trust`, `exemptions`, `bot_policy` | Which default author associations, authors, teams, repository roles, contributor history, bots, and planned issues can avoid a challenge. |
 | Approval and retry | `require_approval`, `accountability`, `max_attempts`, `cooldown_minutes`, `draft_prs`, `rechallenge` | Human approval, required PR-body accountability fields, drafts, retry limits, cooldown, and new-commit behavior. |
-| Passive evidence | `signals`, `output.labels` | Honeypot fields, code canaries, and flagged-pass labels. |
+| Signals | `signals` | Honeypot fields, challenge-assistance telemetry, and code canaries. |
 | Investigation | `context`, `max_context_tokens` | How PR evidence is condensed before quiz generation. |
-| Reporting | `output.comments`, `output.labels` | PR comment volume and best-effort labels. |
+| Reporting | `output.comments` | PR comment volume. |
 
 ## Gates
 
@@ -308,8 +307,10 @@ signals:
     report_only: true
 ```
 
-Set `signals: []` to disable passive honeypot collection. Supported passive
-signals are forced report-only even if the config says otherwise.
+Set `signals: []` to disable honeypot collection. Challenge-taking signals can
+fail an otherwise correct quiz when multiple independent signals indicate
+automation or outside assistance. Code honeypots remain maintainer-facing PR
+evidence.
 
 `code_honeypot` scans added diff lines for maintainer-authored literal canaries:
 
@@ -340,17 +341,14 @@ so stale passes are not silently preserved. `ignore_paths` keeps low-risk pushes
 from invalidating a prior pass. Legacy `rechallenge_on_push: true` maps to
 `on_push: always` when `rechallenge` is omitted.
 
-`output` controls PR noise and labels:
+`output` controls PR noise:
 
 ```yaml
 output:
   comments: normal
-  labels: true
 ```
 
-`comments` accepts `quiet`, `normal`, or `detailed`. `labels: true` enables the
-best-effort `clawptcha:flagged` label when a passed quiz has multiple passive
-risk signals.
+`comments` accepts `quiet`, `normal`, or `detailed`.
 
 ## Context and investigation
 
@@ -405,4 +403,4 @@ older truncation path.
 | `skip_paths` | `["docs/**", "*.md"]` |
 | `include_paths` | `[]` |
 | `context` | adaptive Worker/Flue auto selection with 8000 map tokens, 24000 detail tokens, 12 files, and large PR threshold of 100 files or 5000 changed lines |
-| `output` | `{ comments: "normal", labels: true }` |
+| `output` | `{ comments: "normal" }` |

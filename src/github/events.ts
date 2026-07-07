@@ -79,7 +79,7 @@ function commentBody(env: Env, challengeId: string, status: string, cfg: Clawptc
       "",
       `Once approved, the author takes a short quiz about this change: ${url}`,
       "",
-      "_AI assistance is allowed. Passing posts a public attestation that the author personally understands, tested, and can support this change._",
+      "_The author must answer the quiz from their own understanding; AI or agent assistance on the challenge is not allowed. Passing posts a public attestation that the author personally understands, tested, and can support this change._",
     ].join("\n");
   }
   return [
@@ -89,7 +89,7 @@ function commentBody(env: Env, challengeId: string, status: string, cfg: Clawptc
     "",
     `➡️ **[Start the challenge](${url})**`,
     "",
-    "_AI assistance is allowed. Passing posts a public attestation that you personally understand, tested, and can support this change. The quiz is generated from the diff; answers are graded automatically._",
+    "_Answer from your own understanding; AI or agent assistance on the challenge is not allowed. Passing posts a public attestation that you personally understand, tested, and can support this change. The quiz is generated from the diff; answers are graded automatically._",
   ].join("\n");
 }
 

@@ -88,7 +88,7 @@ describe("startQuizAttempt", () => {
     expect(r.ok).toBe(true);
   });
 
-  it("records a report-only honeypot hit from the start form", async () => {
+  it("records a honeypot hit from the start form", async () => {
     const id = await makeChallenge();
     const r = await startQuizAttempt(testEnv, deps(), id, "alice", "tok", true);
     if (!r.ok) throw new Error("setup failed");
@@ -97,7 +97,7 @@ describe("startQuizAttempt", () => {
     expect(JSON.parse(row!.telemetry_json)).toEqual({ honeypotTriggered: true });
   });
 
-  it("records a report-only code honeypot hit from the PR diff", async () => {
+  it("records a code honeypot hit from the PR diff", async () => {
     const id = await makeChallenge("ready", {
       ...DEFAULT_CONFIG,
       signals: [{
@@ -186,12 +186,17 @@ describe("submitAnswer", () => {
   // rendered. This helper simulates that render-time stamp before answering
   // (COALESCE preserves an explicitly pre-set served_at, e.g. the over-time test).
   async function answerQ(
-    d: ChallengeDeps, quizId: string, index: number, ans: number[], honeypotTriggered = false
+    d: ChallengeDeps,
+    quizId: string,
+    index: number,
+    ans: number[],
+    honeypotTriggered = false,
+    telemetryJson = telemetry
   ) {
     await testEnv.DB.prepare(
       "UPDATE quizzes SET question_served_at=COALESCE(question_served_at, ?) WHERE id=?"
     ).bind(d.now().toISOString(), quizId).run();
-    return submitAnswer(testEnv, d, quizId, index, ans, telemetry, honeypotTriggered);
+    return submitAnswer(testEnv, d, quizId, index, ans, telemetryJson, honeypotTriggered);
   }
 
   it("passes with 3+ correct answers, resolves challenge as passed", async () => {
@@ -224,7 +229,37 @@ describe("submitAnswer", () => {
     expect(final).toEqual({ done: true, passed: true, score: 2, total: 2 });
   });
 
-  it("carries a report-only honeypot hit into final telemetry without changing score", async () => {
+  it("fails a correct quiz when challenge assistance signals are detected", async () => {
+    const { challengeId, quizId, d } = await startedQuiz();
+    const scriptedTelemetry = JSON.stringify({
+      elapsedMs: 4000, answerChanges: 0, pointerDistancePx: 20,
+      pointerSamples: 2, focusLossCount: 0, webdriver: true,
+    });
+    await answerQ(d, quizId, 0, [0], false, scriptedTelemetry);
+    await answerQ(d, quizId, 1, [1, 2], false, scriptedTelemetry);
+    await answerQ(d, quizId, 2, [3], false, scriptedTelemetry);
+    const final = await answerQ(d, quizId, 3, [2], false, scriptedTelemetry);
+
+    expect(final).toEqual({
+      done: true,
+      passed: false,
+      score: 4,
+      total: 4,
+      reason: "assistance_detected",
+    });
+    const challenge = await getChallenge(testEnv.DB, challengeId);
+    expect(challenge?.status).toBe("failed_assisted");
+    expect(challenge?.attempts_used).toBe(1);
+    expect(d.onChallengeResolved).toHaveBeenCalledWith(
+      expect.objectContaining({
+        outcome: "failed_assisted",
+        score: 4,
+        telemetry: expect.objectContaining({ webdriver: true }),
+      })
+    );
+  });
+
+  it("carries a lone honeypot hit into final telemetry without changing score", async () => {
     const { quizId, d } = await startedQuiz();
     await answerQ(d, quizId, 0, [0]);
     await answerQ(d, quizId, 1, [1, 2]);
@@ -239,7 +274,7 @@ describe("submitAnswer", () => {
     );
   });
 
-  it("carries a report-only code honeypot hit into final telemetry without changing score", async () => {
+  it("carries a code honeypot hit into final telemetry without changing score", async () => {
     const id = await makeChallenge("ready", {
       ...DEFAULT_CONFIG,
       signals: [{

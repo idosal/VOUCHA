@@ -34,7 +34,7 @@ comprehension challenge before maintainer review.
 
 - A check-run summary that explains why a PR passed, was exempt, needs approval,
   or degraded to neutral.
-- A policy vocabulary centered on `gates`, `exemptions`, and report-only
+- A policy vocabulary centered on `gates`, `exemptions`, and challenge
   `signals`.
 - Accountability templates for repositories that want AI-assisted work allowed
   but explicitly owned by the submitter.
@@ -42,12 +42,11 @@ comprehension challenge before maintainer review.
   adding a CLAWPTCHA-specific label ceremony.
 - Team, role, and prior-merged-PR trust tiers for repositories that do not want
   to treat every outside contributor the same way.
-- Passive canary reporting for suspicious diffs without turning a canary into
-  an automatic block.
+- Passive canary reporting for suspicious diffs while challenge-assistance
+  signals protect the author attestation.
 - Adaptive PR investigation for normal and large PRs, with optional Flue-backed
   investigation when configured.
-- Output controls for quiet, normal, or detailed PR comments and optional
-  `clawptcha:flagged` labels.
+- Output controls for quiet, normal, or detailed PR comments.
 
 ## Start here
 

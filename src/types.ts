@@ -26,6 +26,7 @@ export type ChallengeStatus =
   | "awaiting_approval"
   | "ready"
   | "passed"
+  | "failed_assisted"
   | "failed_final"
   | "neutral"
   | "superseded";
