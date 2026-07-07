@@ -104,6 +104,7 @@ export async function handlePullRequestEvent(
   const prNumber = payload.pull_request.number as number;
   const headSha = payload.pull_request.head.sha as string;
   const baseSha = payload.pull_request.base.sha as string;
+  const baseConfigRef = (payload.pull_request.base.ref as string | undefined) ?? baseSha;
 
   const existingChallenge = await getChallengeByPr(env.DB, repo, prNumber, headSha);
   // Idempotency: webhook redeliveries for a known (pr, sha) are no-ops, except
@@ -112,7 +113,7 @@ export async function handlePullRequestEvent(
 
   const pr = await api.getPr(repo, prNumber);
   // Config comes from the merge target, never the PR branch — a PR must not be able to weaken its own gate.
-  const configYaml = await api.getFileContent(repo, ".github/clawptcha.yml", baseSha);
+  const configYaml = await api.getFileContent(repo, ".github/clawptcha.yml", baseConfigRef);
   let cfg = parseConfig(configYaml);
 
   // A new head SHA obsoletes any open challenge for this PR, regardless of
