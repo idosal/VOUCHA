@@ -25,9 +25,9 @@
     }
   ],
   // Preferred for same-account Flue deployments after `npm run flue:deploy`:
-  // "services": [
-  //   { "binding": "FLUE_INVESTIGATOR", "service": "clawptcha-flue-investigator" }
-  // ],
+  "services": [
+    { "binding": "FLUE_INVESTIGATOR", "service": "clawptcha-flue-investigator" }
+  ],
   "vars": {
     "APP_BASE_URL": "https://clawptcha.dev",
     "LLM_PROVIDER": "workers-ai",

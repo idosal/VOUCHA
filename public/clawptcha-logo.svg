@@ -5,29 +5,14 @@
     <style>
       .ink { fill: #101816; }
       .brand { fill: #ff6f4d; }
-      .tile {
-        rx: 16;
-        stroke: transparent;
-        stroke-width: 3;
-        vector-effect: non-scaling-stroke;
-      }
+      .lime { fill: #d8f35f; }
+      .tile { rx: 16; }
       .symbol {
         fill: none;
         stroke: #d8f35f;
         stroke-width: 8;
         stroke-linecap: round;
         stroke-linejoin: round;
-      }
-      .dot {
-        fill: #101816;
-        stroke: #d8f35f;
-        stroke-width: 5;
-      }
-      @media (prefers-color-scheme: dark) {
-        .ink,
-        .brand {
-          stroke: #edf6ec;
-        }
       }
     </style>
   </defs>
@@ -44,8 +29,8 @@
     <path class="symbol" d="M43 52h18" />
     <path class="symbol" d="M188 43v18M179 52h18" />
     <path class="symbol" d="M180 188h14m0 0 11-10m-11 10 11 10" />
-    <circle class="dot" cx="180" cy="188" r="4" />
-    <circle class="dot" cx="205" cy="178" r="4" />
-    <circle class="dot" cx="205" cy="198" r="4" />
+    <circle cx="180" cy="188" r="4" fill="#101816" stroke="#d8f35f" stroke-width="5" />
+    <circle cx="205" cy="178" r="4" fill="#101816" stroke="#d8f35f" stroke-width="5" />
+    <circle cx="205" cy="198" r="4" fill="#101816" stroke="#d8f35f" stroke-width="5" />
   </g>
 </svg>

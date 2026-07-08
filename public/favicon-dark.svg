@@ -1,14 +1,20 @@
 <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 240 240" role="img" aria-labelledby="title desc">
-  <title id="title">CLAWPTCHA logo mark</title>
-  <desc id="desc">A block C made from challenge tiles with code-diff and pull-request symbols.</desc>
+  <title id="title">CLAWPTCHA favicon for dark mode</title>
+  <desc id="desc">A block C made from outlined challenge tiles with code-diff and pull-request symbols.</desc>
   <defs>
     <style>
-      .ink { fill: #101816; }
-      .brand { fill: #ff6f4d; }
+      .ink {
+        fill: #101816;
+        stroke: #edf6ec;
+        stroke-width: 3;
+      }
+      .brand {
+        fill: #ff6f4d;
+        stroke: #edf6ec;
+        stroke-width: 3;
+      }
       .tile {
         rx: 16;
-        stroke: transparent;
-        stroke-width: 3;
         vector-effect: non-scaling-stroke;
       }
       .symbol {
@@ -22,12 +28,6 @@
         fill: #101816;
         stroke: #d8f35f;
         stroke-width: 5;
-      }
-      @media (prefers-color-scheme: dark) {
-        .ink,
-        .brand {
-          stroke: #edf6ec;
-        }
       }
     </style>
   </defs>

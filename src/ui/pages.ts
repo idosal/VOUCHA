@@ -190,13 +190,19 @@ button,input{font:inherit}
 }
 .claw-links{
   display:flex;
+  align-items:center;
   gap:18px;
   color:#293834;
   font-size:.94rem;
   font-weight:750;
 }
 .claw-links a{text-decoration:none}
-.claw-links a:hover{text-decoration:underline}
+.claw-links a:not(.gh):hover{text-decoration:underline}
+.claw-links .gh{display:inline-flex;align-items:center;color:#101816}
+.claw-links .gh svg{width:22px;height:22px;display:block;fill:currentColor}
+@media (hover:hover) and (pointer:fine){
+  .claw-links .gh:hover{opacity:.65}
+}
 .claw-hero{
   width:min(1120px,calc(100% - 40px));
   display:grid;
@@ -3445,13 +3451,19 @@ body:not(.site-body) .state-card p{
 }
 .claw-links{
   display:flex;
+  align-items:center;
   gap:18px;
   color:#293834;
   font-size:.94rem;
   font-weight:750;
 }
 .claw-links a{text-decoration:none}
-.claw-links a:hover{text-decoration:underline}
+.claw-links a:not(.gh):hover{text-decoration:underline}
+.claw-links .gh{display:inline-flex;align-items:center;color:#101816}
+.claw-links .gh svg{width:22px;height:22px;display:block;fill:currentColor}
+@media (hover:hover) and (pointer:fine){
+  .claw-links .gh:hover{opacity:.65}
+}
 .claw-hero{
   width:min(1120px,calc(100% - 40px));
   display:grid;
@@ -4494,23 +4506,97 @@ body:not(.site-body) .state-card p{
     color:#79c0ff;
   }
 }
+.brand-mark,
+.claw-mark{
+  border:0;
+  border-radius:0;
+  background:transparent;
+  box-shadow:none;
+  color:inherit;
+  padding:0;
+  overflow:visible;
+}
+.brand-mark{
+  width:34px;
+  height:34px;
+}
+.claw-mark{
+  width:34px;
+  height:34px;
+  display:block;
+}
+.brand-mark img,
+.claw-mark img{
+  width:100%;
+  height:100%;
+  display:block;
+}
+.brand-mark picture,
+.claw-mark picture{
+  width:100%;
+  height:100%;
+  display:block;
+}
 `;
+
+interface SocialMeta {
+  title: string;
+  description: string;
+  url: string;
+  imageUrl: string;
+  imageAlt: string;
+}
+
+interface LayoutOptions {
+  bodyClass?: string;
+  mainClass?: string;
+  description?: string;
+  social?: SocialMeta;
+}
+
+function brandLogo(): string {
+  return `<picture><source media="(prefers-color-scheme: dark)" srcset="/clawptcha-logo-dark.svg"><img src="/clawptcha-logo.svg" alt=""></picture>`;
+}
 
 function layout(
   title: string,
   body: string,
-  options: { bodyClass?: string; mainClass?: string; description?: string } = {}
+  options: LayoutOptions = {}
 ): string {
   const bodyClass = options.bodyClass ? ` class="${esc(options.bodyClass)}"` : "";
   const mainClass = options.mainClass ?? "wrap";
   const description = options.description
     ? `<meta name="description" content="${esc(options.description)}">`
     : "";
+  const social = options.social
+    ? `<link rel="canonical" href="${esc(options.social.url)}">
+<meta property="og:type" content="website">
+<meta property="og:site_name" content="CLAWPTCHA">
+<meta property="og:title" content="${esc(options.social.title)}">
+<meta property="og:description" content="${esc(options.social.description)}">
+<meta property="og:url" content="${esc(options.social.url)}">
+<meta property="og:image" content="${esc(options.social.imageUrl)}">
+<meta property="og:image:type" content="image/png">
+<meta property="og:image:width" content="1200">
+<meta property="og:image:height" content="630">
+<meta property="og:image:alt" content="${esc(options.social.imageAlt)}">
+<meta name="twitter:card" content="summary_large_image">
+<meta name="twitter:title" content="${esc(options.social.title)}">
+<meta name="twitter:description" content="${esc(options.social.description)}">
+<meta name="twitter:image" content="${esc(options.social.imageUrl)}">
+<meta name="twitter:image:alt" content="${esc(options.social.imageAlt)}">`
+    : "";
   return `<!doctype html><html lang="en"><head><meta charset="utf-8">
 <meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
 <meta name="color-scheme" content="light dark">
 ${description}
-<link rel="icon" href="data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 64 64'%3E%3Crect width='64' height='64' rx='14' fill='%23ff7a59'/%3E%3Cpath d='M38 20c-2-3-5-4-9-4-8 0-14 7-14 16s6 16 14 16c4 0 7-1 9-4l-5-6c-1 1-2 2-4 2-4 0-7-3-7-8s3-8 7-8c2 0 3 1 4 2z' fill='%230b100e'/%3E%3C/svg%3E">
+${social}
+<link rel="icon" type="image/svg+xml" href="/favicon.svg">
+<link rel="icon" type="image/svg+xml" href="/favicon-dark.svg" media="(prefers-color-scheme: dark)">
+<link rel="icon" type="image/png" sizes="32x32" href="/favicon-32x32.png">
+<link rel="icon" type="image/png" sizes="32x32" href="/favicon-dark-32x32.png" media="(prefers-color-scheme: dark)">
+<link rel="apple-touch-icon" href="/apple-touch-icon.png">
+<link rel="apple-touch-icon" href="/apple-touch-icon-dark.png" media="(prefers-color-scheme: dark)">
 <title>${esc(title)} — CLAWPTCHA</title>
 <style>${STYLE}</style></head>
 <body${bodyClass}><main class="${mainClass}">${body}</main></body></html>`;
@@ -4518,7 +4604,7 @@ ${description}
 
 function commandBar(tag: string, prRef?: string, timerHtml = ""): string {
   return `<header class="commandbar">
-  <div class="brand-lockup"><span class="mark" aria-hidden="true">C</span><span class="brand-name">CLAWPTCHA</span></div>
+  <div class="brand-lockup"><span class="mark brand-mark" aria-hidden="true">${brandLogo()}</span><span class="brand-name">CLAWPTCHA</span></div>
   <div class="command-context">
     <span class="command-sep" aria-hidden="true"></span>
     <span class="command-title">${esc(tag)}</span>
@@ -4757,88 +4843,93 @@ export function verificationPage(
 </script>`);
 }
 
-export function homePage(_servedOrigin = "https://clawptcha.dev"): string {
-  return layout("PR checks for work people can explain", `
+export function homePage(servedOrigin = "https://clawptcha.dev"): string {
+  const INSTALL_URL = "https://github.com/apps/clawptcha/installations/new";
+  const origin = (() => {
+    try {
+      return new URL(servedOrigin).origin;
+    } catch {
+      return "https://clawptcha.dev";
+    }
+  })();
+  const socialDescription =
+    "CLAWPTCHA is free open-source GitHub PR governance for asking authors to prove they understand the change.";
+  return layout("A policy layer for GitHub pull requests", `
 <div class="claw-shell">
   <nav class="claw-top" aria-label="Primary">
-    <a class="claw-brand" href="/" aria-label="CLAWPTCHA home"><span class="claw-mark" aria-hidden="true">C</span><span>CLAWPTCHA</span></a>
+    <a class="claw-brand" href="/" aria-label="CLAWPTCHA home"><span class="claw-mark" aria-hidden="true">${brandLogo()}</span><span>CLAWPTCHA</span></a>
     <div class="claw-links">
-      <a href="#workflow">Workflow</a>
       <a href="#install">Install</a>
       <a href="/docs/">Docs</a>
+      <a class="gh" href="https://github.com/idosal/CLAWPTCHA" target="_blank" rel="noopener noreferrer" aria-label="CLAWPTCHA on GitHub" title="CLAWPTCHA on GitHub"><svg viewBox="0 0 16 16" aria-hidden="true"><path d="M8 0C3.58 0 0 3.58 0 8c0 3.54 2.29 6.53 5.47 7.59.4.07.55-.17.55-.38 0-.19-.01-.82-.01-1.49-2.01.37-2.53-.49-2.69-.94-.09-.23-.48-.94-.82-1.13-.28-.15-.68-.52-.01-.53.63-.01 1.08.58 1.23.82.72 1.21 1.87.87 2.33.66.07-.52.28-.87.51-1.07-1.78-.2-3.64-.89-3.64-3.95 0-.87.31-1.59.82-2.15-.08-.2-.36-1.02.08-2.12 0 0 .67-.21 2.2.82.64-.18 1.32-.27 2-.27.68 0 1.36.09 2 .27 1.53-1.04 2.2-.82 2.2-.82.44 1.1.16 1.92.08 2.12.51.56.82 1.27.82 2.15 0 3.07-1.87 3.75-3.65 3.95.29.25.54.73.54 1.48 0 1.07-.01 1.93-.01 2.2 0 .21.15.46.55.38A8.013 8.013 0 0016 8c0-4.42-3.58-8-8-8z"/></svg></a>
     </div>
   </nav>
 
   <section class="claw-hero" aria-labelledby="home-title">
     <div class="claw-copy">
-      <p class="claw-kicker">GitHub PR comprehension checks for maintainers.</p>
-      <h1 id="home-title">Merge work<br>people can explain.</h1>
-      <p class="claw-lead">Ask unfamiliar or risky PR authors to answer a short diff-specific check before review. Trusted work keeps moving; maintainers get a record when ownership is uncertain.<br><b>AI-authored diffs are fine. Challenge help is not.</b></p>
+      <p class="claw-kicker">A policy layer for GitHub pull requests.</p>
+      <h1 id="home-title">Say yes to <br>contributions.</h1>
+      <p class="claw-lead">You decide who's trusted and which changes need a closer look. CLAWPTCHA allows contributors to prove their understanding and intent.</p>
       <div class="claw-actions">
-        <a class="claw-button primary" href="https://deploy.workers.cloudflare.com/?url=https://github.com/idosal/CLAWPTCHA" target="_blank" rel="noopener noreferrer">Deploy to Cloudflare</a>
-        <a class="claw-button" href="/docs/">Read docs</a>
+        <a class="claw-button primary" href="${INSTALL_URL}" target="_blank" rel="noopener noreferrer">Install the app</a>
+        <a class="claw-button" href="#install">Self-host it</a>
+        <a class="claw-button" href="/docs/">Docs</a>
       </div>
-      <p class="proof-note">Policy stays in the repo. Results post back to the PR.</p>
+      <p class="proof-note">Open source and free.</p>
     </div>
 
     <aside class="policy-receipt" aria-label="GitHub Actions policy report example">
       <div class="receipt-head"><span class="receipt-dot" aria-hidden="true">!</span><div><strong>CLAWPTCHA check</strong><span>pull_request #482</span></div></div>
       <h2 class="receipt-title">Challenge required</h2>
-      <p class="receipt-subtitle">New author changed auth paths. Ask for proof of understanding before review starts.</p>
+      <p class="receipt-subtitle">The author explains the change before review.</p>
       <div class="receipt-lines">
-        <div class="receipt-line"><b>!</b><span><strong>Reason</strong><small>unfamiliar author touched sensitive files</small></span></div>
-        <div class="receipt-line"><b>→</b><span><strong>Next action</strong><small>answer intent, behavior, and blast-radius questions</small></span></div>
-        <div class="receipt-line"><b>i</b><span><strong>Evidence</strong><small>result and answers stay with the PR record</small></span></div>
+        <div class="receipt-line"><b>!</b><span><strong>Reason</strong><small>new contributor, sensitive files changed</small></span></div>
+        <div class="receipt-line"><b>→</b><span><strong>Challenge</strong><small>explain the change's intent and effects</small></span></div>
+        <div class="receipt-line"><b>i</b><span><strong>Evidence</strong><small>signals recorded publicly for maintainer review</small></span></div>
       </div>
-      <p class="receipt-foot">The app never acts for the contributor.</p>
+      <p class="receipt-foot">Pending maintainer approval.</p>
     </aside>
   </section>
 
   <section class="policy-strip" id="workflow" aria-label="CLAWPTCHA workflow">
-    <div class="policy-chip"><b>Evaluate PR</b><span>author trust, changed files, repo policy</span></div>
-    <div class="policy-chip"><b>Ask author</b><span>short quiz scoped to the diff</span></div>
-    <div class="policy-chip"><b>Post evidence</b><span>check state and answers for maintainers</span></div>
+    <div class="policy-chip"><b>Screen the PR</b><span>trust, exemptions, sensitive paths, honeypots, quiet signals</span></div>
+    <div class="policy-chip"><b>Challenge the unknowns</b><span>short configurable tests scoped to the diff</span></div>
+    <div class="policy-chip"><b>Review the record</b><span>a reasoned check and risk report for maintainers</span></div>
   </section>
 
   <section class="claw-section" aria-labelledby="install-title">
     <div>
-      <h2 id="install-title">One check, kept in the PR.</h2>
-      <p>Self-deploy the Worker, create the GitHub App through the setup wizard, keep policy in your repository, and choose which changes need comprehension proof. Trusted authors and planned work can skip the gate; unfamiliar or sensitive changes get a bounded quiz.</p>
+      <h2 id="install-title">Install in a click, or run your own.</h2>
+      <p>The hosted app is free and works on public repos: install it on GitHub and configure the policy for your repo. Teams that want more control or private repos can self-host the same setup.</p>
     </div>
     <aside class="install-ticket" id="install" aria-label="Install CLAWPTCHA">
       <h3>Install path</h3>
       <div class="install-options">
         <div class="install-mode">
-          <b>Deploy from GitHub</b>
-          <span>Fork the public repo, provision the Worker and D1, then run the setup wizard for GitHub App, Turnstile, and secrets.</span>
-          <a class="claw-button primary" href="https://deploy.workers.cloudflare.com/?url=https://github.com/idosal/CLAWPTCHA" target="_blank" rel="noopener noreferrer">Deploy to Cloudflare</a>
+          <b>Install the hosted app</b>
+          <span>Free, one-click, works on any public repo.</span>
+          <a class="claw-button primary" href="${INSTALL_URL}" target="_blank" rel="noopener noreferrer">Install on GitHub</a>
         </div>
         <div class="install-mode">
-          <b>CLI setup</b>
-          <span>Clone the repo, use Node 22.22.1+, and let <code>npm run setup</code> deploy and configure the service.</span>
-          <a class="claw-button" href="/docs/getting-started/">Read setup docs</a>
+          <b>Self-host</b>
+          <span>For private repos or full control: deploy the Worker to your own Cloudflare account and bring your own model. <code>npm run setup</code> wires the GitHub App, Turnstile, and secrets.</span>
+          <a class="claw-button" href="https://deploy.workers.cloudflare.com/?url=https://github.com/idosal/CLAWPTCHA" target="_blank" rel="noopener noreferrer">Deploy to Cloudflare</a>
         </div>
       </div>
       <p class="install-note">Privacy, permissions, configuration, and verification details live in the docs.</p>
     </aside>
   </section>
-
-  <section class="claw-section docs-section" id="docs" aria-labelledby="docs-title">
-    <div>
-      <h2 id="docs-title">Need the details?</h2>
-      <p>The docs cover rollout, policy configuration, deployment, passive signals, privacy, and verification when you are ready to wire it into a real repository.</p>
-    </div>
-    <a class="claw-button" href="/docs/">Open docs</a>
-  </section>
-
-  <footer class="claw-footer">
-    <span>Free open-source PR checks for maintainer-owned review.</span>
-    <span>Self-deploy from the public repo.</span>
-  </footer>
 </div>`, {
     bodyClass: "site-body",
     mainClass: "site-page",
-    description: "CLAWPTCHA is free open-source GitHub PR governance that complements code review, CI, tests, and branch protection with comprehension checks and trust exemptions."
+    description: "CLAWPTCHA is free open-source GitHub PR governance that complements code review, CI, tests, and branch protection with comprehension checks and trust exemptions.",
+    social: {
+      title: "CLAWPTCHA — A policy layer for GitHub pull requests",
+      description: socialDescription,
+      url: origin,
+      imageUrl: `${origin}/clawptcha-social-card.png`,
+      imageAlt: "Screenshot of the CLAWPTCHA landing page hero."
+    }
   });
 }
 

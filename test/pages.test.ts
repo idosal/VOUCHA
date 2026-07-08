@@ -20,33 +20,32 @@ describe("challenge pages", () => {
   it("renders the public website with install and product framing", () => {
     const html = homePage("https://clawptcha.example.com");
 
-    expect(html).toContain("<h1 id=\"home-title\">Merge work<br>people can explain.</h1>");
-    expect(html).toContain("GitHub PR comprehension checks for maintainers.");
-    expect(html).toContain("Challenge help is not.");
+    expect(html).toContain("<h1 id=\"home-title\">Say yes to <br>contributions.</h1>");
+    expect(html).toContain("A policy layer for GitHub pull requests.");
+    expect(html).toContain("CLAWPTCHA allows contributors to prove their understanding and intent.");
     expect(html).toContain("complements code review, CI, tests, and branch protection");
+    expect(html).toContain('<link rel="canonical" href="https://clawptcha.example.com">');
+    expect(html).toContain('<meta property="og:image" content="https://clawptcha.example.com/clawptcha-social-card.png">');
+    expect(html).toContain('<meta name="twitter:card" content="summary_large_image">');
+    expect(html).toContain('<meta property="og:image:width" content="1200">');
+    expect(html).toContain('<meta property="og:image:height" content="630">');
+    expect(html).toContain('<source media="(prefers-color-scheme: dark)" srcset="/clawptcha-logo-dark.svg">');
+    expect(html).toContain('<link rel="icon" type="image/svg+xml" href="/favicon-dark.svg" media="(prefers-color-scheme: dark)">');
+    expect(html).toContain('<link rel="apple-touch-icon" href="/apple-touch-icon-dark.png" media="(prefers-color-scheme: dark)">');
     expect(html).toContain("Deploy to Cloudflare");
-    expect(html).toContain("Deploy from GitHub");
-    expect(html).toContain("CLI setup");
-    expect(html).toContain("Deploy to Cloudflare");
-    expect(html).toContain("Policy stays in the repo");
+    expect(html).toContain("Install on GitHub");
+    expect(html).toContain("Self-host");
     expect(html).toContain("Challenge required");
-    expect(html).toContain("Evaluate PR");
-    expect(html).toContain("Post evidence");
-    expect(html).toContain("Need the details?");
-    expect(html).toContain("rollout, policy configuration, deployment, passive signals, privacy, and verification");
-    expect(html).toContain("Open docs");
+    expect(html).toContain("Screen the PR");
+    expect(html).toContain("Review the record");
     expect(html).toContain('href="/docs/"');
-    expect(html).toContain('href="/docs/getting-started/"');
-    expect(html).toContain("Node 22.22.1+");
+    expect(html).toContain('href="https://github.com/apps/clawptcha/installations/new"');
     expect(html).not.toContain("Open the Starlight docs");
-    expect(html).not.toContain('href="/docs/why-clawptcha/"');
-    expect(html).toContain("Ask author");
-    expect(html).toContain("short quiz scoped to the diff");
+    expect(html).not.toContain("CLAWPATCHA");
+    expect(html).toContain("short configurable tests scoped to the diff");
     expect(html).not.toContain("Team exemptions require GitHub Members read permission");
     expect(html).not.toContain("contributor-accepted answers");
     expect(html).not.toContain("npx wrangler login &amp;&amp; npm run setup");
-    expect(html).not.toContain("clawptcha.example.com");
-    expect(html).toContain("Policy stays in the repo.");
   });
 
   it("renders the honeypot field when the signal is enabled", () => {

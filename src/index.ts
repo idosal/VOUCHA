@@ -51,6 +51,11 @@ async function docsAsset(c: Context<{ Bindings: Env }>): Promise<Response> {
   return c.env.ASSETS.fetch(c.req.raw);
 }
 
+async function staticAsset(c: Context<{ Bindings: Env }>): Promise<Response> {
+  if (!c.env.ASSETS) return c.text("Asset unavailable", 503);
+  return c.env.ASSETS.fetch(c.req.raw);
+}
+
 app.onError((err, c) => {
   console.error("unhandled route error", c.req.path, err);
   return c.html(
@@ -625,6 +630,16 @@ app.post("/challenge/:id/answer", async (c) => {
 });
 
 app.get("/", (c) => c.html(homePage(new URL(c.req.url).origin)));
+app.get("/apple-touch-icon.png", staticAsset);
+app.get("/apple-touch-icon-dark.png", staticAsset);
+app.get("/clawptcha-logo-dark.svg", staticAsset);
+app.get("/clawptcha-logo-imagegen-v5.png", staticAsset);
+app.get("/clawptcha-logo.svg", staticAsset);
+app.get("/clawptcha-social-card.png", staticAsset);
+app.get("/favicon-32x32.png", staticAsset);
+app.get("/favicon-dark-32x32.png", staticAsset);
+app.get("/favicon-dark.svg", staticAsset);
+app.get("/favicon.svg", staticAsset);
 app.get("/docs", docsAsset);
 app.get("/docs/*", docsAsset);
 
