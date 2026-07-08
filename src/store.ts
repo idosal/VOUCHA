@@ -130,3 +130,53 @@ export async function upsertInvestigation(
     )
     .run();
 }
+
+export interface ChallengeSession {
+  id: string;
+  challenge_id: string;
+  gh_login: string | null;
+  verify_code: string | null;
+  created_at: string;
+}
+
+export async function getSession(db: D1Database, id: string): Promise<ChallengeSession | null> {
+  return db.prepare(
+    "SELECT id, challenge_id, gh_login, verify_code, created_at FROM sessions WHERE id=?"
+  ).bind(id).first<ChallengeSession>();
+}
+
+export async function insertVerificationSession(
+  db: D1Database,
+  id: string,
+  challengeId: string,
+  verifyCode: string
+): Promise<void> {
+  await db.prepare(
+    "INSERT INTO sessions (id, challenge_id, verify_code) VALUES (?, ?, ?)"
+  ).bind(id, challengeId, verifyCode).run();
+}
+
+export async function setSessionVerifyCode(
+  db: D1Database,
+  id: string,
+  verifyCode: string
+): Promise<void> {
+  await db.prepare("UPDATE sessions SET verify_code=? WHERE id=?")
+    .bind(verifyCode, id).run();
+}
+
+export async function verifySessionFromComment(
+  db: D1Database,
+  challengeId: string,
+  verifyCode: string,
+  login: string
+): Promise<boolean> {
+  const session = await db.prepare(
+    "SELECT id FROM sessions WHERE challenge_id=? AND verify_code=? AND gh_login IS NULL LIMIT 1"
+  ).bind(challengeId, verifyCode).first<{ id: string }>();
+  if (!session) return false;
+  const updated = await db.prepare(
+    "UPDATE sessions SET gh_login=?, verify_code=NULL WHERE id=? AND gh_login IS NULL"
+  ).bind(login, session.id).run();
+  return updated.meta.changes > 0;
+}

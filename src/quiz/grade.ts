@@ -53,8 +53,8 @@ export function nextCooldown(cfg: ClawptchaConfig, now: Date): string {
   return new Date(now.getTime() + cfg.cooldown_minutes * 60_000).toISOString();
 }
 
-// Server-side per-question time limit: 90s + 15s grace for network latency.
-export const QUESTION_TIME_LIMIT_MS = 90_000;
+// Server-side per-question time limit: 60s + 15s grace for network latency.
+export const QUESTION_TIME_LIMIT_MS = 60_000;
 const QUESTION_GRACE_MS = 15_000;
 
 export function answerWithinTimeLimit(servedAt: string, now: Date): boolean {

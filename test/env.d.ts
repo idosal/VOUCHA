@@ -8,8 +8,6 @@ declare global {
       GITHUB_APP_ID: string;
       GITHUB_PRIVATE_KEY: string;
       GITHUB_WEBHOOK_SECRET: string;
-      GITHUB_OAUTH_CLIENT_ID: string;
-      GITHUB_OAUTH_CLIENT_SECRET: string;
       LLM_PROVIDER: string;
       LLM_MODEL: string;
       LLM_API_KEY: string;
@@ -28,8 +26,6 @@ declare module "cloudflare:workers" {
     GITHUB_APP_ID: string;
     GITHUB_PRIVATE_KEY: string;
     GITHUB_WEBHOOK_SECRET: string;
-    GITHUB_OAUTH_CLIENT_ID: string;
-    GITHUB_OAUTH_CLIENT_SECRET: string;
     LLM_PROVIDER: string;
     LLM_MODEL: string;
     LLM_API_KEY: string;

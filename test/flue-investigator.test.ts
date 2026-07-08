@@ -38,21 +38,9 @@ const largeCtx = {
 };
 
 describe("chooseInvestigatorSource", () => {
-  it("uses Flue automatically for large PRs when configured", () => {
-    expect(chooseInvestigatorSource({
-      FLUE_INVESTIGATOR_URL: "https://flue.example.com",
-      FLUE_INVESTIGATOR_SECRET: "secret",
-    }, DEFAULT_CONFIG, largeCtx)).toEqual({
-      ok: true,
-      source: "flue",
-      mode: "large_pr",
-    });
-  });
-
-  it("uses Flue automatically with a service binding and no public URL", () => {
+  it("uses Flue automatically for large PRs when the service binding is configured", () => {
     expect(chooseInvestigatorSource({
       FLUE_INVESTIGATOR: { fetch: vi.fn() } as unknown as Fetcher,
-      FLUE_INVESTIGATOR_SECRET: "secret",
     }, DEFAULT_CONFIG, largeCtx)).toEqual({
       ok: true,
       source: "flue",
@@ -70,8 +58,8 @@ describe("chooseInvestigatorSource", () => {
 });
 
 describe("investigatePrWithFlue", () => {
-  it("posts the bounded PR payload to the Flue workflow and validates its artifact", async () => {
-    const fetchFn = vi.fn(async () => new Response(JSON.stringify({
+  it("posts the bounded PR payload to the Flue service binding and validates its artifact", async () => {
+    const serviceFetch = vi.fn(async () => new Response(JSON.stringify({
       result: { artifact },
       runId: "run_123",
     }), {
@@ -80,22 +68,19 @@ describe("investigatePrWithFlue", () => {
     }));
 
     const result = await investigatePrWithFlue({
-      FLUE_INVESTIGATOR_URL: "https://flue.example.com/root/",
-      FLUE_INVESTIGATOR_SECRET: "secret",
-    }, largeCtx, DEFAULT_CONFIG, {
-      fetchFn: fetchFn as unknown as typeof fetch,
-    });
+      FLUE_INVESTIGATOR: { fetch: serviceFetch } as unknown as Fetcher,
+    }, largeCtx, DEFAULT_CONFIG);
 
     expect(result.ok).toBe(true);
     if (result.ok) expect(result.artifact.mode).toBe("large_pr");
-    expect(fetchFn).toHaveBeenCalledTimes(1);
-    const calls = fetchFn.mock.calls as unknown as Array<[RequestInfo | URL, RequestInit]>;
+    expect(serviceFetch).toHaveBeenCalledTimes(1);
+    const calls = serviceFetch.mock.calls as unknown as Array<[RequestInfo | URL, RequestInit]>;
     const [url, init] = calls[0]!;
-    expect(String(url)).toBe("https://flue.example.com/root/workflows/investigate-pr?wait=result");
+    expect(String(url)).toBe("https://clawptcha-flue-investigator/workflows/investigate-pr?wait=result");
     expect(init.headers).toMatchObject({
-      authorization: "Bearer secret",
       "content-type": "application/json",
     });
+    expect(init.headers).not.toHaveProperty("authorization");
     const body = JSON.parse(String(init.body)) as {
       repo: { full_name: string; pr_number: number; head_sha: string };
       pr: { mode: string };
@@ -107,38 +92,8 @@ describe("investigatePrWithFlue", () => {
     expect(String(init.body)).not.toContain("ghs_");
   });
 
-  it("prefers the Flue service binding over the public URL fallback", async () => {
-    const serviceFetch = vi.fn(async () => new Response(JSON.stringify({
-      result: { artifact },
-      runId: "run_123",
-    }), {
-      status: 200,
-      headers: { "content-type": "application/json" },
-    }));
-    const fallbackFetch = vi.fn();
-
-    const result = await investigatePrWithFlue({
-      FLUE_INVESTIGATOR: { fetch: serviceFetch } as unknown as Fetcher,
-      FLUE_INVESTIGATOR_URL: "https://flue.example.com/root/",
-      FLUE_INVESTIGATOR_SECRET: "secret",
-    }, largeCtx, DEFAULT_CONFIG, {
-      fetchFn: fallbackFetch as unknown as typeof fetch,
-    });
-
-    expect(result.ok).toBe(true);
-    expect(serviceFetch).toHaveBeenCalledTimes(1);
-    expect(fallbackFetch).not.toHaveBeenCalled();
-    const calls = serviceFetch.mock.calls as unknown as Array<[RequestInfo | URL, RequestInit]>;
-    const [url, init] = calls[0]!;
-    expect(String(url)).toBe("https://clawptcha-flue-investigator/workflows/investigate-pr?wait=result");
-    expect(init.headers).toMatchObject({
-      authorization: "Bearer secret",
-      "content-type": "application/json",
-    });
-  });
-
   it("reports workflow failures without producing an artifact", async () => {
-    const fetchFn = vi.fn(async () => new Response(JSON.stringify({
+    const serviceFetch = vi.fn(async () => new Response(JSON.stringify({
       result: { ok: false, error: "agent could not inspect PR" },
     }), {
       status: 200,
@@ -146,9 +101,8 @@ describe("investigatePrWithFlue", () => {
     }));
 
     const result = await investigatePrWithFlue({
-      FLUE_INVESTIGATOR_URL: "https://flue.example.com",
-      FLUE_INVESTIGATOR_SECRET: "secret",
-    }, largeCtx, DEFAULT_CONFIG, { fetchFn: fetchFn as unknown as typeof fetch });
+      FLUE_INVESTIGATOR: { fetch: serviceFetch } as unknown as Fetcher,
+    }, largeCtx, DEFAULT_CONFIG);
 
     expect(result).toEqual({ ok: false, error: "agent could not inspect PR" });
   });

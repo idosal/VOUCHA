@@ -75,7 +75,7 @@ describe("handlePullRequestEvent", () => {
     const n = uniq + 1;
     await handlePullRequestEvent(testEnv, api, payloadFor(n));
     expect(api.createCheckRun).toHaveBeenCalledWith("o/r", expect.objectContaining({
-      name: "clawptcha", head_sha: "abc123", status: "queued",
+      name: "PR comprehension check", head_sha: "abc123", status: "queued",
       details_url: expect.stringContaining("/challenge/"),
     }));
     expect(api.upsertPrComment).toHaveBeenCalled();
@@ -117,7 +117,7 @@ describe("handlePullRequestEvent", () => {
     await handlePullRequestEvent(testEnv, api, p);
 
     expect(api.createCheckRun).toHaveBeenCalledWith("o/r", expect.objectContaining({
-      name: "clawptcha",
+      name: "PR comprehension check",
       head_sha: "abc123",
       status: "queued",
     }));
@@ -570,6 +570,54 @@ describe("handlePullRequestEvent", () => {
 });
 
 describe("handleIssueCommentEvent", () => {
+  it("binds a verification session when the PR author comments the one-time code", async () => {
+    const api = stubApi({
+      getPr: vi.fn(async () => ({ ...pr, author_login: "Contributor" })),
+    });
+    const n = uniq + 28;
+    await handlePullRequestEvent(testEnv, api, payloadFor(n));
+    const ch = await getChallengeByPr(testEnv.DB, "o/r", n, "abc123");
+    expect(ch).not.toBeNull();
+    await testEnv.DB.prepare(
+      "INSERT INTO sessions (id, challenge_id, verify_code) VALUES ('sessVerify', ?, 'abc123')"
+    ).bind(ch!.id).run();
+
+    await handleIssueCommentEvent(testEnv, api, {
+      action: "created",
+      installation: { id: 1 },
+      repository: { full_name: "o/r" },
+      issue: { number: n, pull_request: {} },
+      comment: { body: "/clawptcha verify ABC123", user: { login: "contributor" } },
+    });
+
+    const row = await testEnv.DB.prepare("SELECT gh_login, verify_code FROM sessions WHERE id='sessVerify'")
+      .first<{ gh_login: string | null; verify_code: string | null }>();
+    expect(row).toEqual({ gh_login: "contributor", verify_code: null });
+  });
+
+  it("ignores verification comments from anyone other than the PR author", async () => {
+    const api = stubApi();
+    const n = uniq + 29;
+    await handlePullRequestEvent(testEnv, api, payloadFor(n));
+    const ch = await getChallengeByPr(testEnv.DB, "o/r", n, "abc123");
+    expect(ch).not.toBeNull();
+    await testEnv.DB.prepare(
+      "INSERT INTO sessions (id, challenge_id, verify_code) VALUES ('sessWrongAuthor', ?, 'def456')"
+    ).bind(ch!.id).run();
+
+    await handleIssueCommentEvent(testEnv, api, {
+      action: "created",
+      installation: { id: 1 },
+      repository: { full_name: "o/r" },
+      issue: { number: n, pull_request: {} },
+      comment: { body: "/clawptcha verify def456", user: { login: "rando" } },
+    });
+
+    const row = await testEnv.DB.prepare("SELECT gh_login, verify_code FROM sessions WHERE id='sessWrongAuthor'")
+      .first<{ gh_login: string | null; verify_code: string | null }>();
+    expect(row).toEqual({ gh_login: null, verify_code: "def456" });
+  });
+
   it("approves the newest challenge on '/clawptcha approve' from a maintainer", async () => {
     const api = stubApi();
     const n = uniq + 6;

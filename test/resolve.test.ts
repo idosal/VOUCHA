@@ -54,32 +54,28 @@ function passedChallenge(): Challenge {
 }
 
 describe("onChallengeResolved", () => {
-  it("fails a correct quiz when automation or outside assistance is detected", async () => {
-    await seedChallenge({ id: "ch-scripted-pass", status: "failed_assisted", createdAt: hoursAgo(1), checkRunId: 42 });
+  it("ensures and applies a flagged-pass label, then inlines the signals in the comment", async () => {
     const api = stubApi();
     await onChallengeResolved(testEnv, {
-      challenge: { ...passedChallenge(), id: "ch-scripted-pass", status: "failed_assisted" },
-      outcome: "failed_assisted",
-      score: 4,
-      total: 4,
+      challenge: passedChallenge(), outcome: "passed", score: 4, total: 4,
       telemetry: scriptedTelemetry, cfg: parseConfig(null),
     }, async () => api);
 
+    expect(api.ensureLabel).toHaveBeenCalledWith(
+      "o/r",
+      "pr-comprehension:flagged",
+      "b60205",
+      "Multiple passive risk signals were observed on a passed PR comprehension challenge."
+    );
+    expect(api.addLabels).toHaveBeenCalledWith("o/r", 1, ["pr-comprehension:flagged"]);
+
     const [, , patch] = (api.updateCheckRun as ReturnType<typeof vi.fn>).mock.calls[0];
-    expect(patch).toEqual(expect.objectContaining({
-      status: "completed",
-      conclusion: "failure",
-    }));
-    expect(patch.output.title).toBe("Failed — challenge assistance detected");
-    expect(patch.output.summary).toContain("automation or outside assistance");
-    expect(patch.output.summary).toContain("every answer took under 10 seconds");
+    expect(patch.output.title).toBe("Passed — but the quiz looks scripted");
 
     const [, , comment] = (api.upsertPrComment as ReturnType<typeof vi.fn>).mock.calls[0];
-    expect(comment).toContain("challenge failed");
-
-    const row = await testEnv.DB.prepare("SELECT status FROM challenges WHERE id='ch-scripted-pass'")
-      .first<{ status: string }>();
-    expect(row?.status).toBe("failed_assisted");
+    expect(comment).toContain("looks scripted");
+    expect(comment).toContain("every answer took under 10 seconds");
+    expect(comment).not.toContain("see the check run details");
   });
 
   it("does not label a clean pass and keeps the plain title", async () => {
@@ -106,6 +102,19 @@ describe("onChallengeResolved", () => {
     expect(api.upsertPrComment).not.toHaveBeenCalled();
   });
 
+  it("can disable flagged labels while preserving the check-run warning", async () => {
+    const api = stubApi();
+    await onChallengeResolved(testEnv, {
+      challenge: passedChallenge(), outcome: "passed", score: 4, total: 4,
+      telemetry: scriptedTelemetry, cfg: parseConfig("output:\n  labels: false\n"),
+    }, async () => api);
+
+    expect(api.ensureLabel).not.toHaveBeenCalled();
+    expect(api.addLabels).not.toHaveBeenCalled();
+    const [, , patch] = (api.updateCheckRun as ReturnType<typeof vi.fn>).mock.calls[0];
+    expect(patch.output.title).toBe("Passed — but the quiz looks scripted");
+  });
+
   it("withholds the risk report on a retryable failure (no mid-challenge signal feedback)", async () => {
     const api = stubApi();
     await onChallengeResolved(testEnv, {
@@ -117,6 +126,9 @@ describe("onChallengeResolved", () => {
     expect(patch.output.summary).toContain("Score 1/4");
     expect(patch.output.summary).not.toContain("Risk report");
     expect(patch.output.summary).not.toContain("under 10 seconds");
+    expect(patch.details_url).toContain("/challenge/ch-1");
+    expect(api.upsertPrComment).toHaveBeenCalledWith("o/r", 1, expect.stringContaining("Clawptcha — retry needed"));
+    expect(api.upsertPrComment).toHaveBeenCalledWith("o/r", 1, expect.stringContaining("/challenge/ch-1"));
   });
 
   it("includes the full risk report on final failure", async () => {
@@ -131,6 +143,26 @@ describe("onChallengeResolved", () => {
     expect(patch.output.summary).toContain("every answer took under 10 seconds");
   });
 
+  it("still posts the attestation comment when labeling fails", async () => {
+    const api = stubApi({ addLabels: vi.fn(async () => { throw new Error("403"); }) });
+    await onChallengeResolved(testEnv, {
+      challenge: passedChallenge(), outcome: "passed", score: 4, total: 4,
+      telemetry: scriptedTelemetry, cfg: parseConfig(null),
+    }, async () => api);
+
+    expect(api.upsertPrComment).toHaveBeenCalled();
+  });
+
+  it("still posts the attestation comment when label creation fails", async () => {
+    const api = stubApi({ ensureLabel: vi.fn(async () => { throw new Error("403"); }) });
+    await onChallengeResolved(testEnv, {
+      challenge: passedChallenge(), outcome: "passed", score: 4, total: 4,
+      telemetry: scriptedTelemetry, cfg: parseConfig(null),
+    }, async () => api);
+
+    expect(api.addLabels).not.toHaveBeenCalled();
+    expect(api.upsertPrComment).toHaveBeenCalled();
+  });
 });
 
 describe("sweepStaleChallenges", () => {

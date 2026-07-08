@@ -1,28 +1,16 @@
 ---
 title: Deployment
-description: Managed and self-deployed setup paths for CLAWPTCHA, including GitHub App, Turnstile, model provider, Flue, and cron requirements.
+description: Self-deployed setup for CLAWPTCHA, including GitHub App, Turnstile, model provider, Flue, and cron requirements.
 ---
 
-CLAWPTCHA can run as the free managed service for public open-source
-repositories, or as a self-deployed Cloudflare Worker in your own account. Both
-models keep repository policy in `.github/clawptcha.yml`.
-
-## Managed service
-
-Use the managed service when you want CLAWPTCHA without operating the Worker,
-D1 database, model provider, Turnstile, or optional large-PR investigator.
-
-The managed service is intended for installed public repositories. The visible
-outcome is posted to the pull request as review evidence. See
-[Privacy and data](/docs/privacy-data/) for what is stored and what stays
-transient.
-
-## Self-deploy
+CLAWPTCHA currently runs as a self-deployed Cloudflare Worker in your own
+account. Repository policy stays in `.github/clawptcha.yml`; credentials and
+storage stay under the operator's Cloudflare and GitHub accounts.
 
 Self-deploy when you want to control Cloudflare account, storage, model
 provider, GitHub App, secrets, and retention posture.
 
-Local setup requires Node.js 22.15 or newer and npm.
+Local setup requires Node.js 22.22.1 or newer and npm.
 
 ```bash
 npx wrangler login && npm run setup
@@ -37,7 +25,7 @@ through the secret APIs rather than saved in project files.
 
 The Cloudflare deploy button can provision the Worker, D1 database, and Workers
 AI binding from a fork. After that, clone the fork and run the same setup
-wizard so the GitHub App, OAuth callback, Turnstile, and secrets are configured.
+wizard so the GitHub App, Turnstile, and secrets are configured.
 
 ```bash
 npx wrangler login && npm run setup
@@ -66,7 +54,6 @@ control every credential by hand.
    Configure:
 
    - webhook URL: `https://<your-worker>/webhook`;
-   - OAuth callback URL: `https://<your-worker>/oauth/callback`;
    - events: Pull request, Issue comment, Installation;
    - permissions: Checks read/write, Pull requests read/write, Contents
      read-only, Metadata read-only, Members read-only.
@@ -88,8 +75,6 @@ control every credential by hand.
    GITHUB_APP_ID
    GITHUB_PRIVATE_KEY
    GITHUB_WEBHOOK_SECRET
-   GITHUB_OAUTH_CLIENT_ID
-   GITHUB_OAUTH_CLIENT_SECRET
    TURNSTILE_SITE_KEY
    TURNSTILE_SECRET_KEY
    SESSION_SIGNING_KEY
@@ -119,7 +104,7 @@ The main Worker can investigate normal PRs without Flue. Configure the optional
 Flue investigator when large PRs are common and you want large evidence bundles
 handled outside the main Worker.
 
-Same-account deployments should prefer a service binding:
+Deploy the Flue Worker, then configure the main Worker with a service binding:
 
 ```jsonc
 "services": [
@@ -127,14 +112,8 @@ Same-account deployments should prefer a service binding:
 ]
 ```
 
-Set the shared secret on the main Worker:
-
-```bash
-npx wrangler secret put FLUE_INVESTIGATOR_SECRET
-```
-
-For external deployments, set `FLUE_INVESTIGATOR_URL` plus
-`FLUE_INVESTIGATOR_SECRET`.
+The Flue Worker is service-binding-only. It disables `workers.dev`, does not
+require a shared secret, and does not support an external URL fallback.
 
 If `context.investigator: flue` is configured and the service is unavailable,
 CLAWPTCHA reports neutral instead of falling back to raw large-diff generation.

@@ -6,20 +6,19 @@ description: A practical first rollout path for adding CLAWPTCHA to a repository
 Start with a narrow policy, verify the check-run behavior on a few known PRs,
 then tighten path-specific rules only where maintainers actually need them.
 
-## 1. Choose the operating model
+## 1. Self-deploy the service
 
-For the managed service, install the CLAWPTCHA GitHub App and keep policy in
-the repository. Maintainers control the `.github/clawptcha.yml` file and review
-the resulting check runs.
-
-For self-deploy, run the Cloudflare Worker, D1 database, GitHub App credentials,
-Turnstile keys, and model provider in your own account.
+CLAWPTCHA is currently self-deployed. Run the Cloudflare Worker, D1 database,
+GitHub App credentials, Turnstile keys, and model provider in your own account.
+The setup wizard deploys the Worker, creates the GitHub App through GitHub's
+manifest flow, writes Worker secrets, and leaves repository policy in
+`.github/clawptcha.yml`.
 
 ```bash
 npx wrangler login && npm run setup
 ```
 
-The Worker can use Workers AI by default. External model providers and the
+The Worker uses Workers AI by default. External model providers and the
 optional Flue investigator are advanced deployment choices, not prerequisites
 for the first repository.
 
@@ -55,8 +54,9 @@ and records the default form honeypot signal as review evidence.
 
 Also copy or adapt `templates/contributing-policy.md` into `CONTRIBUTING.md`
 and `templates/pull_request_template.md` into the repository PR template. It
-tells contributors the same policy CLAWPTCHA enforces: AI assistance is
-allowed, but the submitter must understand, test, explain, and support the PR.
+tells contributors the same policy CLAWPTCHA enforces: AI assistance in PR
+authoring is allowed, but challenge answers must come from the author's own
+understanding. The submitter must understand, test, explain, and support the PR.
 
 ## 3. Verify the first scenarios
 

@@ -24,7 +24,7 @@ Success means the challenge feels legitimate to authors, useful to maintainers, 
 
 Sharp, fair, accountable.
 
-The voice should be direct without being punitive. Clawptcha can be memorable and a little strange because the name is inherently playful, but the interface should not make the gate feel like a joke. It should read as a precise maintainer tool with a clear ethical line: AI-written code is fine; not understanding it is not.
+The voice should be direct without being punitive. Clawptcha can be memorable because the name is distinctive, but the interface should not make the gate feel like an inside joke, mascot brand, or tool for one source project. It should read as a precise maintainer tool with a clear ethical line: AI-written code is fine; not understanding it is not.
 
 ## Anti-references
 
@@ -32,7 +32,7 @@ Do not imply that Clawptcha proves a user is human, defeats all AI agents, or pr
 
 Avoid invasive proctoring patterns: webcam checks, keystroke capture, clipboard policing, fake biometric presence, dark-pattern countdown pressure, or security theater that adds surveillance without improving comprehension.
 
-Avoid mascot-heavy or joke-first UI that makes a repository gate feel unserious. Also avoid enterprise compliance theater: dense legalistic copy, fear-based warnings, or dashboards that obscure the simple question of whether the author understands their change.
+Avoid mascot-heavy, joke-first, or project-specific UI that makes a repository gate feel unserious or tied to one community. Also avoid enterprise compliance theater: dense legalistic copy, fear-based warnings, or dashboards that obscure the simple question of whether the author understands their change.
 
 Avoid locking future design work to the current server-rendered card flow. A richer frontend is acceptable when it materially improves comprehension, pacing, accessibility, error recovery, or maintainer trust.
 

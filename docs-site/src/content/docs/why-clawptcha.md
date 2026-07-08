@@ -61,8 +61,10 @@ decision-maker.
 
 ## What changes for contributors
 
-For PRs that reach a challenge, the author signs in with GitHub and answers a
-short multiple-choice quiz generated from PR evidence. The questions should be
+For PRs that reach a challenge, the author verifies from GitHub with a one-time
+PR comment and answers a short multiple-choice quiz generated from PR evidence.
+The challenge page copies the verification command, opens the PR, and advances
+automatically when GitHub confirms the author comment. The questions should be
 about ownership-level understanding, not trivia about line numbers or function
 names.
 

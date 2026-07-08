@@ -41,7 +41,9 @@ describe("GET /", () => {
     const html = await res.text();
     expect(html).toContain("CLAWPTCHA");
     expect(html).toContain("Deploy to Cloudflare");
-    expect(html).toContain("clawptcha.example.com");
+    expect(html).toContain("Deploy from GitHub");
+    expect(html).toContain("Privacy, permissions, configuration, and verification details live in the docs.");
+    expect(html).not.toContain("clawptcha.example.com");
   });
 });
 
@@ -82,16 +84,88 @@ describe("GET /challenge/:id", () => {
     expect(res.status).toBe(404);
   });
 
-  it("redirects anonymous visitors to GitHub OAuth", async () => {
+  it("shows anonymous visitors a GitHub comment verification command", async () => {
     await testEnv.DB.prepare(
       `INSERT INTO challenges (id, installation_id, repo_full_name, pr_number, head_sha,
         author_login, status, config_json) VALUES ('ch1', 1, 'o/r', 1, 's', 'alice', 'ready', '{}')`
     ).run();
     const ctx = createExecutionContext();
     const res = await worker.fetch(new Request("https://x/challenge/ch1"), testEnv, ctx);
-    expect(res.status).toBe(302);
-    expect(res.headers.get("location")).toContain("github.com/login/oauth/authorize");
+    expect(res.status).toBe(200);
     expect(res.headers.get("set-cookie")).toContain("clawptcha_session");
+    const html = await res.text();
+    expect(html).toContain("Verify from the PR.");
+    expect(html).toContain("/clawptcha verify ");
+    expect(html).toContain("https://github.com/o/r/pull/1#issuecomment-new");
+    expect(html).toContain('id="openPrLink"');
+    expect(html).toContain("Open PR");
+    expect(html).toContain("/challenge/ch1/verify/status");
+    expect(html).toContain("cannot comment, approve, or answer on your behalf");
+    const row = await testEnv.DB.prepare(
+      "SELECT gh_login, verify_code FROM sessions WHERE challenge_id='ch1'"
+    ).first<{ gh_login: string | null; verify_code: string | null }>();
+    expect(row?.gh_login).toBeNull();
+    expect(row?.verify_code).toMatch(/^[a-f0-9]{12}$/);
+  });
+
+  it("does not create a verification session before maintainer approval", async () => {
+    await testEnv.DB.prepare(
+      `INSERT INTO challenges (id, installation_id, repo_full_name, pr_number, head_sha,
+        author_login, status, config_json) VALUES ('chAwaiting', 1, 'o/r', 2, 's2', 'alice', 'awaiting_approval', '{}')`
+    ).run();
+    const ctx = createExecutionContext();
+    const res = await worker.fetch(new Request("https://x/challenge/chAwaiting"), testEnv, ctx);
+
+    expect(res.status).toBe(200);
+    expect(res.headers.get("set-cookie")).toBeNull();
+    expect(await res.text()).toContain("Awaiting approval");
+    const row = await testEnv.DB.prepare(
+      "SELECT COUNT(*) AS count FROM sessions WHERE challenge_id='chAwaiting'"
+    ).first<{ count: number }>();
+    expect(row?.count).toBe(0);
+  });
+
+  it("reports verification status for the current browser session", async () => {
+    await testEnv.DB.prepare(
+      `INSERT INTO challenges (id, installation_id, repo_full_name, pr_number, head_sha,
+        author_login, status, config_json) VALUES ('chVerifyStatus', 1, 'o/r', 4, 's4', 'alice', 'ready', '{}')`
+    ).run();
+    await testEnv.DB.prepare(
+      "INSERT INTO sessions (id, challenge_id, gh_login, verify_code) VALUES ('sessVerifyStatus', 'chVerifyStatus', NULL, 'abc123')"
+    ).run();
+    const cookie = await signSessionCookie(testEnv.SESSION_SIGNING_KEY, "sessVerifyStatus");
+
+    const before = await worker.fetch(new Request("https://x/challenge/chVerifyStatus/verify/status", {
+      headers: { cookie: `clawptcha_session=${cookie}` },
+    }), testEnv, createExecutionContext());
+    expect(await before.json()).toEqual({ verified: false });
+
+    await testEnv.DB.prepare("UPDATE sessions SET gh_login='alice', verify_code=NULL WHERE id='sessVerifyStatus'").run();
+    const after = await worker.fetch(new Request("https://x/challenge/chVerifyStatus/verify/status", {
+      headers: { cookie: `clawptcha_session=${cookie}` },
+    }), testEnv, createExecutionContext());
+    expect(await after.json()).toEqual({ verified: true });
+  });
+
+  it("renders terminal challenge pages with PR and challenge actions", async () => {
+    await testEnv.DB.prepare(
+      `INSERT INTO challenges (id, installation_id, repo_full_name, pr_number, head_sha,
+        author_login, status, config_json) VALUES ('chPassedActions', 1, 'o/r', 5, 's5', 'alice', 'passed', '{}')`
+    ).run();
+
+    const res = await worker.fetch(
+      new Request("https://x/challenge/chPassedActions"),
+      testEnv,
+      createExecutionContext()
+    );
+
+    expect(res.status).toBe(200);
+    const html = await res.text();
+    expect(html).toContain("<h1 id=\"result-title\">Passed</h1>");
+    expect(html).toContain("Back to PR");
+    expect(html).toContain('href="https://github.com/o/r/pull/5"');
+    expect(html).toContain("Refresh challenge");
+    expect(html).toContain('href="/challenge/chPassedActions"');
   });
 });
 
@@ -154,24 +228,20 @@ describe("challengeDeps.generateQuiz fail-open seam", () => {
   });
 
   it("does not fall back to direct diff generation when a large Flue investigation fails", async () => {
+    const fetchCalls: string[] = [];
+    const serviceFetch = vi.fn(async (input: RequestInfo | URL) => {
+      const url = String(input);
+      fetchCalls.push(url);
+      return new Response(JSON.stringify({
+        result: { ok: false, error: "agent could not inspect PR" },
+      }), { status: 200, headers: { "content-type": "application/json" } });
+    });
     const envWithFlue = {
       ...testEnv,
       LLM_PROVIDER: "openai-compat",
       LLM_BASE_URL: "https://llm.example/v1",
-      FLUE_INVESTIGATOR_URL: "https://flue.example",
-      FLUE_INVESTIGATOR_SECRET: "secret",
+      FLUE_INVESTIGATOR: { fetch: serviceFetch } as unknown as Fetcher,
     } as unknown as Env;
-    const fetchCalls: string[] = [];
-    vi.stubGlobal("fetch", async (input: RequestInfo | URL) => {
-      const url = String(input);
-      fetchCalls.push(url);
-      if (url.startsWith("https://flue.example/")) {
-        return new Response(JSON.stringify({
-          result: { ok: false, error: "agent could not inspect PR" },
-        }), { status: 200, headers: { "content-type": "application/json" } });
-      }
-      throw new Error(`unexpected fetch: ${url}`);
-    });
     const errorSpy = vi.spyOn(console, "error").mockImplementation(() => {});
     try {
       const deps = challengeDeps(envWithFlue);
@@ -184,51 +254,13 @@ describe("challengeDeps.generateQuiz fail-open seam", () => {
       }, DEFAULT_CONFIG);
 
       expect(result).toEqual({ ok: false, error: "agent could not inspect PR" });
-      expect(fetchCalls).toEqual(["https://flue.example/workflows/investigate-pr?wait=result"]);
+      expect(fetchCalls).toEqual(["https://clawptcha-flue-investigator/workflows/investigate-pr?wait=result"]);
       const row = await testEnv.DB.prepare(
         "SELECT source, status FROM pr_investigations WHERE repo_full_name='o/r' AND pr_number=9991 AND head_sha='flue-fail-sha'"
       ).first<{ source: string; status: string }>();
       expect(row).toEqual({ source: "flue", status: "failed" });
     } finally {
       errorSpy.mockRestore();
-      vi.unstubAllGlobals();
     }
-  });
-});
-
-describe("GET /oauth/callback (login-CSRF guard)", () => {
-  it("rejects a callback whose state matches a session but whose request has no matching cookie", async () => {
-    // A session + state exists (created by some browser), but the request
-    // completing OAuth carries no clawptcha_session cookie for that session —
-    // the login-CSRF scenario. gh_login must NOT be written.
-    await testEnv.DB.prepare(
-      `INSERT INTO challenges (id, installation_id, repo_full_name, pr_number, head_sha,
-        author_login, status, config_json) VALUES ('chCsrf', 1, 'o/r', 2, 's2', 'alice', 'ready', '{}')`
-    ).run();
-    await testEnv.DB.prepare(
-      "INSERT INTO sessions (id, challenge_id, oauth_state) VALUES ('sessCsrf', 'chCsrf', 'stateCsrf')"
-    ).run();
-    const ctx = createExecutionContext();
-    const res = await worker.fetch(
-      new Request("https://x/oauth/callback?code=abc&state=stateCsrf"),
-      testEnv,
-      ctx
-    );
-    expect(res.status).toBe(400);
-    const row = await testEnv.DB.prepare("SELECT gh_login, oauth_state FROM sessions WHERE id='sessCsrf'")
-      .first<{ gh_login: string | null; oauth_state: string | null }>();
-    expect(row?.gh_login).toBeNull();       // identity was not bound
-    expect(row?.oauth_state).toBe("stateCsrf"); // state not consumed
-  });
-
-  it("shows a canceled-sign-in page when GitHub returns error=access_denied", async () => {
-    const ctx = createExecutionContext();
-    const res = await worker.fetch(
-      new Request("https://x/oauth/callback?error=access_denied&state=whatever"),
-      testEnv,
-      ctx
-    );
-    expect(res.status).toBe(400);
-    expect(await res.text()).toContain("canceled");
   });
 });

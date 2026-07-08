@@ -78,8 +78,6 @@ export default defineConfig(async () => {
             TEST_MIGRATIONS: migrations,
             GITHUB_APP_ID: "12345",
             GITHUB_WEBHOOK_SECRET: "test-webhook-secret",
-            GITHUB_OAUTH_CLIENT_ID: "test-client-id",
-            GITHUB_OAUTH_CLIENT_SECRET: "test-client-secret",
             LLM_PROVIDER: "anthropic",
             LLM_MODEL: "test-model",
             LLM_API_KEY: "test-llm-key",

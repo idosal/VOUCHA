@@ -39,12 +39,12 @@ CREATE TABLE quizzes (
   score INTEGER
 );
 
--- Quiz-taking browser sessions, bound to a GitHub login after OAuth.
+-- Quiz-taking browser sessions, bound to a GitHub login after author verification.
 CREATE TABLE sessions (
   id TEXT PRIMARY KEY,
   challenge_id TEXT NOT NULL REFERENCES challenges(id),
-  gh_login TEXT,                    -- null until OAuth completes
-  oauth_state TEXT,
+  gh_login TEXT,                    -- null until the author verifies from GitHub
+  oauth_state TEXT,                 -- legacy OAuth state; retained for old deployments
   created_at TEXT NOT NULL DEFAULT (strftime('%Y-%m-%dT%H:%M:%fZ','now'))
 );
 

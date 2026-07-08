@@ -211,6 +211,7 @@ describe("parseConfig", () => {
       "  ignore_paths: ['docs/**', 'docs/**']",
       "output:",
       "  comments: detailed",
+      "  labels: false",
       "context:",
       "  ignore_paths: ['dist/**', '*.lock', 'dist/**']",
       "",
@@ -221,7 +222,7 @@ describe("parseConfig", () => {
     expect(cfg.bot_policy).toEqual({ default: "challenge", trusted_logins: ["dependabot[bot]"] });
     expect(cfg.rechallenge_on_push).toBe(true);
     expect(cfg.rechallenge).toEqual({ on_push: "included_paths", ignore_paths: ["docs/**"] });
-    expect(cfg.output).toEqual({ comments: "detailed" });
+    expect(cfg.output).toEqual({ comments: "detailed", labels: false });
     expect(cfg.context.ignore_paths).toEqual(["dist/**", "*.lock"]);
   });
 

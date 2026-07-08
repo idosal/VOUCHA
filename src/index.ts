@@ -4,10 +4,27 @@ import type { Env, Challenge } from "./types";
 import { verifyWebhookSignature } from "./github/webhook";
 import { handlePullRequestEvent, handleIssueCommentEvent } from "./github/events";
 import { apiForInstallation, onChallengeResolved, sweepStaleChallenges } from "./resolve";
-import { getChallenge, getInvestigationByPr, randomToken, upsertInvestigation } from "./store";
+import {
+  getChallenge,
+  getInvestigationByPr,
+  getSession,
+  insertVerificationSession,
+  randomToken,
+  setSessionVerifyCode,
+  upsertInvestigation,
+  type ChallengeSession,
+} from "./store";
 import { signSessionCookie, verifySessionCookie } from "./ui/session";
-import { authorizeUrl, exchangeCodeForLogin } from "./github/oauth";
-import { startPage, questionPage, resultPage, errorPage, homePage, HONEYPOT_FIELD_NAME } from "./ui/pages";
+import {
+  verificationPage,
+  startPage,
+  questionPage,
+  resultPage,
+  errorPage,
+  homePage,
+  HONEYPOT_FIELD_NAME,
+  type PageAction,
+} from "./ui/pages";
 import { startQuizAttempt, submitAnswer, type ChallengeDeps, type PrContext } from "./challenge";
 import { generateQuiz, generateQuizFromInvestigation } from "./quiz/generate";
 import { redactForClient, type Quiz } from "./quiz/schema";
@@ -15,6 +32,7 @@ import { QUESTION_TIME_LIMIT_MS } from "./quiz/grade";
 import { getMultipleChoiceGate, hasHoneypotSignal, resolveConfig, type ClawptchaConfig } from "./config";
 import { providerFromEnv, type QuizProvider } from "./quiz/providers";
 import { matchesGlob } from "./policy/exemptions";
+import { sameGitHubLogin } from "./github/login";
 import { chooseInvestigatorSource, investigatePrWithFlue, type InvestigationSource } from "./flue/investigator";
 import {
   investigatePr,
@@ -36,10 +54,84 @@ async function docsAsset(c: Context<{ Bindings: Env }>): Promise<Response> {
 app.onError((err, c) => {
   console.error("unhandled route error", c.req.path, err);
   return c.html(
-    errorPage("Something went wrong", "Temporary problem on our side — please try again in a minute. Your PR is not blocked by this error."),
+    errorPage(
+      "Something went wrong",
+      "Temporary problem on our side — please try again in a minute. Your PR is not blocked by this error.",
+      challengePathActions(c.req.path)
+    ),
     500
   );
 });
+
+async function latestQuizResult(
+  env: Env,
+  challenge: Challenge,
+  cfg: ClawptchaConfig
+): Promise<{ score: number; total: number; failureReason?: string } | null> {
+  const row = await env.DB.prepare(
+    `SELECT score, questions_json, answers_json, telemetry_json
+     FROM quizzes
+     WHERE challenge_id=? AND score IS NOT NULL
+     ORDER BY attempt_number DESC
+     LIMIT 1`
+  ).bind(challenge.id).first<{
+    score: number;
+    questions_json: string;
+    answers_json: string;
+    telemetry_json: string;
+  }>();
+  if (!row) return null;
+
+  const gate = getMultipleChoiceGate(cfg);
+  let total = gate.questions;
+  try {
+    const questions = (JSON.parse(row.questions_json) as Quiz).questions;
+    if (questions.length > 0) total = questions.length;
+  } catch { /* use policy default */ }
+
+  try {
+    const answers = JSON.parse(row.answers_json) as unknown[];
+    if (answers.length > 0) total = answers.length;
+  } catch { /* use question count */ }
+
+  let failureReason: string | undefined;
+  try {
+    const telemetry = JSON.parse(row.telemetry_json || "{}") as { botFailureReason?: unknown };
+    if (typeof telemetry.botFailureReason === "string") failureReason = telemetry.botFailureReason;
+  } catch { /* no stored failure reason */ }
+
+  return failureReason ? { score: row.score, total, failureReason } : { score: row.score, total };
+}
+
+function cooldownMessage(until: string): string {
+  const retryAt = new Date(until);
+  if (Number.isNaN(retryAt.getTime())) {
+    return "Cooldown is active. Return to this link in a few minutes to retry with a fresh quiz.";
+  }
+  return `Cooldown is active until ${retryAt.toLocaleString("en-US", { timeZone: "UTC", timeZoneName: "short" })}. Return to this link to retry with a fresh quiz.`;
+}
+
+function githubPrUrl(challenge: Pick<Challenge, "repo_full_name" | "pr_number">): string {
+  return `https://github.com/${challenge.repo_full_name}/pull/${challenge.pr_number}`;
+}
+
+function challengePageActions(challenge: Pick<Challenge, "id" | "repo_full_name" | "pr_number">): PageAction[] {
+  return [
+    { label: "Back to PR", href: githubPrUrl(challenge), primary: true, external: true },
+    { label: "Refresh challenge", href: `/challenge/${challenge.id}` },
+  ];
+}
+
+function failedChallengeMessage(latest: { failureReason?: string } | null): string {
+  if (latest?.failureReason) return `Bot verification failed: ${latest.failureReason}`;
+  return "No attempts remain. Maintainers should review this PR manually before merging.";
+}
+
+function challengePathActions(path: string): PageAction[] {
+  const match = /^\/challenge\/([^/]+)/.exec(path);
+  if (!match) return [];
+  return [{ label: "Return to challenge", href: `/challenge/${match[1]}`, primary: true }];
+}
 
 // ---------- webhooks ----------
 app.post("/webhook", async (c) => {
@@ -119,20 +211,49 @@ function filterContextForGeneration(ctx: PrContext, cfg: ClawptchaConfig): PrCon
   };
 }
 
-async function currentSession(
-  c: Context<{ Bindings: Env }>
-): Promise<{ id: string; gh_login: string | null } | null> {
+async function currentSession(c: Context<{ Bindings: Env }>): Promise<ChallengeSession | null> {
   const cookie = getCookie(c, "clawptcha_session");
   if (!cookie) return null;
   const sessionId = await verifySessionCookie(c.env.SESSION_SIGNING_KEY, cookie);
   if (!sessionId) return null;
-  const row = await c.env.DB.prepare("SELECT id, gh_login, created_at FROM sessions WHERE id=?")
-    .bind(sessionId)
-    .first<{ id: string; gh_login: string | null; created_at: string }>();
+  const row = await getSession(c.env.DB, sessionId);
   if (!row) return null;
   // Sessions expire after 1 hour (matches the cookie max-age, enforced server-side).
   if (Date.now() - new Date(row.created_at).getTime() > SESSION_MAX_AGE_MS) return null;
-  return { id: row.id, gh_login: row.gh_login };
+  return row;
+}
+
+function newVerificationCode(): string {
+  return randomToken(6);
+}
+
+async function createVerificationSession(
+  c: Context<{ Bindings: Env }>,
+  challengeId: string
+): Promise<ChallengeSession> {
+  const sessionId = randomToken();
+  const verifyCode = newVerificationCode();
+  await insertVerificationSession(c.env.DB, sessionId, challengeId, verifyCode);
+  setCookie(c, "clawptcha_session", await signSessionCookie(c.env.SESSION_SIGNING_KEY, sessionId), {
+    httpOnly: true, secure: true, sameSite: "Lax", path: "/", maxAge: 3600,
+  });
+  return {
+    id: sessionId,
+    challenge_id: challengeId,
+    gh_login: null,
+    verify_code: verifyCode,
+    created_at: new Date().toISOString(),
+  };
+}
+
+async function ensureVerificationCode(
+  env: Env,
+  session: ChallengeSession
+): Promise<string> {
+  if (session.verify_code) return session.verify_code;
+  const verifyCode = newVerificationCode();
+  await setSessionVerifyCode(env.DB, session.id, verifyCode);
+  return verifyCode;
 }
 
 export function challengeDeps(env: Env): ChallengeDeps {
@@ -251,9 +372,8 @@ export function challengeDeps(env: Env): ChallengeDeps {
       );
     },
     async verifyTurnstile(token: string) {
-      // Turnstile informs risk scoring but never blocks: any failure (network,
-      // parse, service outage) degrades to `false`, which callers treat as a
-      // signal — not a gate. A siteverify outage must not lock authors out.
+      // Turnstile's browser token is trusted only after backend Siteverify.
+      // A non-success verdict is a bot-verification failure at quiz start.
       try {
         if (!token) return false;
         const res = await fetch("https://challenges.cloudflare.com/turnstile/v0/siteverify", {
@@ -273,79 +393,110 @@ export function challengeDeps(env: Env): ChallengeDeps {
   };
 }
 
-// ---------- OAuth ----------
-app.get("/oauth/callback", async (c) => {
-  if (c.req.query("error")) {
-    return c.html(errorPage("Sign-in canceled",
-      "You canceled GitHub sign-in — reopen the challenge link from the PR to try again."), 400);
-  }
-  const code = c.req.query("code");
-  const state = c.req.query("state");
-  if (!code || !state) return c.html(errorPage("OAuth error", "Missing code or state."), 400);
-  const session = await c.env.DB.prepare("SELECT * FROM sessions WHERE oauth_state=?")
-    .bind(state).first<{ id: string; challenge_id: string }>();
-  if (!session) return c.html(errorPage("OAuth error", "Unknown or expired state."), 400);
-  // Login-CSRF guard: the browser completing OAuth must be the same browser that
-  // started it. Without this, an attacker who holds a session's `state` could get
-  // the PR author to complete the flow and have the author's identity written into
-  // the attacker's session — forging an attestation in the author's name. Require
-  // the request's own signed session cookie to match the state-bound session row.
-  const cookie = getCookie(c, "clawptcha_session");
-  const cookieSessionId = cookie
-    ? await verifySessionCookie(c.env.SESSION_SIGNING_KEY, cookie)
-    : null;
-  if (cookieSessionId !== session.id) {
-    return c.html(errorPage("Sign-in error",
-      "This sign-in link doesn't match your session. Reopen the challenge link from the PR and try again."), 400);
-  }
-  const login = await exchangeCodeForLogin(c.env, code);
-  if (!login) return c.html(errorPage("OAuth error", "GitHub login failed. Try again."), 400);
-  await c.env.DB.prepare("UPDATE sessions SET gh_login=?, oauth_state=NULL WHERE id=?")
-    .bind(login, session.id).run();
-  return c.redirect(`/challenge/${session.challenge_id}`);
-});
-
 // ---------- challenge pages ----------
 app.get("/challenge/:id", async (c) => {
   const challenge = await getChallenge(c.env.DB, c.req.param("id"));
   if (!challenge) return c.html(errorPage("Not found", "This challenge link is invalid or expired."), 404);
 
-  const session = await currentSession(c);
-  if (!session || !session.gh_login) {
-    const sessionId = randomToken();
-    const state = randomToken();
-    await c.env.DB.prepare(
-      "INSERT INTO sessions (id, challenge_id, oauth_state) VALUES (?, ?, ?)"
-    ).bind(sessionId, challenge.id, state).run();
-    setCookie(c, "clawptcha_session", await signSessionCookie(c.env.SESSION_SIGNING_KEY, sessionId), {
-      httpOnly: true, secure: true, sameSite: "Lax", path: "/", maxAge: 3600,
-    });
-    return c.redirect(authorizeUrl(c.env, state));
-  }
+  const cfg = resolveConfig(challenge.config_json);
+  const gate = getMultipleChoiceGate(cfg);
+  const latest = await latestQuizResult(c.env, challenge, cfg);
 
-  if (session.gh_login !== challenge.author_login) {
-    return c.html(errorPage("Not your challenge",
-      `This challenge belongs to @${challenge.author_login}. You are signed in as @${session.gh_login}.`), 403);
-  }
   if (challenge.status === "awaiting_approval") {
     return c.html(errorPage("Awaiting approval",
-      "A maintainer must approve this challenge first (`/clawptcha approve` on the PR)."));
+      "A maintainer must approve this challenge first (`/clawptcha approve` on the PR).",
+      challengePageActions(challenge)));
+  }
+  if (challenge.status === "neutral") {
+    return c.html(errorPage("Clawptcha unavailable",
+      "The challenge could not be completed because of a Clawptcha-side problem. The PR should not be blocked by this challenge.",
+      challengePageActions(challenge)));
+  }
+  if (challenge.status === "superseded") {
+    return c.html(errorPage("Challenge no longer active",
+      "This challenge is no longer active — a newer commit or outcome has replaced it. Check the PR for the current status.",
+      challengePageActions(challenge)));
   }
   if (challenge.status === "passed") {
-    return c.html(errorPage("✅ Already passed", "You already passed this challenge. The check is green."));
+    return c.html(resultPage(
+      true,
+      latest?.score ?? gate.pass_threshold,
+      latest?.total ?? gate.questions,
+      "This challenge already passed. The PR check should be green and the attestation comment is on the PR.",
+      challengePageActions(challenge)
+    ));
+  }
+  if (challenge.status === "failed_final") {
+    return c.html(resultPage(
+      false,
+      latest?.score ?? 0,
+      latest?.total ?? gate.questions,
+      failedChallengeMessage(latest),
+      challengePageActions(challenge)
+    ));
+  }
+  if (challenge.status === "ready" && challenge.cooldown_until && new Date(challenge.cooldown_until).getTime() > Date.now()) {
+    return c.html(resultPage(
+      false,
+      latest?.score ?? 0,
+      latest?.total ?? gate.questions,
+      cooldownMessage(challenge.cooldown_until),
+      challengePageActions(challenge)
+    ));
+  }
+
+  let session = await currentSession(c);
+  if (!session || (!session.gh_login && session.challenge_id !== challenge.id)) {
+    session = await createVerificationSession(c, challenge.id);
+  }
+  if (!session.gh_login) {
+    const verifyCode = await ensureVerificationCode(c.env, session);
+    return c.html(verificationPage(
+      `${challenge.repo_full_name}#${challenge.pr_number}`,
+      challenge.author_login,
+      challenge.id,
+      verifyCode,
+      `https://github.com/${challenge.repo_full_name}/pull/${challenge.pr_number}#issuecomment-new`
+    ));
+  }
+
+  if (!sameGitHubLogin(session.gh_login, challenge.author_login)) {
+    return c.html(errorPage("Not your challenge",
+      `This challenge belongs to @${challenge.author_login}. You are signed in as @${session.gh_login}.`,
+      challengePageActions(challenge)), 403);
   }
   // Only a `ready` challenge is takeable. Stale/closed states get an explanation
   // instead of the start page, so an author on an old link doesn't complete
   // Turnstile only to be rejected at submit time.
   if (challenge.status !== "ready") {
     return c.html(errorPage("Challenge no longer active",
-      "This challenge is no longer active — a newer commit or outcome has replaced it. Check the PR for the current status."));
+      "This challenge is no longer active — a newer commit or outcome has replaced it. Check the PR for the current status.",
+      challengePageActions(challenge)));
   }
-  const cfg = resolveConfig(challenge.config_json);
   return c.html(startPage(
     `${challenge.repo_full_name}#${challenge.pr_number}`, c.env.TURNSTILE_SITE_KEY, challenge.id,
     hasHoneypotSignal(cfg)
   ));
+});
+
+app.post("/challenge/:id/verify", async (c) => {
+  const challenge = await getChallenge(c.env.DB, c.req.param("id"));
+  if (!challenge) return c.html(errorPage("Not found", "This challenge link is invalid or expired."), 404);
+  const session = await currentSession(c);
+  if (!session || session.challenge_id !== challenge.id) {
+    await createVerificationSession(c, challenge.id);
+  }
+  return c.redirect(`/challenge/${challenge.id}`);
+});
+
+app.get("/challenge/:id/verify/status", async (c) => {
+  const challenge = await getChallenge(c.env.DB, c.req.param("id"));
+  const session = await currentSession(c);
+  const verified = !!challenge &&
+    !!session?.gh_login &&
+    session.challenge_id === challenge.id &&
+    sameGitHubLogin(session.gh_login, challenge.author_login);
+  return c.json({ verified });
 });
 
 app.post("/challenge/:id/start", async (c) => {
@@ -355,13 +506,15 @@ app.post("/challenge/:id/start", async (c) => {
   if (!hasAcceptedChallengeTerms(form)) {
     const challenge = await getChallenge(c.env.DB, c.req.param("id"));
     if (!challenge) return c.html(errorPage("Cannot start", "Challenge not found."), 404);
-    if (challenge.author_login !== session.gh_login) {
+    if (!sameGitHubLogin(challenge.author_login, session.gh_login)) {
       return c.html(errorPage("Not your challenge",
-        `This challenge belongs to @${challenge.author_login}. You are signed in as @${session.gh_login}.`), 403);
+        `This challenge belongs to @${challenge.author_login}. You are signed in as @${session.gh_login}.`,
+        challengePageActions(challenge)), 403);
     }
     if (challenge.status !== "ready") {
       return c.html(errorPage("Challenge no longer active",
-        "This challenge is not currently ready. Check the PR for the current gate state."), 409);
+        "This challenge is not currently ready. Check the PR for the current gate state.",
+        challengePageActions(challenge)), 409);
     }
     const cfg = resolveConfig(challenge.config_json);
     return c.html(startPage(
@@ -375,6 +528,7 @@ app.post("/challenge/:id/start", async (c) => {
     hasSubmittedHoneypot(form)
   );
   if (!result.ok) {
+    if (result.error === "bot_detected") return c.redirect(`/challenge/${c.req.param("id")}`);
     const messages: Record<string, string> = {
       not_ready: "This challenge isn't ready (awaiting approval or already resolved).",
       cooldown: "Cooldown in effect — try again in a few minutes. You'll get a fresh quiz.",
@@ -409,13 +563,13 @@ app.get("/challenge/:id/question", async (c) => {
   }>();
   // The quiz cookie is a capability token, but still bind it to the signed-in
   // author — a leaked/transplanted cookie must not expose questions to others.
-  if (!quiz || quiz.finished_at || quiz.author_login !== session.gh_login) {
+  if (!quiz || quiz.finished_at || !sameGitHubLogin(quiz.author_login, session.gh_login)) {
     return c.redirect(`/challenge/${c.req.param("id")}`);
   }
   const questions = (JSON.parse(quiz.questions_json) as Quiz).questions;
   const q = questions[quiz.current_question];
   if (!q) return c.redirect(`/challenge/${c.req.param("id")}`);
-  // Stamp served_at when the question page first renders — this starts the 90s
+  // Stamp served_at when the question page first renders — this starts the 60s
   // window (submitAnswer clears it on advance, so each question stamps fresh
   // here). COALESCE keeps the original stamp on refresh: no timer resets.
   await c.env.DB.prepare(
@@ -437,7 +591,7 @@ app.post("/challenge/:id/answer", async (c) => {
   const owner = await c.env.DB.prepare(
     "SELECT ch.author_login FROM quizzes q JOIN challenges ch ON ch.id = q.challenge_id WHERE q.id=?"
   ).bind(quizId).first<{ author_login: string }>();
-  if (!owner || owner.author_login !== session.gh_login) {
+  if (!owner || !sameGitHubLogin(owner.author_login, session.gh_login)) {
     return c.redirect(`/challenge/${c.req.param("id")}`);
   }
   const form = await c.req.parseBody({ all: true });
@@ -458,15 +612,15 @@ app.post("/challenge/:id/answer", async (c) => {
   );
   if ("error" in result) return c.redirect(`/challenge/${c.req.param("id")}`);
   if (!result.done) return c.redirect(`/challenge/${c.req.param("id")}/question`);
-  const resultMessage = result.passed
-    ? "The check is now green and an attestation was posted to the PR."
-    : result.reason === "assistance_detected"
-      ? "This quiz showed signs of automation or outside assistance, so the check failed for maintainer review."
-      : "Check the PR for retry availability (cooldown applies; retries get a fresh quiz).";
+  const challenge = await getChallenge(c.env.DB, c.req.param("id"));
   return c.html(resultPage(
     result.passed, result.score, result.total,
-    resultMessage,
-    result.reason
+    result.passed
+      ? "The check is now green and an attestation was posted to the PR."
+      : result.failureReason
+        ? `Bot verification failed: ${result.failureReason}`
+      : "Check the PR for retry availability (cooldown applies; retries get a fresh quiz).",
+    challenge ? challengePageActions(challenge) : challengePathActions(c.req.path)
   ));
 });
 

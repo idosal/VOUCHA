@@ -81,14 +81,44 @@ describe("startQuizAttempt", () => {
     expect(r).toEqual({ ok: false, error: "not_ready" });
   });
 
-  it("records turnstile failure but still allows the attempt (informs, never blocks)", async () => {
+  it("fails closed when Turnstile does not validate the browser session", async () => {
     const id = await makeChallenge();
-    const d = deps({ verifyTurnstile: vi.fn(async () => false) });
+    const d = deps({
+      verifyTurnstile: vi.fn(async () => false),
+      fetchPrContext: vi.fn(async () => {
+        throw new Error("should not fetch PR context");
+      }),
+      generateQuiz: vi.fn(async () => {
+        throw new Error("should not generate quiz");
+      }),
+    });
     const r = await startQuizAttempt(testEnv, d, id, "alice", "tok");
-    expect(r.ok).toBe(true);
+    expect(r).toEqual({
+      ok: false,
+      error: "bot_detected",
+      reason: "Turnstile did not validate this browser session.",
+    });
+    expect(d.fetchPrContext).not.toHaveBeenCalled();
+    expect(d.generateQuiz).not.toHaveBeenCalled();
+    const challenge = await getChallenge(testEnv.DB, id);
+    expect(challenge?.status).toBe("failed_assisted");
+    expect(challenge?.attempts_used).toBe(1);
+    const row = await testEnv.DB.prepare(
+      "SELECT score, turnstile_ok, telemetry_json FROM quizzes WHERE challenge_id=?"
+    ).bind(id).first<{ score: number; turnstile_ok: number; telemetry_json: string }>();
+    expect(row?.score).toBe(0);
+    expect(row?.turnstile_ok).toBe(0);
+    expect(JSON.parse(row!.telemetry_json).botFailureReason)
+      .toBe("Turnstile did not validate this browser session.");
+    expect(d.onChallengeResolved).toHaveBeenCalledWith(
+      expect.objectContaining({
+        outcome: "failed_assisted",
+        failureReason: "Turnstile did not validate this browser session.",
+      })
+    );
   });
 
-  it("records a honeypot hit from the start form", async () => {
+  it("records a report-only honeypot hit from the start form", async () => {
     const id = await makeChallenge();
     const r = await startQuizAttempt(testEnv, deps(), id, "alice", "tok", true);
     if (!r.ok) throw new Error("setup failed");
@@ -97,7 +127,7 @@ describe("startQuizAttempt", () => {
     expect(JSON.parse(row!.telemetry_json)).toEqual({ honeypotTriggered: true });
   });
 
-  it("records a code honeypot hit from the PR diff", async () => {
+  it("records a report-only code honeypot hit from the PR diff", async () => {
     const id = await makeChallenge("ready", {
       ...DEFAULT_CONFIG,
       signals: [{
@@ -186,12 +216,8 @@ describe("submitAnswer", () => {
   // rendered. This helper simulates that render-time stamp before answering
   // (COALESCE preserves an explicitly pre-set served_at, e.g. the over-time test).
   async function answerQ(
-    d: ChallengeDeps,
-    quizId: string,
-    index: number,
-    ans: number[],
-    honeypotTriggered = false,
-    telemetryJson = telemetry
+    d: ChallengeDeps, quizId: string, index: number, ans: number[],
+    honeypotTriggered = false, telemetryJson = telemetry
   ) {
     await testEnv.DB.prepare(
       "UPDATE quizzes SET question_served_at=COALESCE(question_served_at, ?) WHERE id=?"
@@ -214,6 +240,32 @@ describe("submitAnswer", () => {
     );
   });
 
+  it("still returns the recorded result when the GitHub resolution callback fails", async () => {
+    const consoleError = vi.spyOn(console, "error").mockImplementation(() => {});
+    const { challengeId, quizId, d } = await startedQuiz({
+      onChallengeResolved: vi.fn(async () => {
+        throw new Error("github unavailable");
+      }),
+    });
+
+    await answerQ(d, quizId, 0, [0]);
+    await answerQ(d, quizId, 1, [1, 2]);
+    await answerQ(d, quizId, 2, [3]);
+    const final = await answerQ(d, quizId, 3, [2]);
+
+    expect(final).toEqual({ done: true, passed: true, score: 4, total: 4 });
+    expect((await getChallenge(testEnv.DB, challengeId))?.status).toBe("passed");
+    expect(d.onChallengeResolved).toHaveBeenCalledWith(
+      expect.objectContaining({ outcome: "passed", score: 4 })
+    );
+    expect(consoleError).toHaveBeenCalledWith(
+      "challenge resolution callback failed",
+      challengeId,
+      expect.any(Error)
+    );
+    consoleError.mockRestore();
+  });
+
   it("uses the configured multiple-choice gate threshold", async () => {
     const config = {
       ...DEFAULT_CONFIG,
@@ -229,37 +281,7 @@ describe("submitAnswer", () => {
     expect(final).toEqual({ done: true, passed: true, score: 2, total: 2 });
   });
 
-  it("fails a correct quiz when challenge assistance signals are detected", async () => {
-    const { challengeId, quizId, d } = await startedQuiz();
-    const scriptedTelemetry = JSON.stringify({
-      elapsedMs: 4000, answerChanges: 0, pointerDistancePx: 20,
-      pointerSamples: 2, focusLossCount: 0, webdriver: true,
-    });
-    await answerQ(d, quizId, 0, [0], false, scriptedTelemetry);
-    await answerQ(d, quizId, 1, [1, 2], false, scriptedTelemetry);
-    await answerQ(d, quizId, 2, [3], false, scriptedTelemetry);
-    const final = await answerQ(d, quizId, 3, [2], false, scriptedTelemetry);
-
-    expect(final).toEqual({
-      done: true,
-      passed: false,
-      score: 4,
-      total: 4,
-      reason: "assistance_detected",
-    });
-    const challenge = await getChallenge(testEnv.DB, challengeId);
-    expect(challenge?.status).toBe("failed_assisted");
-    expect(challenge?.attempts_used).toBe(1);
-    expect(d.onChallengeResolved).toHaveBeenCalledWith(
-      expect.objectContaining({
-        outcome: "failed_assisted",
-        score: 4,
-        telemetry: expect.objectContaining({ webdriver: true }),
-      })
-    );
-  });
-
-  it("carries a lone honeypot hit into final telemetry without changing score", async () => {
+  it("carries a report-only honeypot hit into final telemetry without changing score", async () => {
     const { quizId, d } = await startedQuiz();
     await answerQ(d, quizId, 0, [0]);
     await answerQ(d, quizId, 1, [1, 2]);
@@ -274,7 +296,7 @@ describe("submitAnswer", () => {
     );
   });
 
-  it("carries a code honeypot hit into final telemetry without changing score", async () => {
+  it("carries a report-only code honeypot hit into final telemetry without changing score", async () => {
     const id = await makeChallenge("ready", {
       ...DEFAULT_CONFIG,
       signals: [{
@@ -309,6 +331,39 @@ describe("submitAnswer", () => {
         telemetry: expect.objectContaining({ codeHoneypotTriggered: true }),
       })
     );
+  });
+
+  it("fails assisted when browser automation is reported during an otherwise correct quiz", async () => {
+    const { challengeId, quizId, d } = await startedQuiz();
+    const webdriverTelemetry = JSON.stringify({
+      elapsedMs: 30000, answerChanges: 1, pointerDistancePx: 900,
+      pointerSamples: 50, focusLossCount: 0, webdriver: true,
+    });
+    await answerQ(d, quizId, 0, [0], false, webdriverTelemetry);
+    await answerQ(d, quizId, 1, [1, 2]);
+    await answerQ(d, quizId, 2, [3]);
+    const final = await answerQ(d, quizId, 3, [2]);
+
+    expect(final).toEqual({
+      done: true,
+      passed: false,
+      score: 4,
+      total: 4,
+      failureReason: "The browser identified itself as automated software.",
+    });
+    const ch = await getChallenge(testEnv.DB, challengeId);
+    expect(ch?.status).toBe("failed_assisted");
+    expect(ch?.attempts_used).toBe(1);
+    expect(d.onChallengeResolved).toHaveBeenCalledWith(
+      expect.objectContaining({
+        outcome: "failed_assisted",
+        failureReason: "The browser identified itself as automated software.",
+      })
+    );
+    const row = await testEnv.DB.prepare("SELECT telemetry_json FROM quizzes WHERE id=?")
+      .bind(quizId).first<{ telemetry_json: string }>();
+    expect(JSON.parse(row!.telemetry_json).botFailureReason)
+      .toBe("The browser identified itself as automated software.");
   });
 
   it("fails below threshold, sets cooldown, increments attempts", async () => {

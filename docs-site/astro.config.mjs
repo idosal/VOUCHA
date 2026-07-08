@@ -6,7 +6,7 @@ export default defineConfig({
   publicDir: "./docs-site/public",
   outDir: "./public/docs",
   base: "/docs",
-  site: "https://clawptcha.idosalomon.workers.dev",
+  site: "https://clawptcha.dev",
   trailingSlash: "always",
   build: {
     format: "directory",

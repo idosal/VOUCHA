@@ -27,15 +27,13 @@ describe("GitHubApi", () => {
     const f = mockFetch(201, { id: 42 });
     const api = new GitHubApi("tok", f as unknown as typeof fetch);
     const id = await api.createCheckRun("o/r", {
-      name: "clawptcha", head_sha: "abc", status: "queued",
-      details_url: "https://clawptcha.example.com/challenge/ch1",
+      name: "PR comprehension check", head_sha: "abc", status: "queued",
       output: { title: "t", summary: "s" },
     });
     expect(id).toBe(42);
     const [url, init] = f.mock.calls[0];
     expect(String(url)).toBe("https://api.github.com/repos/o/r/check-runs");
     expect((init!.headers as Record<string, string>).authorization).toBe("Bearer tok");
-    expect(JSON.parse(String(init!.body)).details_url).toBe("https://clawptcha.example.com/challenge/ch1");
   });
 
   it("fetches a PR diff with the diff media type", async () => {
@@ -155,13 +153,13 @@ describe("GitHubApi", () => {
   });
 
   it("adds labels to a PR via the issues labels endpoint", async () => {
-    const f = mockFetch(200, [{ name: "clawptcha:flagged" }]);
+    const f = mockFetch(200, [{ name: "pr-comprehension:flagged" }]);
     const api = new GitHubApi("tok", f as unknown as typeof fetch);
-    await api.addLabels("o/r", 5, ["clawptcha:flagged"]);
+    await api.addLabels("o/r", 5, ["pr-comprehension:flagged"]);
     const [url, init] = f.mock.calls[0];
     expect(String(url)).toBe("https://api.github.com/repos/o/r/issues/5/labels");
     expect(init!.method).toBe("POST");
-    expect(JSON.parse(init!.body as string)).toEqual({ labels: ["clawptcha:flagged"] });
+    expect(JSON.parse(init!.body as string)).toEqual({ labels: ["pr-comprehension:flagged"] });
   });
 
   it("creates a missing label before it is used", async () => {
@@ -169,24 +167,24 @@ describe("GitHubApi", () => {
       if (!init?.method || init.method === "GET") {
         return new Response(JSON.stringify({ message: "Not Found" }), { status: 404 });
       }
-      return new Response(JSON.stringify({ name: "clawptcha:flagged" }), { status: 201 });
+      return new Response(JSON.stringify({ name: "pr-comprehension:flagged" }), { status: 201 });
     });
     const api = new GitHubApi("tok", f as unknown as typeof fetch);
-    await api.ensureLabel("o/r", "clawptcha:flagged", "b60205", "Flagged by Clawptcha");
+    await api.ensureLabel("o/r", "pr-comprehension:flagged", "b60205", "Multiple passive risk signals");
 
-    expect(String(f.mock.calls[0][0])).toBe("https://api.github.com/repos/o/r/labels/clawptcha%3Aflagged");
+    expect(String(f.mock.calls[0][0])).toBe("https://api.github.com/repos/o/r/labels/pr-comprehension%3Aflagged");
     expect(String(f.mock.calls[1][0])).toBe("https://api.github.com/repos/o/r/labels");
     expect(JSON.parse(f.mock.calls[1][1]!.body as string)).toEqual({
-      name: "clawptcha:flagged",
+      name: "pr-comprehension:flagged",
       color: "b60205",
-      description: "Flagged by Clawptcha",
+      description: "Multiple passive risk signals",
     });
   });
 
   it("does not recreate an existing label", async () => {
-    const f = mockFetch(200, { name: "clawptcha:flagged" });
+    const f = mockFetch(200, { name: "pr-comprehension:flagged" });
     const api = new GitHubApi("tok", f as unknown as typeof fetch);
-    await api.ensureLabel("o/r", "clawptcha:flagged", "b60205", "Flagged by Clawptcha");
+    await api.ensureLabel("o/r", "pr-comprehension:flagged", "b60205", "Multiple passive risk signals");
     expect(f).toHaveBeenCalledTimes(1);
   });
 
@@ -198,7 +196,7 @@ describe("GitHubApi", () => {
       return new Response(JSON.stringify({ message: "already_exists" }), { status: 422 });
     });
     const api = new GitHubApi("tok", f as unknown as typeof fetch);
-    await expect(api.ensureLabel("o/r", "clawptcha:flagged", "b60205", "Flagged by Clawptcha"))
+    await expect(api.ensureLabel("o/r", "pr-comprehension:flagged", "b60205", "Multiple passive risk signals"))
       .resolves.toBeUndefined();
   });
 

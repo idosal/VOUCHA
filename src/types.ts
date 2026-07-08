@@ -9,14 +9,10 @@ export interface Env {
   LLM_BASE_URL?: string;
   AI_GATEWAY_ID?: string;
   FLUE_INVESTIGATOR?: Fetcher;
-  FLUE_INVESTIGATOR_URL?: string;
-  FLUE_INVESTIGATOR_SECRET?: string;
   FLUE_INVESTIGATOR_TIMEOUT_MS?: string;
   GITHUB_APP_ID: string;
   GITHUB_PRIVATE_KEY: string;
   GITHUB_WEBHOOK_SECRET: string;
-  GITHUB_OAUTH_CLIENT_ID: string;
-  GITHUB_OAUTH_CLIENT_SECRET: string;
   TURNSTILE_SITE_KEY: string;
   TURNSTILE_SECRET_KEY: string;
   SESSION_SIGNING_KEY: string;

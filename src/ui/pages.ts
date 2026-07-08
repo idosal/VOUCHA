@@ -5,6 +5,14 @@ const esc = (s: string) =>
 
 export const HONEYPOT_FIELD_NAME = "contact_url";
 
+export interface PageAction {
+  label: string;
+  href: string;
+  primary?: boolean;
+  external?: boolean;
+  id?: string;
+}
+
 const questionMeta: Record<ClientQuestion["type"], { label: string; hint: string }> = {
   consequence_mcq: {
     label: "Consequence check",
@@ -77,8 +85,8 @@ const STYLE = `
   --info-soft:oklch(0.93 0.035 255);
   --focus:#ff8a70;
   --focus:oklch(0.78 0.14 35);
-  --radius:16px;
-  --radius-sm:10px;
+  --radius:12px;
+  --radius-sm:8px;
   --ease:cubic-bezier(.22,1,.36,1);
   --sans:-apple-system,BlinkMacSystemFont,"Segoe UI",Roboto,Helvetica,Arial,sans-serif;
   --mono:ui-monospace,"SF Mono","JetBrains Mono",Menlo,Consolas,monospace;
@@ -590,21 +598,23 @@ button,input{font:inherit}
   .claw-footer{flex-direction:column}
 }
 .app{
-  min-height:700px;
+  min-height:min(760px,calc(100vh - 48px));
   overflow:hidden;
   border:1px solid var(--line);
   border-radius:var(--radius);
   background:var(--canvas);
+  box-shadow:0 24px 70px -56px rgba(0,0,0,.55);
 }
 .commandbar{
-  min-height:72px;
+  min-height:64px;
   display:flex;
   align-items:center;
   justify-content:space-between;
   gap:18px;
-  padding:14px 20px;
-  background:linear-gradient(180deg,var(--bar-2),var(--bar));
-  color:var(--ink-on-dark);
+  padding:13px 18px;
+  border-bottom:1px solid var(--line);
+  background:var(--canvas);
+  color:var(--ink);
 }
 .brand-lockup,.command-context,.command-meta{
   display:flex;
@@ -613,60 +623,61 @@ button,input{font:inherit}
 }
 .brand-lockup{gap:12px}
 .mark{
-  width:36px;
-  height:36px;
+  width:34px;
+  height:34px;
   flex:none;
   display:grid;
   place-items:center;
-  border-radius:10px;
-  background:var(--brand);
-  color:var(--brand-ink);
+  border:1px solid var(--line-strong);
+  border-radius:8px;
+  background:var(--ink);
+  color:var(--canvas);
   font-weight:850;
   line-height:1;
 }
 .brand-name{
-  font-size:1.08rem;
+  font-size:1rem;
   font-weight:780;
   letter-spacing:0;
 }
 .command-context{
   flex:1;
   gap:14px;
-  color:var(--ink-dark-dim);
+  color:var(--ink-dim);
 }
 .command-sep{
   width:1px;
   height:28px;
-  background:color-mix(in oklch,var(--ink-on-dark) 16%,transparent);
+  background:var(--line);
 }
 .command-title{
-  color:var(--ink-on-dark);
+  color:var(--ink);
   font-weight:650;
   white-space:nowrap;
 }
 .command-ref{
   min-width:0;
   overflow:hidden;
-  color:var(--ink-dark-dim);
+  color:var(--ink-faint);
   font:650 .9rem/1.2 var(--mono);
   text-overflow:ellipsis;
   white-space:nowrap;
 }
 .command-meta{
   gap:12px;
-  color:var(--ink-dark-dim);
+  color:var(--ink-dim);
   font-size:.94rem;
 }
 .command-pill{
   display:inline-flex;
   align-items:center;
   gap:8px;
-  min-height:34px;
-  padding:0 11px;
-  border:1px solid color-mix(in oklch,var(--ink-on-dark) 18%,transparent);
+  min-height:32px;
+  padding:0 10px;
+  border:1px solid var(--line);
   border-radius:999px;
-  color:var(--ink-on-dark);
-  background:color-mix(in oklch,var(--ink-on-dark) 4%,transparent);
+  color:var(--ink-dim);
+  background:var(--panel);
   white-space:nowrap;
 }
 .seal{
@@ -682,27 +693,27 @@ button,input{font:inherit}
 }
 .console{
   display:grid;
-  grid-template-columns:minmax(0,1fr) 360px;
-  min-height:628px;
+  grid-template-columns:minmax(0,1fr) 344px;
+  min-height:calc(min(760px,100vh - 48px) - 64px);
 }
 .workspace{
   min-width:0;
   display:flex;
   flex-direction:column;
-  padding:42px 44px 0;
+  padding:38px 44px 0;
 }
 .context-panel{
   display:flex;
   flex-direction:column;
-  gap:18px;
-  padding:34px 28px;
+  gap:24px;
+  padding:32px 28px;
   border-left:1px solid var(--line);
   background:var(--panel);
 }
 .prelude{
   max-width:760px;
   margin:auto 0;
-  padding-bottom:44px;
+  padding-bottom:40px;
 }
 .kicker-row{
   display:flex;
@@ -714,11 +725,12 @@ button,input{font:inherit}
 .pill{
   display:inline-flex;
   align-items:center;
-  min-height:30px;
-  padding:0 11px;
+  min-height:28px;
+  padding:0 10px;
   border-radius:999px;
   background:var(--brand-soft);
   color:var(--accent);
+  font-size:.9rem;
   font-weight:750;
 }
 .ref{
@@ -729,7 +741,7 @@ button,input{font:inherit}
 h1,h2,h3,p{margin:0}
 h1{
   max-width:13em;
-  font-size:2.45rem;
+  font-size:2.34rem;
   line-height:1.08;
   font-weight:790;
   letter-spacing:0;
@@ -980,10 +992,15 @@ h1{
   gap:12px;
 }
 .btn,.btn-secondary{
+  display:inline-flex;
+  align-items:center;
+  justify-content:center;
   min-height:48px;
   border-radius:var(--radius-sm);
   cursor:pointer;
   font-weight:760;
+  text-align:center;
+  text-decoration:none;
   transition:transform .12s var(--ease),filter .18s var(--ease),background .18s var(--ease),border-color .18s var(--ease),opacity .18s var(--ease);
 }
 .btn{
@@ -1021,6 +1038,12 @@ h1{
   gap:12px;
   margin-top:30px;
 }
+.result-actions,.status-actions{
+  display:flex;
+  flex-wrap:wrap;
+  gap:12px;
+  margin-top:28px;
+}
 .turnstile-box{
   position:relative;
   min-height:76px;
@@ -1054,10 +1077,10 @@ h1{
   gap:10px;
   max-width:68ch;
   margin-top:20px;
-  padding:14px 15px;
-  border:1px solid var(--line);
-  border-radius:var(--radius-sm);
-  background:var(--panel);
+  padding:0;
+  border:0;
+  border-radius:0;
+  background:transparent;
   color:var(--ink-dim);
   font-size:.94rem;
 }
@@ -1069,6 +1092,34 @@ h1{
 .privacy-note a{
   color:var(--accent);
   font-weight:720;
+}
+.inline-note{
+  max-width:65ch;
+  margin-top:22px;
+  padding-top:14px;
+  border-top:1px solid var(--line);
+  color:var(--ink-dim);
+  font-size:.96rem;
+}
+.inline-note b{
+  display:block;
+  color:var(--ink);
+  font-weight:760;
+}
+.terms-stack{
+  display:grid;
+  gap:12px;
+  min-width:min(100%,560px);
+}
+.data-line{
+  max-width:60ch;
+  color:var(--ink-faint);
+  font-size:.9rem;
+  line-height:1.42;
+}
+.data-line a,.inline-link{
+  color:var(--accent);
+  font-weight:740;
 }
 .consent-check{
   display:grid;
@@ -1104,6 +1155,30 @@ h1{
   font-size:.86rem;
   line-height:1.38;
 }
+.command-card{
+  display:grid;
+  gap:5px;
+  min-width:min(100%,520px);
+  padding:13px 14px;
+  border:1px solid var(--line);
+  border-radius:var(--radius-sm);
+  background:var(--canvas);
+  color:var(--ink-dim);
+}
+.command-card strong{
+  display:block;
+  color:var(--ink);
+  font-weight:760;
+}
+.command-card code{
+  display:block;
+  max-width:100%;
+  margin-top:4px;
+  color:var(--ink);
+  font:750 .92rem/1.45 var(--mono);
+  overflow-wrap:anywhere;
+  word-break:break-word;
+}
 .consent-check:has(input:focus-visible){
   outline:3px solid var(--focus);
   outline-offset:3px;
@@ -1120,10 +1195,7 @@ h1{
   font-weight:690;
 }
 .context-tabs{
-  display:flex;
-  align-items:center;
-  gap:18px;
-  border-bottom:1px solid var(--line);
+  display:none;
 }
 .context-tab{
   padding:0 0 10px;
@@ -1137,32 +1209,41 @@ h1{
 }
 .context-section{
   display:grid;
-  gap:12px;
+  gap:11px;
+  padding-bottom:22px;
+  border-bottom:1px solid var(--line);
 }
+.context-section:last-child{border-bottom:0; padding-bottom:0}
 .context-section h2,.context-section h3{
   color:var(--ink);
   font-size:1rem;
   font-weight:780;
 }
+.side-kicker{
+  color:var(--ink-faint);
+  font-size:.78rem;
+  font-weight:780;
+  text-transform:uppercase;
+}
 .info-list{
   display:grid;
-  gap:10px;
+  gap:11px;
 }
 .info-item{
   display:grid;
-  grid-template-columns:28px minmax(0,1fr);
+  grid-template-columns:26px minmax(0,1fr);
   gap:10px;
   align-items:start;
   color:var(--ink-dim);
   font-size:.94rem;
 }
 .info-icon{
-  width:28px;
-  height:28px;
+  width:26px;
+  height:26px;
   display:grid;
   place-items:center;
   border:1px solid var(--line);
-  border-radius:9px;
+  border-radius:7px;
   background:var(--canvas);
   color:var(--accent);
   font:800 .78rem/1 var(--mono);
@@ -1176,6 +1257,29 @@ h1{
   border:1px solid var(--line);
   border-radius:var(--radius-sm);
   background:var(--canvas);
+}
+.plain-list{
+  display:grid;
+  gap:9px;
+  margin:0;
+  padding:0;
+  color:var(--ink-dim);
+  font-size:.94rem;
+  list-style:none;
+}
+.plain-list li{
+  position:relative;
+  padding-left:17px;
+}
+.plain-list li::before{
+  content:"";
+  position:absolute;
+  left:0;
+  top:.68em;
+  width:6px;
+  height:6px;
+  border-radius:999px;
+  background:var(--accent);
 }
 .state-card{
   display:grid;
@@ -1309,6 +1413,619 @@ h1{
   padding:34px 28px;
   border-left:1px solid var(--line);
   background:var(--panel);
+}
+
+/* Challenge flow craft pass: compact PR-native task runner. */
+body:not(.site-body){
+  color-scheme:light;
+  --bg:#f6f8fa;
+  --canvas:#ffffff;
+  --panel:#f6f8fa;
+  --panel-2:#f1f4f8;
+  --ink:#24292f;
+  --ink-dim:#57606a;
+  --ink-faint:#6e7781;
+  --line:#d0d7de;
+  --line-strong:#8c959f;
+  --brand:#0969da;
+  --brand-soft:#ddf4ff;
+  --brand-ink:#ffffff;
+  --accent:#0969da;
+  --ok:#1a7f37;
+  --ok-soft:#dafbe1;
+  --warn:#9a6700;
+  --warn-soft:#fff8c5;
+  --crit:#cf222e;
+  --crit-soft:#ffebe9;
+  --info:#0969da;
+  --info-soft:#ddf4ff;
+  --focus:#0969da;
+  padding:24px;
+  background:var(--bg);
+  color:var(--ink);
+  font-size:15px;
+  line-height:1.5;
+}
+body:not(.site-body) .wrap{
+  max-width:1120px;
+}
+body:not(.site-body) .app{
+  min-height:auto;
+  overflow:hidden;
+  border:1px solid var(--line);
+  border-radius:8px;
+  background:var(--canvas);
+  box-shadow:none;
+}
+body:not(.site-body) .commandbar{
+  min-height:56px;
+  gap:14px;
+  padding:12px 16px;
+  border-bottom:1px solid var(--line);
+  background:#ffffff;
+}
+body:not(.site-body) .brand-lockup{gap:9px}
+body:not(.site-body) .mark{
+  width:28px;
+  height:28px;
+  border-color:#0b100e;
+  border-radius:6px;
+  background:#ff7a59;
+  color:#0b100e;
+  font-size:.82rem;
+  box-shadow:none;
+}
+body:not(.site-body) .brand-name{
+  font-size:.92rem;
+  font-weight:700;
+}
+body:not(.site-body) .command-context{
+  gap:10px;
+  font-size:.92rem;
+}
+body:not(.site-body) .command-sep{
+  height:22px;
+}
+body:not(.site-body) .command-title{
+  font-weight:600;
+}
+body:not(.site-body) .command-ref{
+  color:var(--ink-dim);
+  font-size:.84rem;
+  font-weight:500;
+}
+body:not(.site-body) .command-meta{
+  gap:8px;
+}
+body:not(.site-body) .command-pill{
+  min-height:28px;
+  padding:0 9px;
+  border-radius:999px;
+  background:#f6f8fa;
+  color:var(--ink-dim);
+  font-size:.86rem;
+  font-weight:500;
+}
+body:not(.site-body) .seal{
+  width:16px;
+  height:16px;
+  border-radius:999px;
+  font-size:.65rem;
+}
+body:not(.site-body) .console,
+body:not(.site-body) .result-layout,
+body:not(.site-body) .status-layout{
+  grid-template-columns:minmax(0,1fr) 300px;
+  min-height:0;
+}
+body:not(.site-body) .workspace,
+body:not(.site-body) .result-main,
+body:not(.site-body) .status-main{
+  padding:28px 32px 32px;
+}
+body:not(.site-body) .workspace{
+  display:block;
+}
+body:not(.site-body) .context-panel,
+body:not(.site-body) .result-side,
+body:not(.site-body) .status-side{
+  gap:0;
+  padding:24px;
+  border-left:1px solid var(--line);
+  background:#f6f8fa;
+}
+body:not(.site-body) .prelude{
+  max-width:680px;
+  margin:0;
+  padding:0;
+}
+body:not(.site-body) .kicker-row{
+  gap:8px;
+  margin-bottom:10px;
+}
+body:not(.site-body) .pill{
+  min-height:24px;
+  padding:0 8px;
+  border:1px solid var(--line);
+  border-radius:999px;
+  background:#f6f8fa;
+  color:var(--ink-dim);
+  font-size:.82rem;
+  font-weight:600;
+}
+body:not(.site-body) .ref{
+  color:var(--ink-dim);
+  font-size:.86rem;
+}
+body:not(.site-body) h1{
+  max-width:18em;
+  font-size:1.55rem;
+  line-height:1.25;
+  font-weight:650;
+}
+body:not(.site-body) .lead{
+  max-width:64ch;
+  margin-top:8px;
+  color:var(--ink-dim);
+  font-size:.98rem;
+}
+body:not(.site-body) .rail{
+  display:flex;
+  gap:0;
+  align-items:center;
+  margin:0 0 26px;
+}
+body:not(.site-body) .rail::before,
+body:not(.site-body) .rail::after{
+  display:none;
+}
+body:not(.site-body) .rail li{
+  display:flex;
+  flex-direction:row;
+  align-items:center;
+  gap:7px;
+  color:var(--ink-faint);
+  font-size:.88rem;
+  font-weight:500;
+}
+body:not(.site-body) .rail li + li::before{
+  content:"/";
+  margin:0 12px 0 10px;
+  color:var(--line-strong);
+}
+body:not(.site-body) .rail b{
+  width:22px;
+  height:22px;
+  border-radius:999px;
+  background:#ffffff;
+  color:var(--ink-faint);
+  font-size:.72rem;
+  font-weight:700;
+}
+body:not(.site-body) .rail li.done b{
+  border-color:#2da44e;
+  background:var(--ok-soft);
+  color:var(--ok);
+}
+body:not(.site-body) .rail li.active{
+  color:var(--ink);
+  font-weight:600;
+}
+body:not(.site-body) .rail li.active b{
+  border-color:var(--brand);
+  background:var(--brand);
+  color:#fff;
+}
+body:not(.site-body) .inline-note{
+  max-width:64ch;
+  margin-top:16px;
+  padding:10px 12px;
+  border:1px solid var(--line);
+  border-radius:6px;
+  background:#f6f8fa;
+  color:var(--ink-dim);
+  font-size:.92rem;
+}
+body:not(.site-body) .inline-note b{
+  margin-bottom:2px;
+  font-size:.92rem;
+}
+body:not(.site-body) .start-actions{
+  display:grid;
+  grid-template-columns:minmax(280px,360px) auto;
+  align-items:end;
+  gap:12px;
+  margin-top:22px;
+}
+body:not(.site-body) .verify-actions{
+  grid-template-columns:minmax(260px,360px) minmax(132px,150px) minmax(132px,150px);
+  align-items:start;
+}
+body:not(.site-body) .verify-actions .btn,
+body:not(.site-body) .verify-actions .btn-secondary{
+  width:100%;
+  min-width:0;
+}
+body:not(.site-body) .start-actions .form-error,
+body:not(.site-body) .start-actions .terms-stack,
+body:not(.site-body) .start-actions .command-card,
+body:not(.site-body) .start-actions .choice-status{
+  grid-column:1 / -1;
+}
+body:not(.site-body) .terms-stack{
+  max-width:640px;
+  min-width:0;
+  gap:8px;
+}
+body:not(.site-body) .consent-check,
+body:not(.site-body) .command-card{
+  min-width:0;
+  max-width:640px;
+  padding:11px 12px;
+  border-radius:6px;
+  background:#fff;
+}
+body:not(.site-body) .consent-check input{
+  accent-color:var(--brand);
+}
+body:not(.site-body) .consent-check strong,
+body:not(.site-body) .command-card strong{
+  font-size:.94rem;
+  font-weight:600;
+}
+body:not(.site-body) .consent-check small,
+body:not(.site-body) .command-card small{
+  color:var(--ink-dim);
+  font-size:.87rem;
+}
+body:not(.site-body) .command-card code{
+  color:var(--ink);
+  font-size:.9rem;
+  font-weight:600;
+}
+body:not(.site-body) .data-line{
+  max-width:64ch;
+  color:var(--ink-dim);
+  font-size:.88rem;
+}
+body:not(.site-body) .data-line a,
+body:not(.site-body) .inline-link{
+  color:var(--brand);
+  font-weight:600;
+}
+body:not(.site-body) .turnstile-box{
+  min-width:0;
+  width:320px;
+  min-height:72px;
+  padding:8px;
+  border-radius:6px;
+  background:#f6f8fa;
+}
+body:not(.site-body) .btn,
+body:not(.site-body) .btn-secondary{
+  min-height:40px;
+  border-radius:6px;
+  font-size:.94rem;
+  font-weight:600;
+}
+body:not(.site-body) .btn{
+  min-width:150px;
+  padding:0 14px;
+  background:var(--brand);
+  color:#fff;
+  box-shadow:none;
+}
+body:not(.site-body) .btn-secondary{
+  border-color:var(--line);
+  background:#fff;
+  color:var(--ink);
+}
+@media (hover:hover){
+  body:not(.site-body) .btn:hover{background:#0757b8; filter:none}
+  body:not(.site-body) .btn-secondary:hover{border-color:var(--line-strong); background:#f6f8fa}
+}
+body:not(.site-body) .context-section{
+  gap:8px;
+  padding:0 0 18px;
+  margin:0 0 18px;
+  border-bottom:1px solid var(--line);
+}
+body:not(.site-body) .context-section:last-child{
+  margin-bottom:0;
+}
+body:not(.site-body) .context-section h2,
+body:not(.site-body) .context-section h3{
+  font-size:.94rem;
+  font-weight:600;
+}
+body:not(.site-body) .side-kicker{
+  color:var(--ink-dim);
+  font-size:.82rem;
+  font-weight:500;
+  text-transform:none;
+}
+body:not(.site-body) .info-list{
+  gap:8px;
+}
+body:not(.site-body) .info-item{
+  grid-template-columns:22px minmax(0,1fr);
+  gap:8px;
+  color:var(--ink-dim);
+  font-size:.88rem;
+}
+body:not(.site-body) .info-icon{
+  width:22px;
+  height:22px;
+  border-radius:999px;
+  background:#fff;
+  color:var(--ink-dim);
+  font-size:.7rem;
+}
+body:not(.site-body) .info-item b{
+  color:var(--ink);
+  font-weight:600;
+}
+body:not(.site-body) .plain-list{
+  gap:7px;
+  color:var(--ink-dim);
+  font-size:.88rem;
+}
+body:not(.site-body) .plain-list li{
+  padding-left:14px;
+}
+body:not(.site-body) .plain-list li::before{
+  top:.7em;
+  width:4px;
+  height:4px;
+  background:var(--ink-faint);
+}
+body:not(.site-body) .question-top{
+  margin-bottom:10px;
+}
+body:not(.site-body) .step,
+body:not(.site-body) .question-type{
+  color:var(--ink-dim);
+  font-size:.9rem;
+  font-weight:500;
+}
+body:not(.site-body) .step em{
+  color:var(--ink);
+  font-weight:600;
+}
+body:not(.site-body) .qh{
+  max-width:34em;
+  font-size:1.25rem;
+  line-height:1.35;
+  font-weight:650;
+}
+body:not(.site-body) .hint{
+  max-width:68ch;
+  margin-top:8px;
+  color:var(--ink-dim);
+  font-size:.92rem;
+}
+body:not(.site-body) .answer-form{
+  margin-top:22px;
+}
+body:not(.site-body) .opts{
+  gap:8px;
+  padding-bottom:20px;
+}
+body:not(.site-body) .opt{
+  grid-template-columns:30px minmax(0,1fr);
+  gap:10px;
+  min-height:48px;
+  padding:10px 12px;
+  border-radius:6px;
+}
+body:not(.site-body) .choice-letter{
+  width:26px;
+  height:26px;
+  border-radius:6px;
+  background:#f6f8fa;
+  font-size:.74rem;
+}
+body:not(.site-body) .opt:has(input:checked){
+  border-color:#0969da;
+  background:#ddf4ff;
+}
+body:not(.site-body) .opt:has(input:checked) .choice-letter{
+  border-color:#0969da;
+  background:#0969da;
+  color:#fff;
+}
+body:not(.site-body) .actionbar{
+  margin:0 -32px -32px;
+  padding:14px 32px;
+  background:#f6f8fa;
+}
+body:not(.site-body) .timer{
+  min-width:66px;
+  min-height:28px;
+  padding:0 9px;
+  border-radius:999px;
+  background:#f6f8fa;
+  font-size:.88rem;
+}
+body:not(.site-body) .timer.crit{
+  border-color:var(--crit);
+  background:var(--crit-soft);
+  color:var(--crit);
+}
+body:not(.site-body) .result-main,
+body:not(.site-body) .status-main{
+  align-content:start;
+}
+body:not(.site-body) .result-panel,
+body:not(.site-body) .status-panel{
+  max-width:680px;
+}
+body:not(.site-body) .badge{
+  width:32px;
+  height:32px;
+  margin-bottom:12px;
+  border-radius:999px;
+  font-size:1rem;
+}
+body:not(.site-body) .result-label,
+body:not(.site-body) .status-label{
+  margin-bottom:6px;
+  color:var(--ink-dim);
+  font-size:.9rem;
+  font-weight:600;
+}
+body:not(.site-body) .score{
+  margin:14px 0 10px;
+  font-size:2rem;
+  font-weight:650;
+}
+body:not(.site-body) .score .of{
+  color:var(--ink-dim);
+  font-size:1rem;
+  font-weight:500;
+}
+body:not(.site-body) .result-copy,
+body:not(.site-body) .status-copy-large{
+  max-width:64ch;
+  color:var(--ink-dim);
+  font-size:.98rem;
+}
+body:not(.site-body) .result-actions,
+body:not(.site-body) .status-actions{
+  gap:8px;
+  margin-top:18px;
+}
+body:not(.site-body) .status-strip{
+  min-height:0;
+  align-items:flex-start;
+  gap:10px;
+  padding:10px 12px;
+  border-radius:6px;
+  background:#fff;
+}
+body:not(.site-body) .status-strip.ok{border-color:#2da44e; background:#dafbe1}
+body:not(.site-body) .status-strip.warn{border-color:#d4a72c; background:#fff8c5}
+body:not(.site-body) .status-strip.crit{border-color:#ff818266; background:#ffebe9}
+body:not(.site-body) .status-strip.info{border-color:#54aeff66; background:#ddf4ff}
+body:not(.site-body) .status-dot{
+  width:20px;
+  height:20px;
+  margin-top:1px;
+  background:transparent;
+  font-size:.82rem;
+}
+body:not(.site-body) .status-copy b{
+  font-size:.92rem;
+  font-weight:600;
+}
+body:not(.site-body) .status-copy span{
+  color:var(--ink-dim);
+  font-size:.86rem;
+}
+body:not(.site-body) .state-card{
+  gap:6px;
+  padding:12px;
+  border-radius:6px;
+  background:#fff;
+}
+body:not(.site-body) .state-card h2{
+  font-size:.95rem;
+  font-weight:600;
+}
+body:not(.site-body) .state-card p{
+  color:var(--ink-dim);
+  font-size:.88rem;
+}
+@media (prefers-color-scheme:dark){
+  body:not(.site-body){
+    color-scheme:dark;
+    --bg:#0d1117;
+    --canvas:#161b22;
+    --panel:#0f141b;
+    --panel-2:#21262d;
+    --ink:#f0f6fc;
+    --ink-dim:#c9d1d9;
+    --ink-faint:#8b949e;
+    --line:#30363d;
+    --line-strong:#484f58;
+    --brand:#58a6ff;
+    --brand-soft:#102a44;
+    --brand-ink:#0d1117;
+    --accent:#58a6ff;
+    --ok:#56d364;
+    --ok-soft:#12361f;
+    --warn:#d29922;
+    --warn-soft:#3a2b12;
+    --crit:#ff7b72;
+    --crit-soft:#3d171b;
+    --info:#79c0ff;
+    --info-soft:#102a44;
+    --focus:#58a6ff;
+  }
+  body:not(.site-body) .app,
+  body:not(.site-body) .commandbar,
+  body:not(.site-body) .consent-check,
+  body:not(.site-body) .command-card,
+  body:not(.site-body) .state-card{
+    background:var(--canvas);
+  }
+  body:not(.site-body) .command-pill,
+  body:not(.site-body) .pill,
+  body:not(.site-body) .inline-note,
+  body:not(.site-body) .turnstile-box,
+  body:not(.site-body) .actionbar,
+  body:not(.site-body) .timer,
+  body:not(.site-body) .choice-letter{
+    background:var(--panel-2);
+  }
+  body:not(.site-body) .context-panel,
+  body:not(.site-body) .result-side,
+  body:not(.site-body) .status-side{
+    background:var(--panel);
+  }
+  body:not(.site-body) .mark{
+    border-color:#ff9b7f;
+    background:#ff7a59;
+    color:#0b100e;
+  }
+  body:not(.site-body) .btn{
+    background:var(--brand);
+    color:var(--brand-ink);
+  }
+  body:not(.site-body) .btn-secondary{
+    border-color:var(--line-strong);
+    background:var(--canvas);
+    color:var(--ink);
+  }
+  @media (hover:hover){
+    body:not(.site-body) .btn:hover{background:#79c0ff}
+    body:not(.site-body) .btn-secondary:hover{border-color:#6e7681; background:var(--panel-2)}
+  }
+  body:not(.site-body) .rail b,
+  body:not(.site-body) .info-icon{
+    background:var(--canvas);
+  }
+  body:not(.site-body) .rail li.active b,
+  body:not(.site-body) .opt:has(input:checked) .choice-letter{
+    border-color:var(--brand);
+    background:var(--brand);
+    color:var(--brand-ink);
+  }
+  body:not(.site-body) .opt:has(input:checked){
+    border-color:var(--brand);
+    background:var(--brand-soft);
+  }
+  body:not(.site-body) .data-line a,
+  body:not(.site-body) .inline-link{
+    color:var(--brand);
+  }
+  body:not(.site-body) .status-strip{
+    background:var(--canvas);
+  }
+  body:not(.site-body) .status-strip.ok{border-color:#2ea043; background:var(--ok-soft)}
+  body:not(.site-body) .status-strip.warn{border-color:#9e6a03; background:var(--warn-soft)}
+  body:not(.site-body) .status-strip.crit{border-color:#f85149; background:var(--crit-soft)}
+  body:not(.site-body) .status-strip.info{border-color:#388bfd; background:var(--info-soft)}
 }
 @keyframes settle{from{opacity:.001; transform:translateY(6px)} to{opacity:1; transform:none}}
 .app{animation:settle .22s var(--ease) both}
@@ -1569,7 +2286,143 @@ h1{
     grid-template-columns:1fr;
   }
   .btn,.btn-secondary{width:100%; min-width:0}
+  .result-actions,.status-actions{display:grid; grid-template-columns:1fr}
   .result-main,.status-main{padding:38px 24px}
+}
+
+@media (max-width:940px){
+  body:not(.site-body){
+    padding:16px;
+  }
+  body:not(.site-body) .wrap{
+    max-width:none;
+  }
+  body:not(.site-body) .app{
+    width:100%;
+  }
+  body:not(.site-body) .commandbar{
+    align-items:flex-start;
+    flex-direction:column;
+    gap:10px;
+  }
+  body:not(.site-body) .command-context{
+    width:100%;
+    flex-wrap:wrap;
+    gap:8px;
+  }
+  body:not(.site-body) .command-meta{
+    flex-wrap:wrap;
+  }
+  body:not(.site-body) .console,
+  body:not(.site-body) .result-layout,
+  body:not(.site-body) .status-layout{
+    grid-template-columns:minmax(0,1fr);
+  }
+  body:not(.site-body) .workspace,
+  body:not(.site-body) .result-main,
+  body:not(.site-body) .status-main{
+    padding:24px;
+  }
+  body:not(.site-body) .context-panel,
+  body:not(.site-body) .result-side,
+  body:not(.site-body) .status-side{
+    border-left:0;
+    border-top:1px solid var(--line);
+    padding:20px 24px;
+  }
+  body:not(.site-body) .prelude,
+  body:not(.site-body) .result-panel,
+  body:not(.site-body) .status-panel{
+    max-width:none;
+  }
+  body:not(.site-body) .start-actions{
+    grid-template-columns:minmax(0,1fr);
+    align-items:stretch;
+  }
+  body:not(.site-body) .turnstile-box{
+    width:100%;
+    max-width:320px;
+  }
+  body:not(.site-body) .btn,
+  body:not(.site-body) .btn-secondary{
+    width:100%;
+    min-width:0;
+  }
+  body:not(.site-body) .actionbar{
+    margin:0 -24px -24px;
+    padding:14px 24px;
+  }
+}
+
+@media (max-width:560px){
+  body:not(.site-body){
+    padding:12px;
+  }
+  body:not(.site-body) .commandbar{
+    gap:8px;
+    padding:12px;
+  }
+  body:not(.site-body) .brand-name{
+    font-size:.94rem;
+  }
+  body:not(.site-body) .command-context{
+    gap:6px 10px;
+  }
+  body:not(.site-body) .command-ref{
+    width:100%;
+  }
+  body:not(.site-body) .command-meta{
+    display:none;
+  }
+  body:not(.site-body) .workspace,
+  body:not(.site-body) .result-main,
+  body:not(.site-body) .status-main{
+    padding:20px 16px;
+  }
+  body:not(.site-body) .context-panel,
+  body:not(.site-body) .result-side,
+  body:not(.site-body) .status-side{
+    padding:16px;
+  }
+  body:not(.site-body) h1{
+    font-size:1.38rem;
+    line-height:1.28;
+  }
+  body:not(.site-body) .lead{
+    font-size:.94rem;
+  }
+  body:not(.site-body) .rail{
+    flex-wrap:wrap;
+    margin-bottom:20px;
+  }
+  body:not(.site-body) .rail li span{
+    display:inline;
+  }
+  body:not(.site-body) .rail li + li::before{
+    margin:0 8px;
+  }
+  body:not(.site-body) .inline-note,
+  body:not(.site-body) .consent-check,
+  body:not(.site-body) .command-card,
+  body:not(.site-body) .state-card,
+  body:not(.site-body) .status-strip{
+    border-radius:6px;
+  }
+  body:not(.site-body) .turnstile-box{
+    max-width:100%;
+  }
+  body:not(.site-body) .actionbar{
+    align-items:stretch;
+    flex-direction:column;
+    margin:0 -16px -20px;
+    padding:12px 16px;
+  }
+  body:not(.site-body) .action-group,
+  body:not(.site-body) .result-actions,
+  body:not(.site-body) .status-actions{
+    display:grid;
+    grid-template-columns:1fr;
+  }
 }
 
 /* Public site override: keep the first viewport quiet and GitHub-native. */
@@ -3294,19 +4147,21 @@ h1{
   }
 }
 
-/* Public homepage craft pass: maintainers' infrastructure, with one weird accent. */
+/* Public homepage craft pass: maintainer infrastructure with restrained brand cues. */
 .claw-hero{
-  gap:56px;
-  padding:52px 0 38px;
+  gap:clamp(36px,6vw,72px);
+  padding:50px 0 30px;
 }
 .claw-lead{
-  max-width:45ch;
+  max-width:47ch;
   line-height:1.45;
 }
 .policy-receipt{
+  justify-self:end;
+  width:min(100%,398px);
   border-color:#d0d7de;
-  box-shadow:0 18px 36px rgba(16,24,22,.12), 6px 6px 0 #d8f35f;
-  transform:rotate(.35deg);
+  box-shadow:0 14px 32px rgba(16,24,22,.11), 5px 5px 0 #d8f35f;
+  transform:none;
 }
 .policy-receipt::before{
   content:"Action required";
@@ -3317,6 +4172,29 @@ h1{
 }
 .receipt-title{
   margin-bottom:12px;
+  font-size:1.18rem;
+}
+.receipt-subtitle{
+  max-width:34ch;
+  margin:-5px 16px 14px;
+  color:#57606a;
+  font-size:.9rem;
+  font-weight:600;
+  line-height:1.38;
+}
+.receipt-line{
+  padding:10px 12px;
+}
+.receipt-line:nth-child(1) b{
+  border-color:#d4a72c;
+  background:#fff8c5;
+  color:#7d4e00;
+}
+.receipt-line:nth-child(2) b,
+.receipt-line:nth-child(3) b{
+  border-color:#54aeff;
+  background:#ddf4ff;
+  color:#0969da;
 }
 .receipt-line small{
   max-width:33ch;
@@ -3326,6 +4204,8 @@ h1{
 }
 .policy-strip{
   counter-reset:policy-step;
+  grid-template-columns:repeat(3,minmax(0,1fr));
+  margin-bottom:36px;
   border:1px solid #ccd8d1;
   border-radius:8px;
   background:#fffdfa;
@@ -3358,89 +4238,81 @@ h1{
 .policy-chip span{
   font-size:.88rem;
 }
+.proof-note{
+  display:inline-flex;
+  align-items:center;
+  gap:8px;
+  margin-top:16px;
+  color:#455852;
+  font-size:.94rem;
+  font-weight:700;
+}
+.proof-note::before{
+  content:"";
+  width:10px;
+  height:10px;
+  flex:none;
+  border:2px solid #101816;
+  border-radius:999px;
+  background:#d8f35f;
+  box-shadow:3px 0 0 #ff6f4d;
+}
 .claw-section{
-  padding-top:34px;
+  grid-template-columns:minmax(0,.68fr) minmax(360px,.62fr);
+  gap:clamp(32px,6vw,76px);
+  padding:42px 0 36px;
 }
 .install-ticket{
-  border-color:#101816;
-  box-shadow:5px 5px 0 #ff7a59;
+  gap:14px;
+  padding:0;
+  border:0;
+  background:transparent;
+  box-shadow:none;
 }
-.install-mode:first-of-type{
-  border-top:0;
-  padding-top:2px;
+.install-ticket h3{
+  font-size:1rem;
 }
-.docs-section{
-  grid-template-columns:minmax(220px,.34fr) minmax(0,1fr);
-  align-items:start;
-}
-.docs-intro{
+.install-options{
   display:grid;
-  align-content:start;
-  gap:18px;
-}
-.docs-index{
-  display:grid;
-  gap:8px;
-  padding:14px;
-  border:1px solid #ccd8d1;
-  border-radius:8px;
-  background:#fffdfa;
-  box-shadow:0 1px 0 rgba(16,24,22,.06);
-}
-.docs-index b{
-  color:#101816;
-  font-size:.9rem;
-}
-.docs-index a{
-  color:#455852;
-  font-size:.92rem;
-  font-weight:650;
-  text-decoration:none;
-}
-.docs-index a:hover{
-  text-decoration:underline;
-}
-.docs-feature{
-  min-width:0;
-  display:grid;
-  grid-template-columns:repeat(2,minmax(0,1fr));
   gap:12px;
 }
-.docs-feature a{
-  min-height:128px;
-  display:grid;
-  align-content:start;
+.install-mode{
   gap:8px;
-  padding:16px;
+  padding:15px;
   border:1px solid #ccd8d1;
   border-radius:8px;
   background:#fffdfa;
-  color:#101816;
-  text-decoration:none;
-  box-shadow:0 1px 0 rgba(16,24,22,.06);
 }
-.docs-feature a.primary-doc{
-  grid-column:1 / -1;
-  min-height:0;
-  border-color:#101816;
-  background:#101816;
-  color:#fffdfa;
+.install-mode:first-of-type{
+  border-top:1px solid #ccd8d1;
+  padding-top:15px;
 }
-.docs-feature b{
-  font-size:1rem;
-  line-height:1.2;
+.install-mode span{
+  max-width:44ch;
 }
-.docs-feature span{
+.install-mode .claw-button{
+  width:fit-content;
+  margin-top:4px;
+}
+.install-note{
+  max-width:46ch;
   color:#455852;
-  font-size:.93rem;
-  line-height:1.42;
+  font-size:.92rem!important;
 }
-.docs-feature a.primary-doc span{
-  color:#d5e4dc;
+.docs-section{
+  grid-template-columns:minmax(0,1fr) auto;
+  align-items:center;
+  gap:24px;
 }
-.docs-feature a:hover{
-  transform:translateY(-1px);
-  box-shadow:3px 3px 0 #d8f35f;
+.docs-section h2{
+  max-width:none;
+}
+.docs-section p{
+  max-width:58ch;
+}
+.docs-section .claw-button{
+  justify-self:end;
+  white-space:nowrap;
 }
 .claw-footer code{
   font-family:var(--mono);
@@ -3451,8 +4323,24 @@ h1{
   .policy-chip:nth-child(4){
     border-color:#ccd8d1;
   }
+  .policy-strip{
+    grid-template-columns:1fr;
+  }
+  .policy-chip{
+    border-left:0;
+    border-top:1px solid #ccd8d1;
+  }
+  .policy-chip:first-child{
+    border-top:0;
+  }
   .policy-chip:nth-child(3){
     border-left:0;
+  }
+  .claw-section{
+    grid-template-columns:1fr;
+  }
+  .docs-section{
+    grid-template-columns:1fr;
   }
 }
 @media (max-width:560px){
@@ -3467,7 +4355,11 @@ h1{
   }
   .policy-receipt{
     transform:none;
-    box-shadow:0 12px 24px rgba(16,24,22,.12), 4px 4px 0 #d8f35f;
+    box-shadow:0 10px 20px rgba(16,24,22,.1), 4px 4px 0 #d8f35f;
+  }
+  .receipt-subtitle{
+    margin-top:-3px;
+    font-size:.88rem;
   }
   .policy-strip{
     margin-bottom:30px;
@@ -3485,16 +4377,16 @@ h1{
   }
   .docs-section{
     gap:18px;
-  }
-  .docs-index,
-  .docs-feature a{
-    border-radius:7px;
-  }
-  .docs-feature{
     grid-template-columns:1fr;
   }
+  .docs-section .claw-button{
+    justify-self:stretch;
+  }
   .install-ticket{
-    box-shadow:4px 4px 0 #ff7a59;
+    box-shadow:none;
+  }
+  .install-mode .claw-button{
+    width:100%;
   }
 }
 @media (prefers-color-scheme:dark){
@@ -3556,12 +4448,13 @@ h1{
     box-shadow:none;
   }
   .policy-strip,
-  .install-ticket,
-  .docs-index,
-  .docs-feature a{
+  .install-mode{
     border-color:#2c3a33;
     background:#151d1a;
     box-shadow:none;
+  }
+  .install-ticket{
+    background:transparent;
   }
   .policy-chip,
   .policy-chip:nth-child(3),
@@ -3573,28 +4466,11 @@ h1{
     background:#202d27;
     color:#d8f35f;
   }
-  .install-ticket code{
-    background:#0a0f0d;
-    color:#d8f35f;
-  }
   .install-mode{
     border-color:#2c3a33;
   }
-  .docs-index a,
-  .docs-feature span{
+  .install-note{
     color:#b7c8be;
-  }
-  .docs-index b,
-  .docs-feature b{
-    color:#f5fbf7;
-  }
-  .docs-feature a.primary-doc{
-    border-color:#d8f35f;
-    background:#d8f35f;
-    color:#101613;
-  }
-  .docs-feature a.primary-doc span{
-    color:#344238;
   }
   .policy-receipt{
     border-color:#30363d;
@@ -3605,6 +4481,17 @@ h1{
     border-color:#9e6a03;
     background:#3b2e12;
     color:#f2cc60;
+  }
+  .receipt-line:nth-child(1) b{
+    border-color:#9e6a03;
+    background:#3b2e12;
+    color:#f2cc60;
+  }
+  .receipt-line:nth-child(2) b,
+  .receipt-line:nth-child(3) b{
+    border-color:#1f6feb;
+    background:#10233f;
+    color:#79c0ff;
   }
 }
 `;
@@ -3638,7 +4525,7 @@ function commandBar(tag: string, prRef?: string, timerHtml = ""): string {
     ${prRef ? `<span class="command-sep" aria-hidden="true"></span><span class="command-ref">${esc(prRef)}</span>` : ""}
   </div>
   <div class="command-meta">
-    <span class="command-pill"><span class="seal" aria-hidden="true">✓</span>Summary telemetry only</span>
+    <span class="command-pill"><span class="seal" aria-hidden="true">✓</span>PR record</span>
     ${timerHtml}
   </div>
 </header>`;
@@ -3658,7 +4545,7 @@ function stageRail(stage: "verify" | "answer" | "attest"): string {
   const stages = [
     ["verify", "Verify"],
     ["answer", "Answer"],
-    ["attest", "Attest"],
+    ["attest", "Record"],
   ] as const;
   const activeIndex = stages.findIndex(([id]) => id === stage);
   const items = stages.map(([id, label], i) => {
@@ -3669,30 +4556,51 @@ function stageRail(stage: "verify" | "answer" | "attest"): string {
   return `<ol class="rail" style="--steps:3;--rail-scale:${activeIndex / 2}">${items}</ol>`;
 }
 
-function contextPanel(prRef: string, variant: "start" | "question"): string {
+function contextPanel(prRef: string, variant: "verify" | "start" | "question"): string {
+  const secondSection = variant === "verify"
+    ? `<section class="context-section">
+    <p class="side-kicker">Author check</p>
+    <h3>No delegated access</h3>
+    <ul class="plain-list">
+      <li>GitHub verifies the comment author.</li>
+      <li>CLAWPTCHA never receives a user token.</li>
+      <li>The app cannot comment, approve, or answer for you.</li>
+    </ul>
+  </section>`
+    : `<section class="context-section">
+    <p class="side-kicker">PR record</p>
+    <h3>What maintainers see</h3>
+    <ul class="plain-list">
+      <li>The outcome posts back to the PR.</li>
+      <li>Answers and summary signals stay for maintainers.</li>
+      <li>No keystrokes, webcam, or screen recording.</li>
+    </ul>
+    <a class="inline-link" href="/docs/privacy-data/" target="_blank" rel="noopener noreferrer">Read details</a>
+  </section>`;
   return `<aside class="context-panel" aria-label="Challenge context">
   <div class="context-tabs" aria-hidden="true">
     <span class="context-tab active">PR summary</span>
     <span class="context-tab">Policy</span>
   </div>
   <section class="context-section">
+    <p class="side-kicker">Pull request</p>
     <h2>${esc(prRef)}</h2>
     <div class="info-list">
-      <div class="info-item"><span class="info-icon">4</span><span><b>Four questions</b>One at a time. No back navigation.</span></div>
-      <div class="info-item"><span class="info-icon">90</span><span><b>Ninety seconds each</b>Expiration submits the current question as unanswered.</span></div>
-      <div class="info-item"><span class="info-icon">A</span><span><b>Public attestation</b>Passing records that you understand the intent, behavior, and blast radius of this PR.</span></div>
+      <div class="info-item"><span class="info-icon">4</span><span><b>Questions</b>One at a time.</span></div>
+      <div class="info-item"><span class="info-icon">60</span><span><b>Timer</b>Answered or skipped.</span></div>
+      <div class="info-item"><span class="info-icon">PR</span><span><b>Record</b>Outcome posts back to the pull request.</span></div>
     </div>
   </section>
-  <section class="state-card">
-    <h3>${variant === "start" ? "Privacy line" : "Answer what the PR does"}</h3>
-    <p>${variant === "start"
-      ? "CLAWPTCHA reports summary timing, interaction statistics, and passive canary signals to maintainers. It never records keystrokes, answer text, webcam data, or invasive browser data."
-      : "The quiz tests intent, effects, and affected areas rather than line-by-line recall. Correct answers stay server-side."}</p>
+  ${secondSection}
+  <section class="context-section">
+    <p class="side-kicker">Policy</p>
+    <h3>${variant === "start" ? "Before questions load" : variant === "verify" ? "Before the quiz" : "During the quiz"}</h3>
+    <p class="data-line">${variant === "start"
+      ? "Browser verification must pass before questions are generated. Passive signals stay maintainer evidence."
+      : variant === "verify"
+        ? "After GitHub sees the one-time command, this tab advances automatically."
+        : "Bot verification failures stop the challenge. Timing and pointer summaries stay maintainer evidence."}</p>
   </section>
-  <div class="status-strip info">
-    <span class="status-dot">i</span>
-    <span class="status-copy"><b>Author-only answers</b><span>Challenge assistance can fail a correct quiz.</span></span>
-  </div>
 </aside>`;
 }
 
@@ -3712,6 +4620,19 @@ function statusSymbol(tone: "ok" | "warn" | "crit" | "info"): string {
   return "!";
 }
 
+function actionLinks(actions: PageAction[], className: string): string {
+  if (actions.length === 0) return "";
+  const links = actions
+    .map((action) => {
+      const id = action.id ? ` id="${esc(action.id)}"` : "";
+      const target = action.external ? ` target="_blank" rel="noopener noreferrer"` : "";
+      const variant = action.primary ? "btn" : "btn-secondary";
+      return `<a${id} class="${variant}" href="${esc(action.href)}"${target}>${esc(action.label)}</a>`;
+    })
+    .join("");
+  return `<div class="${className}">${links}</div>`;
+}
+
 function honeypotField(enabled: boolean): string {
   if (!enabled) return "";
   return `
@@ -3722,148 +4643,202 @@ function honeypotField(enabled: boolean): string {
           </div>`;
 }
 
-export function homePage(servedOrigin = "https://clawptcha.idosalomon.workers.dev"): string {
-  const servedHost = servedOrigin.replace(/^https?:\/\//, "");
-  return layout("Say yes to contributions. No to slop", `
+export function verificationPage(
+  prRef: string,
+  authorLogin: string,
+  challengeId: string,
+  verifyCode: string,
+  prUrl: string
+): string {
+  const command = `/clawptcha verify ${verifyCode}`;
+  const commandJson = JSON.stringify(command);
+  const prUrlJson = JSON.stringify(prUrl);
+  const statusUrlJson = JSON.stringify(`/challenge/${challengeId}/verify/status`);
+  const challengeUrlJson = JSON.stringify(`/challenge/${challengeId}`);
+  return layout("Verify author", `
+<div class="app">
+  ${commandBar("PR author check", prRef)}
+  <div class="console">
+    <section class="workspace" aria-labelledby="verify-title">
+      ${stageRail("verify")}
+      <div class="prelude">
+        <p class="kicker-row"><span class="pill">Author verification</span><span class="ref">@${esc(authorLogin)}</span></p>
+        <h1 id="verify-title">Verify from the PR.</h1>
+        <p class="lead">Post the one-time command as @${esc(authorLogin)}. GitHub verifies authorship; this tab continues when the PR comment arrives.</p>
+        <div class="inline-note">
+          <b>The app never acts for you</b>
+          <span>CLAWPTCHA reads the PR comment webhook. It never receives a GitHub user token and cannot comment, approve, or answer on your behalf.</span>
+        </div>
+        <form class="start-actions verify-actions" method="POST" action="/challenge/${esc(challengeId)}/verify">
+          <label class="command-card">
+            <span><strong>One-time PR comment</strong><small><code id="verifyCommand">${esc(command)}</code></small></span>
+          </label>
+          <button class="btn" type="button" id="copyOpenPr">Copy and open PR</button>
+          <a class="btn-secondary" id="openPrLink" href="${esc(prUrl)}" target="_blank" rel="noopener noreferrer">Open PR</a>
+          <button class="btn-secondary" type="submit">Check again</button>
+          <p class="choice-status" id="verifyStatus" aria-live="polite">Waiting for your GitHub comment.</p>
+        </form>
+      </div>
+    </section>
+    ${contextPanel(prRef, "verify")}
+  </div>
+</div>
+<script>
+(function () {
+  var commandText = ${commandJson};
+  var prUrl = ${prUrlJson};
+  var statusUrl = ${statusUrlJson};
+  var challengeUrl = ${challengeUrlJson};
+  var copyButton = document.getElementById("copyOpenPr");
+  var command = document.getElementById("verifyCommand");
+  var status = document.getElementById("verifyStatus");
+  var pollTimer = null;
+  function setStatus(text) {
+    if (status) status.textContent = text;
+  }
+  function copyCommand() {
+    if (navigator.clipboard && window.isSecureContext) {
+      return navigator.clipboard.writeText(commandText);
+    }
+    var textarea = document.createElement("textarea");
+    textarea.value = commandText;
+    textarea.setAttribute("readonly", "");
+    textarea.style.position = "fixed";
+    textarea.style.opacity = "0";
+    document.body.appendChild(textarea);
+    textarea.select();
+    try {
+      document.execCommand("copy");
+      return Promise.resolve();
+    } catch (e) {
+      return Promise.reject(e);
+    } finally {
+      document.body.removeChild(textarea);
+    }
+  }
+  function poll() {
+    fetch(statusUrl, {
+      headers: { "accept": "application/json" },
+      credentials: "same-origin",
+      cache: "no-store"
+    }).then(function (res) {
+      if (!res.ok) return null;
+      return res.json();
+    }).then(function (data) {
+      if (data && data.verified) {
+        setStatus("Verified. Opening the challenge...");
+        window.location.assign(challengeUrl);
+        return;
+      }
+      if (!pollTimer) {
+        pollTimer = window.setInterval(poll, 2000);
+      }
+    }).catch(function () {
+      if (!pollTimer) {
+        pollTimer = window.setInterval(poll, 3000);
+      }
+    });
+  }
+  poll();
+  if (!copyButton || !command) return;
+  copyButton.addEventListener("click", function () {
+    var opened = window.open(prUrl, "_blank", "noopener,noreferrer");
+    copyCommand().then(function () {
+      copyButton.textContent = "Copied - PR opened";
+      setStatus(opened
+        ? "Paste the command as a PR comment. This page will continue automatically."
+        : "Command copied. Use Open PR if the pull request did not open.");
+    }).catch(function () {
+      setStatus("Copy failed. Select the command above, then use Open PR and paste it as a comment.");
+    });
+    poll();
+  });
+})();
+</script>`);
+}
+
+export function homePage(_servedOrigin = "https://clawptcha.dev"): string {
+  return layout("PR checks for work people can explain", `
 <div class="claw-shell">
   <nav class="claw-top" aria-label="Primary">
     <a class="claw-brand" href="/" aria-label="CLAWPTCHA home"><span class="claw-mark" aria-hidden="true">C</span><span>CLAWPTCHA</span></a>
     <div class="claw-links">
-      <a href="#why">Why</a>
-      <a href="#policy">Policy</a>
-      <a href="/docs/">Docs</a>
+      <a href="#workflow">Workflow</a>
       <a href="#install">Install</a>
+      <a href="/docs/">Docs</a>
     </div>
   </nav>
 
   <section class="claw-hero" aria-labelledby="home-title">
     <div class="claw-copy">
-      <p class="claw-kicker">Free open-source PR governance for maintainers.</p>
-      <h1 id="home-title">Proof before<br>review.</h1>
-      <p class="claw-lead">Let good PRs through. Ask contextless changes to prove ownership first. CLAWPTCHA complements code review, CI, tests, and branch protection.<br><b>AI-authored diffs can be reviewed. Challenge help is not allowed.</b></p>
+      <p class="claw-kicker">GitHub PR comprehension checks for maintainers.</p>
+      <h1 id="home-title">Merge work<br>people can explain.</h1>
+      <p class="claw-lead">Ask unfamiliar or risky PR authors to answer a short diff-specific check before review. Trusted work keeps moving; maintainers get a record when ownership is uncertain.<br><b>AI-authored diffs are fine. Challenge help is not.</b></p>
       <div class="claw-actions">
-        <a class="claw-button primary" href="#install">Use free managed service</a>
-        <a class="claw-button" href="https://deploy.workers.cloudflare.com/?url=https://github.com/idosal/CLAWPTCHA" target="_blank" rel="noopener noreferrer">Self-deploy</a>
+        <a class="claw-button primary" href="https://deploy.workers.cloudflare.com/?url=https://github.com/idosal/CLAWPTCHA" target="_blank" rel="noopener noreferrer">Deploy to Cloudflare</a>
+        <a class="claw-button" href="/docs/">Read docs</a>
       </div>
+      <p class="proof-note">Policy stays in the repo. Results post back to the PR.</p>
     </div>
 
     <aside class="policy-receipt" aria-label="GitHub Actions policy report example">
       <div class="receipt-head"><span class="receipt-dot" aria-hidden="true">!</span><div><strong>CLAWPTCHA check</strong><span>pull_request #482</span></div></div>
-      <h2 class="receipt-title">Policy check</h2>
+      <h2 class="receipt-title">Challenge required</h2>
+      <p class="receipt-subtitle">New author changed auth paths. Ask for proof of understanding before review starts.</p>
       <div class="receipt-lines">
-        <div class="receipt-line"><b>✓</b><span><strong>Policy loaded</strong><small>accountability, trust tiers, gates</small></span></div>
-        <div class="receipt-line"><b>!</b><span><strong>Linked issue missing</strong><small>first-time contributor path</small></span></div>
-        <div class="receipt-line"><b>!</b><span><strong>Proof required</strong><small>author explanation before review</small></span></div>
-        <div class="receipt-line"><b>i</b><span><strong>Signals recorded</strong><small>challenge assistance blocks attestation</small></span></div>
+        <div class="receipt-line"><b>!</b><span><strong>Reason</strong><small>unfamiliar author touched sensitive files</small></span></div>
+        <div class="receipt-line"><b>→</b><span><strong>Next action</strong><small>answer intent, behavior, and blast-radius questions</small></span></div>
+        <div class="receipt-line"><b>i</b><span><strong>Evidence</strong><small>result and answers stay with the PR record</small></span></div>
       </div>
-      <p class="receipt-foot">Check run posted to the PR.</p>
+      <p class="receipt-foot">The app never acts for the contributor.</p>
     </aside>
   </section>
 
-  <section class="policy-strip" id="policy" aria-label="CLAWPTCHA workflow">
-    <div class="policy-chip"><b>Read repo policy</b><span>accountability, gates, exemptions</span></div>
-    <div class="policy-chip"><b>Trust context</b><span>teams, roles, prior PRs</span></div>
-    <div class="policy-chip"><b>Scope the gate</b><span>drafts, files, and size</span></div>
-    <div class="policy-chip"><b>Post check run</b><span>status, annotations, signals</span></div>
+  <section class="policy-strip" id="workflow" aria-label="CLAWPTCHA workflow">
+    <div class="policy-chip"><b>Evaluate PR</b><span>author trust, changed files, repo policy</span></div>
+    <div class="policy-chip"><b>Ask author</b><span>short quiz scoped to the diff</span></div>
+    <div class="policy-chip"><b>Post evidence</b><span>check state and answers for maintainers</span></div>
   </section>
 
-  <section class="claw-section" id="why">
+  <section class="claw-section" aria-labelledby="install-title">
     <div>
-      <h2>Keep maintainers in control.</h2>
-      <p>CLAWPTCHA is a free open-source PR governance layer that fits alongside existing maintainer workflows. You choose the directories, draft behavior, contributor trust tiers, and accountability checks that should trigger proof. Challenge-assistance signals can block attestation; code canaries stay maintainer evidence. The default is fail-open.</p>
+      <h2 id="install-title">One check, kept in the PR.</h2>
+      <p>Self-deploy the Worker, create the GitHub App through the setup wizard, keep policy in your repository, and choose which changes need comprehension proof. Trusted authors and planned work can skip the gate; unfamiliar or sensitive changes get a bounded quiz.</p>
     </div>
     <aside class="install-ticket" id="install" aria-label="Install CLAWPTCHA">
       <h3>Install path</h3>
-      <div class="install-mode"><b>Free managed</b><span>Hosted CLAWPTCHA is free for open-source repos. Install the managed GitHub App; keep policy in your repo.</span></div>
-      <div class="install-mode"><b>Self-deploy</b><span>Run the open-source Worker, D1, GitHub App, and model provider in your own Cloudflare account.</span></div>
-      <p>Privacy: the managed service is for installed public repositories; it stores public PR challenge state, contributor-accepted answers, and summary signals.</p>
-      <p>Team exemptions require GitHub Members read permission; leave them unset if you do not want team lookups.</p>
-      <a class="claw-button primary" href="https://deploy.workers.cloudflare.com/?url=https://github.com/idosal/CLAWPTCHA" target="_blank" rel="noopener noreferrer">Deploy to Cloudflare</a>
-      <p>Self-deploy CLI:</p>
-      <code>npx wrangler login &amp;&amp; npm run setup</code>
-      <p>Managed service: <strong>${esc(servedHost)}</strong></p>
-      <p>Policy stays with the repo. Review stays with maintainers.</p>
+      <div class="install-options">
+        <div class="install-mode">
+          <b>Deploy from GitHub</b>
+          <span>Fork the public repo, provision the Worker and D1, then run the setup wizard for GitHub App, Turnstile, and secrets.</span>
+          <a class="claw-button primary" href="https://deploy.workers.cloudflare.com/?url=https://github.com/idosal/CLAWPTCHA" target="_blank" rel="noopener noreferrer">Deploy to Cloudflare</a>
+        </div>
+        <div class="install-mode">
+          <b>CLI setup</b>
+          <span>Clone the repo, use Node 22.22.1+, and let <code>npm run setup</code> deploy and configure the service.</span>
+          <a class="claw-button" href="/docs/getting-started/">Read setup docs</a>
+        </div>
+      </div>
+      <p class="install-note">Privacy, permissions, configuration, and verification details live in the docs.</p>
     </aside>
   </section>
 
   <section class="claw-section docs-section" id="docs" aria-labelledby="docs-title">
-    <div class="docs-intro">
-      <div>
-        <h2 id="docs-title">Docs built for operators.</h2>
-        <p>The documentation now lives in a Starlight docs site with sidebar navigation, generated routes, anchored headings, tables, and code examples. Start with why the gate exists, roll out a first policy, then use the operator guides for issue triage, accountability, trust tiers, draft and path scope, challenge signals, common practices, and configuration.</p>
-      </div>
-      <nav class="docs-index" aria-label="Documentation sections">
-        <b>Documentation</b>
-        <a href="/docs/">Overview</a>
-        <a href="/docs/why-clawptcha/">Why use it</a>
-        <a href="/docs/getting-started/">Getting started</a>
-        <a href="/docs/deployment/">Deployment</a>
-        <a href="/docs/policy/">Policy evaluation</a>
-        <a href="/docs/issue-triage/">Issue-backed triage</a>
-        <a href="/docs/passive-signals/">Passive signals</a>
-        <a href="/docs/challenge-lifecycle/">Challenge lifecycle</a>
-        <a href="/docs/common-practices/">Common practices</a>
-        <a href="/docs/verification/">Verification checklist</a>
-        <a href="/docs/privacy-data/">Privacy and data</a>
-        <a href="/docs/configuration/">Configuration</a>
-      </nav>
+    <div>
+      <h2 id="docs-title">Need the details?</h2>
+      <p>The docs cover rollout, policy configuration, deployment, passive signals, privacy, and verification when you are ready to wire it into a real repository.</p>
     </div>
-    <div class="docs-feature" aria-label="CLAWPTCHA documentation">
-      <a class="primary-doc" href="/docs/">
-        <b>Open the Starlight docs</b>
-        <span>Read the full CLAWPTCHA operating model in the dedicated docs framework.</span>
-      </a>
-      <a href="/docs/why-clawptcha/">
-        <b>Why use it</b>
-        <span>When CLAWPTCHA belongs alongside code review, CI, tests, branch protection, and existing maintainer workflows.</span>
-      </a>
-      <a href="/docs/getting-started/">
-        <b>Getting started</b>
-        <span>Add the first policy file, test expected scenarios, and tighten only the paths that need it.</span>
-      </a>
-      <a href="/docs/deployment/">
-        <b>Deployment</b>
-        <span>Choose managed service or self-deploy, then configure GitHub App, Turnstile, model provider, and Flue.</span>
-      </a>
-      <a href="/docs/policy/">
-        <b>Policy evaluation</b>
-        <span>Merge-target config, accountability preflight, trust tiers, exemptions, malformed-field fallback, and fail-open behavior.</span>
-      </a>
-      <a href="/docs/issue-triage/">
-        <b>Issue-backed triage</b>
-        <span>How linked issues, trusted labels, assignees, and semantic match exempt planned work.</span>
-      </a>
-      <a href="/docs/passive-signals/">
-        <b>Passive signals</b>
-        <span>Challenge-assistance signals, code canaries, added-line matching, and maintainer review evidence.</span>
-      </a>
-      <a href="/docs/common-practices/">
-        <b>Common practices</b>
-        <span>Rollout guidance for trust tiers, honeypot files, issue-backed triage, path rules, drafts, and output volume.</span>
-      </a>
-      <a href="/docs/verification/">
-        <b>Verification checklist</b>
-        <span>Smoke-test real repository scenarios, failure drills, and rollout evidence before relying on the check.</span>
-      </a>
-      <a href="/docs/privacy-data/">
-        <b>Privacy and data</b>
-        <span>What managed CLAWPTCHA stores, what stays transient, and what contributors accept before a challenge starts.</span>
-      </a>
-      <a href="/docs/configuration/">
-        <b>Configuration</b>
-        <span>The current policy surface for accountability, gates, trust tiers, file scope, drafts, signals, approval, retries, and investigation.</span>
-      </a>
-    </div>
+    <a class="claw-button" href="/docs/">Open docs</a>
   </section>
 
   <footer class="claw-footer">
-    <span>Free open-source maintainer infra with a weird little gate.</span>
-    <span>Free managed or self-deploy.</span>
+    <span>Free open-source PR checks for maintainer-owned review.</span>
+    <span>Self-deploy from the public repo.</span>
   </footer>
 </div>`, {
     bodyClass: "site-body",
     mainClass: "site-page",
-    description: "CLAWPTCHA is free open-source GitHub PR governance that complements code review, CI, tests, and branch protection with accountability checks and trust exemptions."
+    description: "CLAWPTCHA is free open-source GitHub PR governance that complements code review, CI, tests, and branch protection with comprehension checks and trust exemptions."
   });
 }
 
@@ -3873,26 +4848,25 @@ export function startPage(
 ): string {
   return layout("Challenge", `
 <div class="app">
-  ${commandBar("Comprehension gate", prRef)}
+  ${commandBar("PR author check", prRef)}
   <div class="console">
     <section class="workspace" aria-labelledby="challenge-title">
-      ${stageRail("verify")}
+      ${stageRail("answer")}
       <div class="prelude">
         <p class="kicker-row"><span class="pill">PR challenge</span><span class="ref">${esc(prRef)}</span></p>
-        <h1 id="challenge-title">Show you understand this change before it merges.</h1>
-        <p class="lead">CLAWPTCHA asks PR-specific questions about <b>intent, behavior, and blast radius</b>. It does not prove you are human. It records that you stood behind the change.</p>
-        <div class="privacy-note">
-          <p><b>Privacy posture</b>Managed CLAWPTCHA is for installed public repositories. Its PR check is part of the same public contribution surface as CI, review gates, and the pull request itself; detailed answers and summary signals are stored for maintainer review. Raw diffs are read transiently, and no keystrokes or answer text are recorded.</p>
-          <p><a href="/docs/privacy-data/" target="_blank" rel="noopener noreferrer">Read the data note</a></p>
-        </div>
+        <h1 id="challenge-title">Stand behind this PR.</h1>
+        <p class="lead">Answer PR-specific questions about <b>intent, behavior, and blast radius</b>. Passing records that you understand the change.</p>
         <form class="start-actions" method="POST" action="/challenge/${esc(challengeId)}/start" id="startForm">
           ${honeypotField(honeypotEnabled)}
           ${startError ? `<p class="form-error" role="alert">${esc(startError)}</p>` : ""}
-          <label class="consent-check">
-            <input type="checkbox" name="terms_acceptance" value="accepted" required>
-            <span><strong>I accept the challenge terms.</strong><small>Use this repository and PR context to generate the quiz, post the outcome on the PR like other review gates, and store my answers plus summary signals for the PR's maintainers.</small></span>
-          </label>
-          <div class="turnstile-box"><div class="cf-turnstile" data-sitekey="${esc(turnstileSiteKey)}"></div><span class="turnstile-fallback">Turnstile check</span></div>
+          <div class="terms-stack">
+            <label class="consent-check">
+              <input type="checkbox" name="terms_acceptance" value="accepted" required>
+              <span><strong>I understand what will be posted.</strong><small>Generate a PR-specific quiz, post the result to the PR, and keep my answers plus summary signals for maintainers.</small></span>
+            </label>
+            <p class="data-line">Bot verification failures stop the challenge. Privacy and permission details live in the docs. <a href="/docs/privacy-data/" target="_blank" rel="noopener noreferrer">Read details</a>.</p>
+          </div>
+          <div class="turnstile-box" aria-label="Browser verification"><div class="cf-turnstile" data-sitekey="${esc(turnstileSiteKey)}"></div><span class="turnstile-fallback">Browser verification</span></div>
           <button class="btn" type="submit" id="startButton">Begin challenge</button>
         </form>
       </div>
@@ -3929,7 +4903,7 @@ export function questionPage(
   const timer = `<span class="command-pill timer" id="timer" role="timer" aria-live="off"><span id="tnum">${Math.ceil(timeLimitMs / 1000)}</span><span class="u">s</span></span>`;
   return layout(`Question ${index + 1}`, `
 <div class="app">
-  ${commandBar("Comprehension gate", `Question ${index + 1} of ${total}`, timer)}
+  ${commandBar("PR author check", `Question ${index + 1} of ${total}`, timer)}
   <div class="console">
     <section class="workspace" aria-labelledby="question-title">
       ${progressRail(index, total)}
@@ -3938,7 +4912,7 @@ export function questionPage(
       </div>
       <p class="question-type">${esc(meta.label)}</p>
       <h1 class="qh" id="question-title">${esc(q.prompt)}</h1>
-      <p class="hint">${esc(meta.hint)} Correct answers are never sent to the browser.</p>
+      <p class="hint">${esc(meta.hint)} Answer from the PR diff; correct answers are not sent to the browser.</p>
       <form class="answer-form" method="POST" action="/challenge/${esc(challengeId)}/answer" id="f" data-answer-form>
         ${honeypotField(honeypotEnabled)}
         <fieldset class="opts">
@@ -4033,52 +5007,47 @@ export function resultPage(
   score: number,
   total: number,
   message: string,
-  reason?: "assistance_detected"
+  actions: PageAction[] = []
 ): string {
-  const assisted = reason === "assistance_detected";
-  const tone = passed ? "ok" : assisted ? "crit" : "warn";
-  const tag = passed ? "Attestation ready" : assisted ? "Challenge failed" : "Needs retry";
-  const label = passed ? "Comprehension attested" : assisted ? "Assistance detected" : "Threshold not met";
-  const title = passed ? "The check is green." : assisted ? "This challenge failed." : "This attempt did not pass.";
-  const status = passed ? "Passed" : assisted ? "Failed" : "Needs retry";
-  const nextTitle = passed ? "What happens next" : assisted ? "Maintainer review" : "Retry policy";
-  const nextCopy = passed
-    ? "The PR receives an attestation that you understand this change. Maintainers still see summary risk signals."
-    : assisted
-      ? "The PR check stays failed because the challenge must be answered from the author's own understanding."
-      : "Retry timing is controlled by the repository policy. A retry receives a fresh quiz.";
+  const tone = passed ? "ok" : message.toLowerCase().includes("bot verification") ? "crit" : "warn";
+  const title = passed ? "Passed" : tone === "crit" ? "Bot verification failed" : "Challenge not passed";
   return layout(passed ? "Passed" : "Not passed", `
 <div class="app">
-  ${commandBar(tag)}
+  ${commandBar("Challenge result")}
   <div class="result-layout">
     <section class="result-main" aria-labelledby="result-title">
       <div class="result-panel">
         <div class="badge ${tone}" aria-hidden="true">${passed ? "✓" : "!"}</div>
-        <p class="result-label">${label}</p>
+        <p class="result-label">Result</p>
         <h1 id="result-title">${title}</h1>
         <div class="score">${score}<span class="of">/${total}</span></div>
         <p class="result-copy">${esc(message)}</p>
+        ${actionLinks(actions, "result-actions")}
       </div>
     </section>
     <aside class="result-side" aria-label="Result details">
       <div class="status-strip ${tone}">
         <span class="status-dot">${passed ? "✓" : "!"}</span>
-        <span class="status-copy"><b>${status}</b><span>${score}/${total} correct</span></span>
+        <span class="status-copy"><b>${passed ? "Passed" : tone === "crit" ? "Verification failed" : "Not passed"}</b><span>${score}/${total} correct</span></span>
       </div>
       <section class="state-card">
-        <h2>${nextTitle}</h2>
-        <p>${nextCopy}</p>
+        <h2>What happens next</h2>
+        <p>${passed
+          ? "The PR receives a record that you understand this change. Maintainers still see summary risk signals."
+          : tone === "crit"
+            ? "The PR check stays failed. Maintainers should review the PR manually before merging."
+            : "Retry timing is controlled by repository policy. A retry receives a fresh quiz when available."}</p>
       </section>
       <div class="status-strip info">
         <span class="status-dot">i</span>
-        <span class="status-copy"><b>Summary telemetry only</b><span>No keystrokes or answer text are recorded.</span></span>
+        <span class="status-copy"><b>PR record</b><span>Detailed answers and summary signals stay with the PR record.</span></span>
       </div>
     </aside>
   </div>
 </div>`);
 }
 
-export function errorPage(title: string, message: string): string {
+export function errorPage(title: string, message: string, actions: PageAction[] = []): string {
   const tone = statusTone(title);
   const cleanTitle = title.replace(/^✅\\s*/, "");
   return layout(cleanTitle, `
@@ -4091,6 +5060,7 @@ export function errorPage(title: string, message: string): string {
         <p class="status-label">${tone === "ok" ? "Complete" : tone === "info" ? "Waiting" : tone === "crit" ? "Blocked" : "Needs attention"}</p>
         <h1 id="status-title">${esc(cleanTitle)}</h1>
         <p class="status-copy-large">${esc(message)}</p>
+        ${actionLinks(actions, "status-actions")}
       </div>
     </section>
     <aside class="status-side" aria-label="Status context">
@@ -4099,12 +5069,12 @@ export function errorPage(title: string, message: string): string {
         <span class="status-copy"><b>${esc(cleanTitle)}</b><span>Check the PR for the current gate state.</span></span>
       </div>
       <section class="state-card">
-        <h2>The CLAWPTCHA line</h2>
-        <p>This challenge verifies comprehension of a PR. It does not prove humanness, and CLAWPTCHA-side failures should not block a merge.</p>
+        <h2>What CLAWPTCHA means</h2>
+        <p>CLAWPTCHA records PR comprehension. Bot verification failures are blocking; CLAWPTCHA-side service failures should not block a merge.</p>
       </section>
       <div class="status-strip info">
         <span class="status-dot">i</span>
-        <span class="status-copy"><b>Privacy-respecting telemetry</b><span>Timing and interaction summaries only.</span></span>
+        <span class="status-copy"><b>PR-native review</b><span>Use the pull request for the current gate state.</span></span>
       </div>
     </aside>
   </div>

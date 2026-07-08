@@ -4,6 +4,14 @@ import { GitHubApi } from "./github/api";
 import { getInstallationToken } from "./github/auth";
 import { buildRiskReport, renderRiskReportMarkdown } from "./risk/report";
 
+const FLAGGED_LABEL = "pr-comprehension:flagged";
+const FLAGGED_LABEL_COLOR = "b60205";
+const FLAGGED_LABEL_DESCRIPTION = "Multiple passive risk signals were observed on a passed PR comprehension challenge.";
+
+function challengeUrl(env: Env, challengeId: string): string {
+  return `${env.APP_BASE_URL}/challenge/${challengeId}`;
+}
+
 export async function apiForInstallation(env: Env, installationId: number): Promise<GitHubApi> {
   const token = await getInstallationToken(env.GITHUB_APP_ID, env.GITHUB_PRIVATE_KEY, installationId);
   return new GitHubApi(token);
@@ -17,6 +25,7 @@ export async function onChallengeResolved(
   const repo = r.challenge.repo_full_name;
   const pr = r.challenge.pr_number;
   const checkId = r.challenge.check_run_id;
+  const url = challengeUrl(env, r.challenge.id);
 
   const report = buildRiskReport(r.telemetry);
   const riskMd = renderRiskReportMarkdown(report, r.telemetry);
@@ -27,38 +36,30 @@ export async function onChallengeResolved(
     case "passed": {
       if (checkId) await api.updateCheckRun(repo, checkId, {
         status: "completed", conclusion: "success",
+        details_url: url,
         output: {
-          title: "Passed",
+          title: report.automationLikely ? "Passed — but the quiz looks scripted" : "Passed",
           summary: `Score ${r.score}/${r.total}.\n\n${riskMd}`,
         },
       });
+      if (report.automationLikely && r.cfg.output.labels) {
+        // Comment edits don't notify anyone; the label is what makes a flagged
+        // pass visible from the PR list. Best-effort: a labeling failure (e.g.
+        // missing permission) must not block the attestation below.
+        try {
+          await api.ensureLabel(repo, FLAGGED_LABEL, FLAGGED_LABEL_COLOR, FLAGGED_LABEL_DESCRIPTION);
+          await api.addLabels(repo, pr, [FLAGGED_LABEL]);
+        } catch { /* attestation still posts; check title carries the flag */ }
+      }
       if (commentsEnabled) {
         await api.upsertPrComment(repo, pr, [
-          "## 🦞 Clawptcha — passed ✅",
+          "## Clawptcha — passed",
           "",
           `@${r.challenge.author_login} certified under challenge that they personally understand this change (score ${r.score}/${r.total}).`,
           "",
-          "_Behavioral risk report attached to the check run for maintainers._",
-          ...(detailedComments ? ["", riskMd] : []),
-        ].join("\n"));
-      }
-      break;
-    }
-    case "failed_assisted": {
-      if (checkId) await api.updateCheckRun(repo, checkId, {
-        status: "completed", conclusion: "failure",
-        output: {
-          title: "Failed — challenge assistance detected",
-          summary: `Score ${r.score}/${r.total}, but this quiz looks like it was completed with automation or outside assistance.\n\n${riskMd}`,
-        },
-      });
-      if (commentsEnabled) {
-        await api.upsertPrComment(repo, pr, [
-          "## 🦞 Clawptcha — challenge failed ❌",
-          "",
-          `@${r.challenge.author_login} answered enough questions correctly, but the challenge showed signs of automation or outside assistance.`,
-          "",
-          "Maintainers: please review this PR manually before merging.",
+          report.automationLikely
+            ? `> ⚠️ **Worth a second look before merging:** this quiz was completed in a way that looks scripted — ${report.signals.join("; ")}.`
+            : "_Behavioral risk report attached to the check run for maintainers._",
           ...(detailedComments ? ["", riskMd] : []),
         ].join("\n"));
       }
@@ -70,26 +71,67 @@ export async function onChallengeResolved(
       // retry). The full behavioral report ships with the final verdict only.
       if (checkId) await api.updateCheckRun(repo, checkId, {
         status: "completed", conclusion: "failure",
+        details_url: url,
         output: {
           title: `Failed (attempt ${r.challenge.attempts_used}/${r.cfg.max_attempts})`,
           summary: `Score ${r.score}/${r.total}. Retry available after cooldown (${r.cfg.cooldown_minutes} min) with a freshly generated quiz. A behavioral report accompanies the final result.`,
         },
       });
+      if (commentsEnabled) {
+        await api.upsertPrComment(repo, pr, [
+          "## Clawptcha — retry needed",
+          "",
+          `@${r.challenge.author_login} did not pass attempt ${r.challenge.attempts_used}/${r.cfg.max_attempts} (score ${r.score}/${r.total}).`,
+          "",
+          `Retry after the ${r.cfg.cooldown_minutes} minute cooldown with a freshly generated quiz: ${url}`,
+          "",
+          "_Per-attempt behavioral details are withheld until the final verdict._",
+        ].join("\n"));
+      }
       break;
     }
-    case "failed_final": {
+    case "failed_assisted": {
+      const reasonLine = r.failureReason ? `Reason: ${r.failureReason}\n\n` : "";
       if (checkId) await api.updateCheckRun(repo, checkId, {
         status: "completed", conclusion: "failure",
+        details_url: url,
         output: {
-          title: "Failed — attempts exhausted",
-          summary: `Score ${r.score}/${r.total}. Max attempts reached.\n\n${riskMd}`,
+          title: "Failed — challenge assistance detected",
+          summary: `${reasonLine}Score ${r.score}/${r.total}. This challenge must be answered from the author's own understanding.\n\n${riskMd}`,
         },
       });
       if (commentsEnabled) {
         await api.upsertPrComment(repo, pr, [
-          "## 🦞 Clawptcha — challenge failed ❌",
+          "## Clawptcha — challenge failed",
           "",
-          `@${r.challenge.author_login} did not pass the comprehension check after ${r.cfg.max_attempts} attempts.`,
+          `@${r.challenge.author_login} answered the challenge in a way that showed automation or outside assistance.`,
+          ...(r.failureReason ? ["", `Reason: ${r.failureReason}`] : []),
+          "",
+          "Maintainers: please review this PR manually before merging.",
+          ...(detailedComments ? ["", riskMd] : []),
+        ].join("\n"));
+      }
+      break;
+    }
+    case "failed_final": {
+      const title = r.failureReason ? "Failed — bot verification" : "Failed — attempts exhausted";
+      const reasonLine = r.failureReason ? `Reason: ${r.failureReason}\n\n` : "";
+      if (checkId) await api.updateCheckRun(repo, checkId, {
+        status: "completed", conclusion: "failure",
+        details_url: url,
+        output: {
+          title,
+          summary: `${reasonLine}Score ${r.score}/${r.total}. ${r.failureReason ? "Bot verification did not pass." : "Max attempts reached."}\n\n${riskMd}`,
+        },
+      });
+      if (commentsEnabled) {
+        await api.upsertPrComment(repo, pr, [
+          "## Clawptcha — challenge failed",
+          "",
+          r.failureReason
+            ? `@${r.challenge.author_login} did not pass bot verification for this challenge.`
+            : `@${r.challenge.author_login} did not pass the comprehension check after ${r.cfg.max_attempts} attempts.`,
+          ...(r.failureReason ? ["", `Reason: ${r.failureReason}`] : []),
           "",
           "Maintainers: please review this PR manually before merging.",
           ...(detailedComments ? ["", riskMd] : []),
@@ -100,6 +142,7 @@ export async function onChallengeResolved(
     case "neutral": {
       if (checkId) await api.updateCheckRun(repo, checkId, {
         status: "completed", conclusion: "neutral",
+        details_url: url,
         output: {
           title: "Clawptcha unavailable",
           summary: "Quiz generation failed (LLM/service issue). Not blocking the merge — this is a Clawptcha-side problem, not a verdict on the PR.",

@@ -1,6 +1,13 @@
 // test/grade.test.ts
 import { describe, it, expect } from "vitest";
-import { gradeAnswer, scoreQuiz, canStartAttempt, nextCooldown } from "../src/quiz/grade";
+import {
+  QUESTION_TIME_LIMIT_MS,
+  answerWithinTimeLimit,
+  canStartAttempt,
+  gradeAnswer,
+  nextCooldown,
+  scoreQuiz,
+} from "../src/quiz/grade";
 import type { Question } from "../src/quiz/schema";
 import { DEFAULT_CONFIG } from "../src/config";
 
@@ -42,6 +49,15 @@ describe("scoreQuiz", () => {
     const r = scoreQuiz(questions, answers, 3);
     expect(r).toEqual({ score: 3, passed: true });
     expect(scoreQuiz(questions, answers, 4).passed).toBe(false);
+  });
+});
+
+describe("question time limit", () => {
+  it("defaults to 60 seconds with server grace", () => {
+    expect(QUESTION_TIME_LIMIT_MS).toBe(60_000);
+    const servedAt = "2026-07-02T12:00:00.000Z";
+    expect(answerWithinTimeLimit(servedAt, new Date("2026-07-02T12:01:15.000Z"))).toBe(true);
+    expect(answerWithinTimeLimit(servedAt, new Date("2026-07-02T12:01:16.000Z"))).toBe(false);
   });
 });
 

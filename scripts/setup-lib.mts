@@ -15,7 +15,6 @@ export function buildManifest(i: ManifestInput) {
     url: i.baseUrl,
     hook_attributes: { url: `${i.baseUrl}/webhook` },
     redirect_url: i.redirectUrl,
-    callback_urls: [`${i.baseUrl}/oauth/callback`],
     public: false,
     default_permissions: {
       checks: "write",
@@ -38,7 +37,7 @@ export function manifestFormHtml(manifest: object, state: string): string {
   const json = escapeAttr(JSON.stringify(manifest));
   return `<!doctype html>
 <html><body>
-  <p>Redirecting to GitHub to create the Clawptcha app…</p>
+  <p>Redirecting to GitHub to create the Clawptcha PR check app…</p>
   <form id="f" action="https://github.com/settings/apps/new?state=${encodeURIComponent(state)}" method="post">
     <input type="hidden" name="manifest" value="${json}">
     <noscript><button type="submit">Continue to GitHub</button></noscript>
@@ -76,8 +75,6 @@ export interface SecretsInput {
   appId: number | string;
   privateKeyPkcs8: string;
   webhookSecret: string;
-  clientId: string;
-  clientSecret: string;
   turnstileSiteKey: string;
   turnstileSecretKey: string;
   sessionSigningKey: string;
@@ -88,8 +85,6 @@ export function buildSecretsJson(s: SecretsInput): Record<string, string> {
     GITHUB_APP_ID: String(s.appId),
     GITHUB_PRIVATE_KEY: s.privateKeyPkcs8,
     GITHUB_WEBHOOK_SECRET: s.webhookSecret,
-    GITHUB_OAUTH_CLIENT_ID: s.clientId,
-    GITHUB_OAUTH_CLIENT_SECRET: s.clientSecret,
     TURNSTILE_SITE_KEY: s.turnstileSiteKey,
     TURNSTILE_SECRET_KEY: s.turnstileSecretKey,
     SESSION_SIGNING_KEY: s.sessionSigningKey,

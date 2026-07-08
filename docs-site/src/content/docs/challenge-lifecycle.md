@@ -48,9 +48,11 @@ unknowns instead of pretending every changed line was inspected.
 
 ## Challenge serving
 
-The author signs in with GitHub before answering. The session is bound to the
-challenge author so a leaked or transplanted quiz cookie cannot expose questions
-to another account.
+The author verifies from GitHub before answering by commenting a one-time
+`/clawptcha verify <code>` command on the PR. The challenge page copies the
+command, opens the PR, and polls until GitHub's signed webhook binds that
+browser session to the PR author without granting CLAWPTCHA delegated account
+access.
 
 Before quiz generation starts, the author accepts the challenge terms on the
 start page. If they do not accept, CLAWPTCHA does not create a quiz attempt or
@@ -93,7 +95,7 @@ review manually.
 | Outcome | Check behavior |
 | --- | --- |
 | Passed | Green check with an attestation summary. |
-| Correct answers with assisted-challenge signals | Failed check, explicit assistance-detected title, and maintainer review requested. |
+| Passed with multiple passive signals | Green check, explicit risk title, and optional `pr-comprehension:flagged` label. |
 | Failed attempt | Cooldown and retry policy apply; detailed signal feedback is withheld until final outcome. |
 | Attempts exhausted | Maintainer review is requested. |
 | Generation failure | Neutral check; the PR is not blocked by service failure. |
@@ -110,5 +112,5 @@ Quiz questions and correct answers are needed while a challenge is active. Once
 the challenge reaches a terminal result, stored question text is purged while
 score, answers, status, and summary telemetry remain as the audit trail.
 
-See [Privacy and data](/docs/privacy-data/) for the managed public-OSS data
-boundary and the contributor acceptance flow.
+See [Privacy and data](/docs/privacy-data/) for the self-deployed data boundary
+and the contributor acceptance flow.

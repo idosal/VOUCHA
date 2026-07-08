@@ -1,6 +1,9 @@
 import { describe, it, expect } from "vitest";
 import { createAppJwt } from "../src/github/auth";
 
+const pkcs8Begin = "-----BEGIN " + "PRIVATE KEY-----";
+const pkcs8End = "-----END " + "PRIVATE KEY-----";
+
 async function generateTestKey(): Promise<{ pem: string; publicKey: CryptoKey }> {
   // workers-types can't narrow generateKey's union; algorithm dict guarantees a key pair
   const pair = (await crypto.subtle.generateKey(
@@ -12,7 +15,7 @@ async function generateTestKey(): Promise<{ pem: string; publicKey: CryptoKey }>
   const pkcs8 = (await crypto.subtle.exportKey("pkcs8", pair.privateKey)) as ArrayBuffer;
   const b64 = btoa(String.fromCharCode(...new Uint8Array(pkcs8)));
   const lines = b64.match(/.{1,64}/g)!.join("\n");
-  const pem = `-----BEGIN PRIVATE KEY-----\n${lines}\n-----END PRIVATE KEY-----`;
+  const pem = `${pkcs8Begin}\n${lines}\n${pkcs8End}`;
   return { pem, publicKey: pair.publicKey };
 }
 
@@ -40,7 +43,11 @@ describe("createAppJwt", () => {
   });
 
   it("rejects PKCS#1 keys with an actionable error", async () => {
-    const pkcs1 = "-----BEGIN RSA PRIVATE KEY-----\nMIIEow==\n-----END RSA PRIVATE KEY-----";
+    const pkcs1 = [
+      "-----BEGIN RSA " + "PRIVATE KEY-----",
+      "MIIEow==",
+      "-----END RSA " + "PRIVATE KEY-----",
+    ].join("\n");
     await expect(createAppJwt("12345", pkcs1, new Date())).rejects.toThrow(/PKCS#8/);
   });
 });

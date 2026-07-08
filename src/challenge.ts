@@ -15,6 +15,7 @@ import { checkAndRecordRate } from "./policy/ratelimit";
 import { evaluateCodeHoneypotSignals } from "./policy/code-honeypot";
 import { buildRiskReport, telemetrySchema, type Telemetry } from "./risk/report";
 import type { GenerateResult } from "./quiz/generate";
+import { normalizeGitHubLogin, sameGitHubLogin } from "./github/login";
 
 export interface PrFilePatch {
   filename: string;
@@ -45,6 +46,7 @@ export interface ResolvedChallenge {
   total?: number;
   telemetry: Telemetry | null;
   cfg: ClawptchaConfig;
+  failureReason?: string;
 }
 
 // All side-effectful collaborators are injected for testability.
@@ -58,7 +60,11 @@ export interface ChallengeDeps {
 
 export type StartResult =
   | { ok: true; quizId: string }
-  | { ok: false; error: "not_found" | "not_author" | "not_ready" | "cooldown" | "attempts_exhausted" | "rate_limited" | "generation_failed" };
+  | { ok: false; error: "not_found" | "not_author" | "not_ready" | "cooldown" | "attempts_exhausted" | "rate_limited" | "generation_failed" }
+  | { ok: false; error: "bot_detected"; reason: string };
+
+export const TURNSTILE_BOT_FAILURE_REASON = "Turnstile did not validate this browser session.";
+export const WEBDRIVER_BOT_FAILURE_REASON = "The browser identified itself as automated software.";
 
 // Data custody (spec): once a challenge reaches a terminal state, quiz
 // question content is deleted. Score/answers/telemetry are kept for audit.
@@ -68,29 +74,86 @@ async function purgeQuizQuestions(env: Env, challengeId: string): Promise<void> 
   ).bind(challengeId).run();
 }
 
+async function notifyChallengeResolved(
+  deps: ChallengeDeps,
+  resolved: ResolvedChallenge
+): Promise<void> {
+  try {
+    await deps.onChallengeResolved(resolved);
+  } catch (err) {
+    console.error("challenge resolution callback failed", resolved.challenge.id, err);
+  }
+}
+
+async function failChallengeForBotSignal(
+  env: Env,
+  deps: ChallengeDeps,
+  challenge: Challenge,
+  cfg: ClawptchaConfig,
+  reason: string,
+  now: Date
+): Promise<StartResult> {
+  const quizId = randomToken();
+  const gate = getMultipleChoiceGate(cfg);
+  const telemetry = telemetrySchema.parse({ turnstileOk: false });
+
+  await env.DB.prepare(
+    "UPDATE quizzes SET finished_at=? WHERE challenge_id=? AND finished_at IS NULL"
+  ).bind(now.toISOString(), challenge.id).run();
+  await env.DB.prepare(
+    `INSERT INTO quizzes (id, challenge_id, attempt_number, questions_json, question_served_at,
+       turnstile_ok, telemetry_json, finished_at, score)
+     VALUES (?, ?, ?, '{"questions":[]}', NULL, 0, ?, ?, 0)`
+  ).bind(
+    quizId,
+    challenge.id,
+    challenge.attempts_used + 1,
+    JSON.stringify({ botFailureReason: reason }),
+    now.toISOString()
+  ).run();
+  await env.DB.prepare(
+    "UPDATE challenges SET status='failed_assisted', attempts_used=?, cooldown_until=NULL WHERE id=?"
+  ).bind(challenge.attempts_used + 1, challenge.id).run();
+
+  const fresh = (await getChallenge(env.DB, challenge.id))!;
+  await notifyChallengeResolved(deps, {
+    challenge: fresh,
+    outcome: "failed_assisted",
+    score: 0,
+    total: gate.questions,
+    telemetry,
+    cfg,
+    failureReason: reason,
+  });
+  return { ok: false, error: "bot_detected", reason };
+}
+
 export async function startQuizAttempt(
   env: Env, deps: ChallengeDeps, challengeId: string, ghLogin: string, turnstileToken: string,
   honeypotTriggered = false
 ): Promise<StartResult> {
   const challenge = await getChallenge(env.DB, challengeId);
   if (!challenge) return { ok: false, error: "not_found" };
-  if (challenge.author_login !== ghLogin) return { ok: false, error: "not_author" };
+  if (!sameGitHubLogin(challenge.author_login, ghLogin)) return { ok: false, error: "not_author" };
 
   const cfg = resolveConfig(challenge.config_json);
-  const gate = canStartAttempt(challenge, cfg, deps.now());
+  const now = deps.now();
+  const gate = canStartAttempt(challenge, cfg, now);
   if (!gate.allowed) {
     return { ok: false, error: gate.reason === "not_ready" ? "not_ready" : gate.reason };
   }
 
   const rate = await checkAndRecordRate(env.DB, {
-    user: `user:${ghLogin}`,
+    user: `user:${normalizeGitHubLogin(ghLogin)}`,
     repo: `repo:${challenge.repo_full_name}`,
     installation: `inst:${challenge.installation_id}`,
-  }, deps.now());
+  }, now);
   if (!rate.allowed) return { ok: false, error: "rate_limited" };
 
-  // Turnstile informs the risk report; it never blocks (spec).
   const turnstileOk = await deps.verifyTurnstile(turnstileToken);
+  if (!turnstileOk) {
+    return failChallengeForBotSignal(env, deps, challenge, cfg, TURNSTILE_BOT_FAILURE_REASON, now);
+  }
 
   const ctx = await deps.fetchPrContext(challenge);
   const codeHoneypot = evaluateCodeHoneypotSignals(ctx.diff, getCodeHoneypotSignals(cfg));
@@ -102,7 +165,7 @@ export async function startQuizAttempt(
     // DB state (status, score, purge) is finalized before the GitHub callback —
     // a callback failure leaves consistent state for the cron sweep to reconcile.
     await purgeQuizQuestions(env, challenge.id);
-    await deps.onChallengeResolved({
+    await notifyChallengeResolved(deps, {
       challenge, outcome: "neutral", telemetry: null, cfg,
     });
     return { ok: false, error: "generation_failed" };
@@ -122,7 +185,7 @@ export async function startQuizAttempt(
      VALUES (?, ?, ?, ?, ?, ?, ?)`
   ).bind(
     quizId, challenge.id, challenge.attempts_used + 1,
-    JSON.stringify(generated.quiz), deps.now().toISOString(), turnstileOk ? 1 : 0,
+    JSON.stringify(generated.quiz), now.toISOString(), turnstileOk ? 1 : 0,
     JSON.stringify(initialTelemetry)
   ).run();
   return { ok: true, quizId };
@@ -136,7 +199,7 @@ interface QuizRow {
 
 export type SubmitResult =
   | { done: false; nextQuestion: number }
-  | { done: true; passed: boolean; score: number; total: number; reason?: "assistance_detected" }
+  | { done: true; passed: boolean; score: number; total: number; failureReason?: string }
   | { done: true; error: "not_found" | "already_finished" | "challenge_closed" };
 
 interface PerQuestionTelemetry {
@@ -148,6 +211,7 @@ interface StoredTelemetry {
   perQuestion: PerQuestionTelemetry[];
   honeypotTriggered: boolean;
   codeHoneypotTriggered: boolean;
+  botFailureReason?: string;
 }
 
 function parseStoredTelemetry(json: string): StoredTelemetry {
@@ -156,6 +220,7 @@ function parseStoredTelemetry(json: string): StoredTelemetry {
       perQuestion?: unknown;
       honeypotTriggered?: unknown;
       codeHoneypotTriggered?: unknown;
+      botFailureReason?: unknown;
     };
     return {
       perQuestion: Array.isArray(parsed.perQuestion)
@@ -163,10 +228,17 @@ function parseStoredTelemetry(json: string): StoredTelemetry {
         : [],
       honeypotTriggered: parsed.honeypotTriggered === true,
       codeHoneypotTriggered: parsed.codeHoneypotTriggered === true,
+      botFailureReason: typeof parsed.botFailureReason === "string" ? parsed.botFailureReason : undefined,
     };
   } catch {
     return { perQuestion: [], honeypotTriggered: false, codeHoneypotTriggered: false };
   }
+}
+
+function botFailureReasonForQuiz(quiz: QuizRow, perQuestion: PerQuestionTelemetry[]): string | undefined {
+  if (quiz.turnstile_ok === 0) return TURNSTILE_BOT_FAILURE_REASON;
+  if (perQuestion.some((t) => t.webdriver)) return WEBDRIVER_BOT_FAILURE_REASON;
+  return undefined;
 }
 
 export async function submitAnswer(
@@ -213,7 +285,7 @@ export async function submitAnswer(
 
   // Guarded write: if a concurrent duplicate already advanced or finished this
   // quiz, we lose the race and must not double-record or double-finalize.
-  // next question's 90s window starts when it's first rendered (route stamps via COALESCE)
+  // next question's 60s window starts when it's first rendered (route stamps via COALESCE)
   const updated = await env.DB.prepare(
     `UPDATE quizzes SET answers_json=?, telemetry_json=?, current_question=?,
        question_served_at=?, finished_at=?
@@ -244,17 +316,16 @@ async function finalizeQuiz(
 ): Promise<SubmitResult> {
   const challenge = (await getChallenge(env.DB, quiz.challenge_id))!;
   // Outcomes only apply to a live challenge. A quiz finishing after the
-  // challenge left `ready` (failed_assisted, failed_final, superseded, passed
-  // via another quiz, neutral) must not override that state — pre-starting multiple quizzes
+  // challenge left `ready` (failed_final, superseded, passed via another quiz,
+  // neutral) must not override that state — pre-starting multiple quizzes
   // would otherwise bypass the attempt cap and cooldown entirely.
   if (challenge.status !== "ready") {
     return { done: true, error: "challenge_closed" };
   }
   const cfg = resolveConfig(challenge.config_json);
   const quizGate = getMultipleChoiceGate(cfg);
-  const { score, passed } = scoreQuiz(questions, answers, quizGate.pass_threshold);
-
-  await env.DB.prepare("UPDATE quizzes SET score=? WHERE id=?").bind(score, quiz.id).run();
+  const { score, passed: scorePassed } = scoreQuiz(questions, answers, quizGate.pass_threshold);
+  const botFailureReason = botFailureReasonForQuiz(quiz, perQuestion);
 
   const telemetry: Telemetry | null =
     perQuestion.length === 0 && !honeypotTriggered && !codeHoneypotTriggered
@@ -270,16 +341,33 @@ async function finalizeQuiz(
         honeypotTriggered,
         codeHoneypotTriggered,
       });
+  const report = buildRiskReport(telemetry);
+  const assistanceReason = botFailureReason ??
+    (scorePassed && report.automationLikely ? "Challenge assistance signals were detected." : undefined);
+  const passed = scorePassed && !assistanceReason;
 
-  const assistanceDetected = passed && buildRiskReport(telemetry).automationLikely;
+  if (assistanceReason) {
+    await env.DB.prepare("UPDATE quizzes SET score=?, telemetry_json=? WHERE id=?").bind(
+      score,
+      JSON.stringify({
+        perQuestion,
+        honeypotTriggered,
+        codeHoneypotTriggered,
+        botFailureReason: assistanceReason,
+      }),
+      quiz.id
+    ).run();
+  } else {
+    await env.DB.prepare("UPDATE quizzes SET score=? WHERE id=?").bind(score, quiz.id).run();
+  }
 
   let outcome: ResolvedChallenge["outcome"];
-  if (passed && !assistanceDetected) {
+  if (passed) {
     outcome = "passed";
     await setChallengeStatus(env.DB, challenge.id, "passed");
-  } else if (assistanceDetected) {
+  } else if (assistanceReason) {
     outcome = "failed_assisted";
-    await env.DB.prepare("UPDATE challenges SET status='failed_assisted', attempts_used=? WHERE id=?")
+    await env.DB.prepare("UPDATE challenges SET status='failed_assisted', attempts_used=?, cooldown_until=NULL WHERE id=?")
       .bind(challenge.attempts_used + 1, challenge.id).run();
   } else {
     const attemptsUsed = challenge.attempts_used + 1;
@@ -303,14 +391,10 @@ async function finalizeQuiz(
   }
 
   const fresh = (await getChallenge(env.DB, challenge.id))!;
-  await deps.onChallengeResolved({
+  await notifyChallengeResolved(deps, {
     challenge: fresh, outcome, score, total: questions.length, telemetry, cfg,
+    failureReason: assistanceReason,
   });
-  return {
-    done: true,
-    passed: passed && !assistanceDetected,
-    score,
-    total: questions.length,
-    ...(assistanceDetected ? { reason: "assistance_detected" as const } : {}),
-  };
+  const result = { done: true as const, passed, score, total: questions.length };
+  return assistanceReason ? { ...result, failureReason: assistanceReason } : result;
 }

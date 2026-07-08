@@ -3,9 +3,8 @@ title: Privacy and data
 description: What CLAWPTCHA stores, what it reads transiently, and what contributors accept before a challenge starts.
 ---
 
-CLAWPTCHA's managed service is for installed public open-source repositories.
-Self-deployed operators control their own storage, provider choices, and data
-retention.
+CLAWPTCHA is currently self-deployed. Operators control their own Cloudflare
+storage, GitHub App credentials, model provider choices, and data retention.
 
 The product is designed to keep data custody narrow: enough public PR context
 to run the gate, plus the answers and summary signals a contributor accepts
@@ -30,9 +29,9 @@ CLAWPTCHA stores:
 - contributor answer selections, quiz score, and terminal challenge outcome;
 - summary challenge signals such as timing, answer-change counts, aggregate
   pointer movement, focus-loss counts, Turnstile outcome, browser automation
-  hints, honeypot state, and code-canary findings;
-- short-lived session, OAuth state, and rate-limit rows needed to serve the
-  challenge safely.
+  flags, and report-only honeypot or code-canary findings;
+- short-lived session, one-time verification code state, and rate-limit rows
+  needed to serve the challenge safely.
 
 ## What is not stored
 

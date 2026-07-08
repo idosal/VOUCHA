@@ -113,12 +113,12 @@ if (patched.changed) {
 
 // ---------- Phase 3: GitHub App via manifest flow ----------
 banner("GitHub App");
-const appName = await ask("GitHub App name", `clawptcha-${accountId.slice(0, 6)}`);
+const appName = await ask("GitHub App name", `clawptcha-pr-check-${accountId.slice(0, 6)}`);
 const state = randomBytes(16).toString("hex");
 
 interface AppConfig {
   id: number; pem: string; webhook_secret: string;
-  client_id: string; client_secret: string; html_url: string; slug: string;
+  html_url: string; slug: string;
 }
 
 const appConfig = await new Promise<AppConfig>((resolve, reject) => {
@@ -157,7 +157,7 @@ const appConfig = await new Promise<AppConfig>((resolve, reject) => {
         if (!r.ok) throw new Error(`conversion failed: HTTP ${r.status}`);
         const cfg = (await r.json()) as AppConfig;
         res.writeHead(200, { "content-type": "text/html" })
-          .end("<h2>✓ Clawptcha GitHub App created.</h2>You can close this tab and return to the terminal.");
+          .end("<h2>✓ Clawptcha PR check app created.</h2>You can close this tab and return to the terminal.");
         done(cfg);
       } catch (e) {
         res.writeHead(500).end("exchange failed — see terminal");
@@ -192,7 +192,7 @@ if (apiToken) {
     const r = await fetch(`https://api.cloudflare.com/client/v4/accounts/${accountId}/challenges/widgets`, {
       method: "POST",
       headers: { authorization: `Bearer ${apiToken}`, "content-type": "application/json" },
-      body: JSON.stringify({ name: "clawptcha", domains: [host], mode: "managed" }),
+      body: JSON.stringify({ name: "CLAWPTCHA PR check", domains: [host], mode: "managed" }),
     });
     const data = (await r.json()) as { success: boolean; result?: { sitekey: string; secret: string } };
     if (!r.ok || !data.success || !data.result) throw new Error(`turnstile API: HTTP ${r.status}`);
@@ -216,8 +216,6 @@ const secrets = buildSecretsJson({
   appId: appConfig.id,
   privateKeyPkcs8,
   webhookSecret: appConfig.webhook_secret,
-  clientId: appConfig.client_id,
-  clientSecret: appConfig.client_secret,
   turnstileSiteKey,
   turnstileSecretKey,
   sessionSigningKey: randomBytes(32).toString("hex"),
@@ -252,6 +250,6 @@ console.log(`Worker:      ${baseUrl}
 GitHub App:  ${appConfig.html_url}
 Next steps:
   1. Install the app on a repo:  ${appConfig.html_url}/installations/new
-  2. Open a test PR from a non-maintainer account → the clawptcha check appears.
+  2. Open a test PR from a non-maintainer account → the PR comprehension check appears.
   3. Walk the E2E checklist at the bottom of README.md.`);
 rl.close();

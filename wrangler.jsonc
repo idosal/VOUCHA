@@ -18,19 +18,24 @@
   },
   "ai": { "binding": "AI" },
   "triggers": { "crons": ["*/15 * * * *"] },
+  "routes": [
+    {
+      "pattern": "clawptcha.dev",
+      "custom_domain": true
+    }
+  ],
   // Preferred for same-account Flue deployments after `npm run flue:deploy`:
   // "services": [
   //   { "binding": "FLUE_INVESTIGATOR", "service": "clawptcha-flue-investigator" }
   // ],
   "vars": {
-    "APP_BASE_URL": "https://clawptcha.idosalomon.workers.dev",
+    "APP_BASE_URL": "https://clawptcha.dev",
     "LLM_PROVIDER": "workers-ai",
     "LLM_MODEL": "@cf/moonshotai/kimi-k2.7-code"
     // AI_GATEWAY_ID: set after creating an AI Gateway (spend caps + analytics)
   }
   // Secrets (set via `wrangler secret put`):
   //   GITHUB_APP_ID, GITHUB_PRIVATE_KEY (PKCS#8 PEM), GITHUB_WEBHOOK_SECRET,
-  //   GITHUB_OAUTH_CLIENT_ID, GITHUB_OAUTH_CLIENT_SECRET,
   //   TURNSTILE_SITE_KEY, TURNSTILE_SECRET_KEY,
   //   SESSION_SIGNING_KEY (random 32+ bytes, hex)
   //   LLM_API_KEY — only for LLM_PROVIDER=anthropic|openai-compat

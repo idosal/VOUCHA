@@ -12,13 +12,7 @@ export type InvestigationSource = "worker" | "flue";
 
 interface FlueEnv {
   FLUE_INVESTIGATOR?: Fetcher;
-  FLUE_INVESTIGATOR_URL?: string;
-  FLUE_INVESTIGATOR_SECRET?: string;
   FLUE_INVESTIGATOR_TIMEOUT_MS?: string;
-}
-
-interface FlueInvestigatorOptions {
-  fetchFn?: typeof fetch;
 }
 
 export interface InvestigatorSelection {
@@ -31,13 +25,8 @@ export type InvestigatorSelectionResult =
   | InvestigatorSelection
   | { ok: false; error: string; mode: InvestigationArtifact["mode"] };
 
-function cleanSecret(value: string | undefined): string | null {
-  const trimmed = value?.trim();
-  return trimmed ? trimmed : null;
-}
-
 export function hasFlueInvestigator(env: FlueEnv): boolean {
-  return Boolean(cleanSecret(env.FLUE_INVESTIGATOR_SECRET) && (env.FLUE_INVESTIGATOR || cleanSecret(env.FLUE_INVESTIGATOR_URL)));
+  return Boolean(env.FLUE_INVESTIGATOR);
 }
 
 export function chooseInvestigatorSource(
@@ -49,21 +38,12 @@ export function chooseInvestigatorSource(
   if (cfg.context.investigator === "worker") return { ok: true, source: "worker", mode };
   if (cfg.context.investigator === "flue") {
     if (!hasFlueInvestigator(env)) {
-      return { ok: false, mode, error: "context.investigator is flue but FLUE_INVESTIGATOR binding or FLUE_INVESTIGATOR_URL plus FLUE_INVESTIGATOR_SECRET is not configured" };
+      return { ok: false, mode, error: "context.investigator is flue but FLUE_INVESTIGATOR service binding is not configured" };
     }
     return { ok: true, source: "flue", mode };
   }
   if (mode === "large_pr" && hasFlueInvestigator(env)) return { ok: true, source: "flue", mode };
   return { ok: true, source: "worker", mode };
-}
-
-function workflowUrl(baseUrl: string): string {
-  const url = new URL(baseUrl);
-  if (!url.pathname.replace(/\/+$/, "").endsWith("/workflows/investigate-pr")) {
-    url.pathname = `${url.pathname.replace(/\/+$/, "")}/workflows/investigate-pr`;
-  }
-  url.searchParams.set("wait", "result");
-  return url.toString();
 }
 
 function boundWorkflowUrl(): string {
@@ -140,12 +120,9 @@ async function responseText(res: Response): Promise<string> {
 export async function investigatePrWithFlue(
   env: FlueEnv,
   ctx: PrContext,
-  cfg: ClawptchaConfig,
-  options: FlueInvestigatorOptions = {}
+  cfg: ClawptchaConfig
 ): Promise<InvestigationResult> {
-  const endpoint = cleanSecret(env.FLUE_INVESTIGATOR_URL);
-  const secret = cleanSecret(env.FLUE_INVESTIGATOR_SECRET);
-  if (!secret || (!env.FLUE_INVESTIGATOR && !endpoint)) return { ok: false, error: "Flue investigator is not configured" };
+  if (!env.FLUE_INVESTIGATOR) return { ok: false, error: "Flue investigator service binding is not configured" };
   if (!ctx.repoFullName || !ctx.prNumber || !ctx.headSha) {
     return { ok: false, error: "missing PR identity for Flue investigator" };
   }
@@ -181,14 +158,11 @@ export async function investigatePrWithFlue(
       method: "POST",
       headers: {
         "content-type": "application/json",
-        authorization: `Bearer ${secret}`,
       },
       body: JSON.stringify(body),
       signal: controller.signal,
     };
-    const res = env.FLUE_INVESTIGATOR
-      ? await env.FLUE_INVESTIGATOR.fetch(boundWorkflowUrl(), init)
-      : await (options.fetchFn ?? fetch)(workflowUrl(endpoint!), init);
+    const res = await env.FLUE_INVESTIGATOR.fetch(boundWorkflowUrl(), init);
     if (!res.ok) return { ok: false, error: `flue investigator HTTP ${res.status}: ${await responseText(res)}` };
 
     const envelope = await res.json();
@@ -211,5 +185,5 @@ export async function investigatePrWithFlue(
 
 export type FlueInvestigatorEnv = Pick<
   Env,
-  "FLUE_INVESTIGATOR" | "FLUE_INVESTIGATOR_URL" | "FLUE_INVESTIGATOR_SECRET" | "FLUE_INVESTIGATOR_TIMEOUT_MS"
+  "FLUE_INVESTIGATOR" | "FLUE_INVESTIGATOR_TIMEOUT_MS"
 >;

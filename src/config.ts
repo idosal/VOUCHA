@@ -73,6 +73,7 @@ const DEFAULT_DRAFT_PRS = "ignore" as const;
 
 const DEFAULT_OUTPUT = Object.freeze({
   comments: "normal" as const,
+  labels: true,
 });
 
 const DEFAULT_ACCOUNTABILITY = Object.freeze({
@@ -245,8 +246,10 @@ const rechallengeSchema = z.object({
 
 const outputSchema = z.object({
   comments: z.enum(["quiet", "normal", "detailed"]).catch(DEFAULT_OUTPUT.comments),
+  labels: z.boolean().catch(DEFAULT_OUTPUT.labels),
 }).catch(() => ({
   comments: DEFAULT_OUTPUT.comments,
+  labels: DEFAULT_OUTPUT.labels,
 }));
 
 const accountabilitySchema = z.object({

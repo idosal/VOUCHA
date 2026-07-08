@@ -4,12 +4,12 @@
   "private": true,
   "type": "module",
   "engines": {
-    "node": ">=22.19.0"
+    "node": ">=22.22.1"
   },
   "scripts": {
     "build": "flue build --target cloudflare && node scripts/patch-wrangler.mjs",
     "check": "tsc --noEmit",
-    "deploy": "npm run build && wrangler deploy --config dist/flue_investigator/wrangler.json",
+    "deploy": "npm run build && wrangler deploy --config dist/clawptcha_flue_investigator/wrangler.json",
     "dev": "flue dev --target cloudflare"
   },
   "dependencies": {

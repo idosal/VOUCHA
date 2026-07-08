@@ -1,15 +1,20 @@
 ---
 title: Passive signals
-description: Honeypot fields, code canaries, and challenge telemetry used to detect assisted challenge attempts and inform maintainer review.
+description: Honeypot fields, code canaries, and review signals used to inform maintainer review.
 ---
 
-Passive signals are evidence. CLAWPTCHA keeps them out of the quiz score, but
-that does not make challenge assistance optional: multiple independent
-challenge-taking signals can invalidate an otherwise correct quiz because the
-author attestation must come from the PR author.
+Passive signals are usually evidence, not verdicts. They are collected so
+maintainers can notice suspicious automation patterns without letting a brittle
+signal silently block a contributor.
 
-Code canaries are different. They are PR-risk evidence for maintainers and do
-not count toward the challenge-assistance verdict.
+CLAWPTCHA keeps passive signals out of challenge scoring. They can appear in
+check-run summaries, risk reports, comments, and flagged labels, but they do
+not turn a correct quiz into a failure.
+
+Two bot-verification checks are stricter: Turnstile must validate the browser
+session before a quiz is generated, and a browser `webdriver` automation flag
+fails the challenge if it appears during the quiz. Both failures are shown with
+their reason.
 
 ## Form honeypot
 
@@ -18,9 +23,7 @@ form fillers often populate hidden fields. Real authors and browser password
 managers generally should not.
 
 When the field is submitted, CLAWPTCHA records the hit in challenge telemetry
-and surfaces it in review summaries. The hit does not change the quiz score,
-but it can contribute to the non-configurable assisted-challenge verdict when
-combined with other challenge-taking signals.
+and surfaces it in review summaries. The hit does not change the quiz score.
 
 ```yaml
 signals:
@@ -51,7 +54,7 @@ check-run summary describes the finding without exposing the exact marker when
 that would make the canary easy to game.
 
 Code honeypots are evaluated from the PR diff before exemption decisions finish.
-That means a canary finding can still appear when the PR is exempt,
+That means a report-only canary finding can still appear when the PR is exempt,
 is a draft with neutral handling, or reuses a prior pass.
 
 ## Risk report signals
@@ -71,27 +74,27 @@ Those summaries are only collected after the contributor accepts the challenge
 terms on the start page. See [Privacy and data](/docs/privacy-data/) for the
 full data boundary.
 
-CLAWPTCHA treats two or more independent challenge-taking signals as
-automation-likely. A single signal is intentionally not enough: keyboard
+CLAWPTCHA treats two or more independent unusual signals as automation-likely
+for reporting purposes. A single signal is intentionally not enough: keyboard
 navigation, browser extensions, network issues, and accessibility setups can
 look unusual without implying bad faith.
 
-When the answers are correct but the challenge-taking report is
-automation-likely, the challenge fails with `failed_assisted` and asks
-maintainers to review manually.
+When a quiz passes but the risk report is automation-likely, the check title
+calls that out. If `output.labels: true`, CLAWPTCHA also best-effort creates
+and applies `pr-comprehension:flagged`.
 
-## Why No Single Signal
+## Why report-only
 
 Passive signals can be noisy:
 
 - bots can avoid hidden fields once they know about them;
 - humans can accidentally trip canaries while moving examples;
-- Turnstile and timing signals can fail for environmental reasons;
-- automation hints are useful for review but weak as standalone proof.
+- timing and pointer signals can fail for environmental reasons;
+- most automation hints are useful for review but weak as standalone proof.
 
-For that reason, CLAWPTCHA requires multiple independent challenge-taking
-signals before failing an otherwise correct quiz. A config cannot opt into
-allowing AI or agent help on the challenge.
+For that reason, form honeypot and code honeypot signals are forced
+report-only. A config that sets `report_only: false` for those signals is
+normalized back to report-only behavior.
 
 ## Practical canary design
 

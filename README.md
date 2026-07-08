@@ -1,10 +1,11 @@
-# 🦞 CLAWPTCHA
+# CLAWPTCHA
 
 A repo governance layer for GitHub PRs: maintainers choose which contributions
-need extra proof before merge, from diff-specific checks to issue-backed
-exemptions, challenge-assistance signals, and code canaries. AI-written code can
-be reviewed; AI or agent help answering the challenge is not allowed. Passing
-posts a public attestation; maintainers get a behavioral risk report.
+need an accountability check before merge, from diff-specific questions to
+issue-backed exemptions and report-only honeypots. AI-written code is fine;
+submitting changes without understanding them is not. Challenge answers must
+come from the PR author's own understanding. Passing posts a public
+attestation; maintainers get a behavioral risk report.
 
 ## How it works
 
@@ -13,19 +14,17 @@ posts a public attestation; maintainers get a behavioral risk report.
 2. When a PR opens, CLAWPTCHA resolves the repo's governance preferences:
    draft handling, optional PR-body accountability fields, maintainer/bot/path/
    size exemptions, team and repository-role trust, prior contributor history,
-   trusted linked-issue exemptions, signals, and any configured gates.
-3. If a challenge is required, the PR author opens the link, signs in with
-   GitHub, passes Turnstile, and completes the configured gate. CLAWPTCHA
-   first builds a cached PR investigation from the file map and selected patch
+   trusted linked-issue exemptions, passive signals, and any configured gates.
+3. If a challenge is required, the PR author opens the link, verifies from the
+   PR with a one-time GitHub comment, passes Turnstile, and completes the gate.
+   CLAWPTCHA first builds a cached PR investigation from the file map and selected patch
    evidence, then generates the author-facing quiz from that artifact. Today
    the shipped gate is a multiple-choice quiz about intent, behavior, and
-   blast radius. Challenge-taking signals such as Turnstile, timing, browser
-   automation hints, and honeypots feed the risk report and can invalidate an
-   otherwise correct quiz when they indicate automation or outside assistance.
-   Code canaries remain maintainer-facing PR evidence.
-4. Pass (3 of 4 by default, with no challenge-assistance verdict) → green check
-   + attestation comment. Fail → 15-minute cooldown, fresh quiz on retry, up to
-   3 attempts by default.
+   blast radius. Turnstile and browser automation checks can fail the gate with
+   a clear reason; timing, pointer, and report-only honeypot signals feed the
+   risk report rather than the quiz score.
+4. Pass (3 of 4 by default) → green check + attestation comment. Fail →
+   15-minute cooldown, fresh quiz on retry, up to 3 attempts by default.
 5. The check run summary includes a risk report (timings, Turnstile verdict,
    automation fingerprints). CLAWPTCHA never blocks merges on its own outages —
    failures report `neutral`.
@@ -42,10 +41,10 @@ the built-in defaults committed explicitly. The default template uses
 `draft_prs: ignore`, so draft PRs stay quiet until they are marked ready for
 review. Copy [templates/contributing-policy.md](templates/contributing-policy.md)
 and [templates/pull_request_template.md](templates/pull_request_template.md)
-when maintainers want matching human-facing policy: AI assistance in PR
-authoring can be permitted by repository policy, but challenge answers must
-come from the PR author's own understanding. The submitter remains accountable
-for understanding, testing, and supporting the PR.
+when maintainers want matching human-facing policy: AI assistance in authoring
+is allowed, but challenge answers must come from the author's own
+understanding. The submitter is accountable for understanding, testing, and
+supporting the PR.
 
 ```yaml
 gates:
@@ -67,7 +66,7 @@ exemptions:
     logins: [octocat, trusted-bot-owner]
 
   # Optional. Trust GitHub's author_association signal for prior contributors.
-  # OWNER/MEMBER/COLLABORATOR are already exempt by default.
+  # OWNER/MEMBER/COLLABORATOR are trusted by default through `trust`.
   - type: author_association
     associations: [CONTRIBUTOR]
 
@@ -91,7 +90,7 @@ exemptions:
     min_match_score: 0.7
 
 signals:
-  # Enabled by default. This helps detect challenge-answering automation.
+  # Enabled by default. This is a passive risk signal, never a scoring rule.
   - type: honeypot
     report_only: true
   # Optional. Maintainer-authored literal canaries scanned only in added diff lines.
@@ -104,6 +103,8 @@ max_attempts: 3
 cooldown_minutes: 15
 draft_prs: ignore          # challenge | neutral | ignore
 require_approval: first_time  # first_time | always | never
+trust:
+  default_author_associations: [OWNER, MEMBER, COLLABORATOR]
 accountability:
   require_pr_acknowledgement: false
   require_ai_disclosure: false
@@ -130,6 +131,7 @@ context:
 max_context_tokens: null
 output:
   comments: normal        # quiet | normal | detailed
+  labels: true
 ```
 
 | Field | Default | Behavior |
@@ -137,12 +139,13 @@ output:
 | `gates` | `[{ type: "multiple_choice", questions: 4, pass_threshold: 3 }]` | Author-facing challenge stages. Today CLAWPTCHA supports `multiple_choice`, with `questions` as an integer 1–10 and `pass_threshold` capped at the question count. |
 | `path_rules` | `[]` | First matching path-specific policy override. Supports `paths`, `gates`, `require_approval`, `max_attempts`, `cooldown_minutes`, `min_changed_lines`, `skip_paths`, and `include_paths`. |
 | `exemptions` | `[]` | Structured reasons no challenge is required. Today CLAWPTCHA supports `author_login`, `author_association`, `repository_permission`, `github_team`, `prior_merged_prs`, and `linked_issue_match`. |
-| `signals` | `[{ type: "honeypot", report_only: true }]` | Risk signals that appear in the maintainer report. Today CLAWPTCHA supports `honeypot`, an off-screen decoy form field that can flag broad automated form filling during the challenge, and `code_honeypot`, maintainer-authored literal canary patterns scanned only in added diff lines. Set `signals: []` to disable honeypot collection. |
+| `signals` | `[{ type: "honeypot", report_only: true }]` | Passive risk signals that appear in the maintainer report. Today CLAWPTCHA supports `honeypot`, an off-screen decoy form field that can flag broad automated form filling, and `code_honeypot`, maintainer-authored literal canary patterns scanned only in added diff lines. Set `signals: []` to disable passive honeypot collection. |
 | `pass_threshold` | `3` | Legacy shortcut for the default multiple-choice gate's threshold when `gates` is omitted. New configs should prefer `gates[0].pass_threshold`. |
-| `max_attempts` | `3` | Integer, 1–10. Total quiz attempts allowed per challenge before the check becomes `failed_final` and stays failed for maintainers to review manually. Challenge-assistance detection is terminal immediately as `failed_assisted`. |
+| `max_attempts` | `3` | Integer, 1–10. Total quiz attempts allowed per challenge before the check becomes `failed_final` and stays failed for maintainers to review manually. |
 | `cooldown_minutes` | `15` | Integer, ≥ 0. Minutes an author must wait after a failed (non-final) attempt before starting a retry. |
 | `draft_prs` | `"ignore"` | Enum: `challenge` \| `neutral` \| `ignore`. Controls whether draft PRs get the normal challenge, a neutral check, or no check. The default keeps drafts quiet until `ready_for_review`. |
 | `require_approval` | `"first_time"` | Enum: `first_time` \| `always` \| `never`. `first_time` requires maintainer approval (`/clawptcha approve` PR comment) only when the author's GitHub `author_association` is `FIRST_TIME_CONTRIBUTOR`, `FIRST_TIMER`, or `NONE`; `always` requires approval for every PR; `never` skips the approval gate entirely. An invalid value falls back to `first_time`. |
+| `trust` | `{ default_author_associations: ["OWNER", "MEMBER", "COLLABORATOR"] }` | Built-in GitHub `author_association` classes that skip the challenge before other author, size, and path rules. Set `default_author_associations: []` when owners, members, and collaborators should take the challenge too. |
 | `accountability` | `{ require_pr_acknowledgement: false, require_ai_disclosure: false }` | Optional PR-body preflight. When enabled, CLAWPTCHA fails the check before creating a quiz unless the PR body has the configured acknowledgement and/or AI assistance disclosure line. |
 | `bot_policy` | `{ default: "skip", trusted_logins: [] }` | Structured bot handling. `default: challenge` lets repos challenge bots except named trusted bot logins. Legacy `skip_bots` maps into this when `bot_policy` is omitted. |
 | `rechallenge` | `{ on_push: "never", ignore_paths: [] }` | Structured push policy. `on_push` can be `never`, `always`, or `included_paths`; `ignore_paths` keeps low-risk pushes from invalidating a prior pass. `included_paths` uses the effective `include_paths`; when that list is empty it behaves like `always` so stale passes are not silently preserved. |
@@ -151,11 +154,13 @@ output:
 | `include_paths` | `[]` | Optional glob list for opt-in scope. When non-empty, a PR is exempt unless at least one changed file matches one of these patterns. PRs with zero reported changed files are never exempted this way. |
 | `context` | `{ strategy: "adaptive", investigator: "auto", map_tokens: 8000, detail_tokens: 24000, max_files: 12, max_model_calls: 3, ignore_paths: [], large_pr: { changed_files: 100, changed_lines: 5000 } }` | Controls PR investigation before quiz generation. `context.ignore_paths` removes low-signal files from quiz evidence without changing whether the PR is challenged. `context.investigator: auto` uses the Flue investigator for large PRs when configured. |
 | `max_context_tokens` | `null` | Legacy/direct-generation cap used when `context.strategy: truncate`. `null` = uncapped: the full diff is sent to the LLM (bounded only by the model's context window). If set to a positive integer, the diff sent to the LLM is truncated to roughly that many tokens (~4 chars/token estimate) and replaced past that point with a full list of changed filenames. Invalid values fall back to `null`. Adaptive fallback uses a bounded cap from `context.detail_tokens`; large/Flue investigation failures do not fall back to direct raw-diff generation. |
-| `output` | `{ comments: "normal" }` | Controls PR comment volume. `comments: quiet` relies on check-run output only; `detailed` includes risk detail in outcome comments. |
+| `output` | `{ comments: "normal", labels: true }` | Controls PR comment volume and whether flagged-pass labels are applied. `comments: quiet` relies on check-run output only; `detailed` includes risk detail in outcome comments. |
 
 Maintainers, repo admins, and users with `OWNER`/`MEMBER`/`COLLABORATOR`
-`author_association` are exempt by default regardless of config (checked
-before configured author/size/path rules, per `src/policy/exemptions.ts`).
+`author_association` are exempt by default through `trust.default_author_associations`
+(checked before configured author/size/path rules, per `src/policy/exemptions.ts`).
+Set that list to `[]` when a repository wants maintainers and owners to take
+the challenge too.
 
 ### Author exemptions
 
@@ -176,6 +181,13 @@ exemptions:
 Use `CONTRIBUTOR` when prior merged contributors should skip the challenge.
 Avoid adding `FIRST_TIME_CONTRIBUTOR`, `FIRST_TIMER`, or `NONE` unless the repo
 explicitly wants broadly open no-challenge behavior.
+
+To change the built-in owner/member/collaborator trust posture:
+
+```yaml
+trust:
+  default_author_associations: []
+```
 
 Legacy configs can still use `skip_authors`, but new configs should prefer the
 structured `author_login` exemption.
@@ -296,13 +308,12 @@ fixed token cap saw the whole change.
 
 Normal PRs can be investigated inside the main Worker. Large PRs can use the
 Flue investigator service in `flue-investigator/`, which exposes
-`POST /workflows/investigate-pr?wait=result`. The main Worker calls it with a
-shared internal secret and a bounded PR evidence bundle. GitHub installation
-tokens are never sent to Flue or stored in workflow payloads. CLAWPTCHA stores
-only the validated artifact in D1.
+`POST /workflows/investigate-pr?wait=result` through a Cloudflare service
+binding. The main Worker calls it with a bounded PR evidence bundle. GitHub
+installation tokens are never sent to Flue or stored in workflow payloads.
+CLAWPTCHA stores only the validated artifact in D1.
 
-For same-account Cloudflare deployments, prefer a service binding after the
-Flue Worker exists:
+After the Flue Worker exists, configure the main Worker with a service binding:
 
 ```jsonc
 "services": [
@@ -310,21 +321,15 @@ Flue Worker exists:
 ]
 ```
 
-Configure the main Worker with the shared secret:
+Configure the optional Flue model override on the Flue investigator Worker if
+needed:
 
 ```text
-FLUE_INVESTIGATOR_SECRET=<same random secret as the Flue Worker>
-```
-
-For cross-account or external deployments, set `FLUE_INVESTIGATOR_URL` instead
-of a service binding.
-
-Configure the Flue investigator Worker with:
-
-```text
-CLAWPTCHA_FLUE_SECRET=<same random secret>
 CLAWPTCHA_FLUE_MODEL=cloudflare/@cf/zai-org/glm-4.7-flash
 ```
+
+The Flue Worker is service-binding-only; it disables `workers.dev` and does
+not support an external URL fallback.
 
 If `context.investigator: flue` is set and the Flue service is missing or
 fails, quiz generation becomes neutral rather than sending the huge raw diff
@@ -343,13 +348,16 @@ diff and only matches added lines in the configured `paths`; removed lines and
 context lines do not count. If an added line contains a canary, the risk report
 records "the PR introduced a configured code honeypot marker" without exposing
 the exact marker in the PR comment. If the PR is exempt or reuses a prior pass,
-the same maintainer-facing signal is shown in the success check summary.
+the same report-only signal is shown in the success check summary.
 
-Challenge-taking signals such as Turnstile, timing, pointer summaries,
-`webdriver`, and form honeypots never change the quiz score, but multiple
-independent signals can fail an otherwise correct quiz because the challenge
-must be answered by the PR author. Code canaries remain PR-risk evidence and do
-not count toward the challenge-assistance verdict.
+Like Turnstile, timing, pointer summaries, and `webdriver`, passive honeypots
+are report-only. A filled form honeypot or matched code canary never changes
+the quiz score and never silently fails an otherwise correct challenge on its
+own.
+
+When a passed quiz has multiple passive risk signals, CLAWPTCHA marks the check
+title and PR comment, and best-effort creates/applies the
+`pr-comprehension:flagged` label so maintainers can spot it from the PR list.
 
 ### Path scope
 
@@ -384,15 +392,19 @@ segment (split on `/`) — no regex, so it can't backtrack pathologically:
 
 [![Deploy to Cloudflare](https://deploy.workers.cloudflare.com/button)](https://deploy.workers.cloudflare.com/?url=https://github.com/idosal/CLAWPTCHA)
 
-Local CLI setup requires Node.js 22.15+ and npm. CLAWPTCHA uses Vite with
+Local CLI setup requires Node.js 22.22.1+ and npm. CLAWPTCHA uses Vite with
 Cloudflare's Workers plugin for local development and build output.
 
-Two easy paths — both end with the same wizard:
+CLAWPTCHA is currently self-deployed. The managed GitHub App is not public yet;
+the shareable path is to deploy the Worker and create a GitHub App in your own
+GitHub account through the setup wizard.
+
+Two self-deploy paths — both end with the same wizard:
 
 - **Deploy button (no local tooling to start):** click the button — Cloudflare
   forks the repo and provisions the Worker, D1 database, and Workers AI
   binding. Then clone **your fork** and run the wizard for the GitHub-side
-  setup (its deploy step re-runs harmlessly against the already-provisioned
+  setup (its deploy step reruns harmlessly against the already-provisioned
   resources):
   ```bash
   npx wrangler login && npm run setup
@@ -403,10 +415,10 @@ Two easy paths — both end with the same wizard:
   ```
   The wizard's first deploy auto-provisions D1 and applies migrations; it then
   creates the GitHub App in one click (manifest flow — app ID, webhook secret,
-  private key, and OAuth credentials all come back from a single exchange, and
-  the key is converted to PKCS#8 for you), sets up Turnstile (automatic if
+  and private key come back from a single exchange, and the key is converted
+  to PKCS#8 for you), sets up Turnstile (automatic if
   `CLOUDFLARE_API_TOKEN` with **Turnstile Sites Write** is set; guided
-  copy-paste otherwise), generates the session signing key, and writes all 8
+  copy-paste otherwise), generates the session signing key, and writes all 6
   secrets in one bulk call — they never touch disk or argv. The wizard keeps
   the default Workers AI provider (no API key needed, billed to your
   Cloudflare account, Kimi K2.7 Code by default); to use Anthropic or an
@@ -436,9 +448,6 @@ If you prefer doing it by hand, or a wizard phase fails and points you here:
      Read-only**. Members read is used by `github_team` exemptions and is
      harmless if the repository does not configure them.
    - Subscribe to events: **Pull request**, **Issue comment**, **Installation**.
-   - Under "Identifying and authorizing users", set the OAuth callback URL to
-     `https://<your-worker>/oauth/callback` (this is used to identify the PR
-     author taking the quiz, separate from app installation).
    - Generate a private key (downloads as PKCS#1, `BEGIN RSA PRIVATE KEY`).
      Web Crypto (used by the Worker) only imports PKCS#8, so convert it once:
      ```bash
@@ -471,12 +480,10 @@ If you prefer doing it by hand, or a wizard phase fails and points you here:
      vLLM). Set `LLM_BASE_URL` (e.g. `https://api.openai.com/v1`),
      `LLM_MODEL`, and secret `LLM_API_KEY` if the endpoint needs one.
 
-   Secrets (8, or 9 with `LLM_API_KEY`):
+   Secrets (6, or 7 with `LLM_API_KEY`):
    - `GITHUB_APP_ID`
    - `GITHUB_PRIVATE_KEY` (PKCS#8 PEM from step 2)
    - `GITHUB_WEBHOOK_SECRET`
-   - `GITHUB_OAUTH_CLIENT_ID`
-   - `GITHUB_OAUTH_CLIENT_SECRET`
    - `TURNSTILE_SITE_KEY`
    - `TURNSTILE_SECRET_KEY`
    - `SESSION_SIGNING_KEY` (random 32+ bytes, hex — signs the session cookie)
@@ -491,16 +498,9 @@ If you prefer doing it by hand, or a wizard phase fails and points you here:
    cd flue-investigator
    npm install
    npm run deploy
-   npx wrangler secret put CLAWPTCHA_FLUE_SECRET
    ```
-   For same-account deployments, uncomment the `FLUE_INVESTIGATOR` service
-   binding example in `wrangler.jsonc`, then use the same random secret for the
-   main Worker:
-   ```bash
-   npx wrangler secret put FLUE_INVESTIGATOR_SECRET
-   ```
-   If you cannot use a service binding, also set `FLUE_INVESTIGATOR_URL` to the
-   Flue Worker's URL.
+   Then uncomment the `FLUE_INVESTIGATOR` service binding example in
+   `wrangler.jsonc` and redeploy the main Worker.
    The Flue Worker uses Workers AI through its `AI` binding and defaults to
    `cloudflare/@cf/zai-org/glm-4.7-flash`; set `CLAWPTCHA_FLUE_MODEL` on the
    Flue Worker if you want a different Flue model.
@@ -514,9 +514,8 @@ If you prefer doing it by hand, or a wizard phase fails and points you here:
 
 ## Data custody & security
 
-- The managed service is intended for installed public open-source
-  repositories. Self-deployed operators control their own storage, model
-  provider, and retention posture.
+- Self-deployed operators control their own storage, model provider, GitHub App
+  credentials, and retention posture.
 - The service **never holds maintainers' secrets**. Repo access is entirely
   through the GitHub App installation model: the only long-lived credential
   is the operator's own App private key. Per-repo access uses short-lived
@@ -539,12 +538,13 @@ If you prefer doing it by hand, or a wizard phase fails and points you here:
   for maintainers rather than a separate public profile.
 - Telemetry captured during the quiz is **summary statistics only** —
   per-question timings, answer-change counts, aggregate pointer-movement
-  distance/sample counts, focus-loss counts, whether the honeypot was
-  submitted, whether configured code canaries appeared in added diff lines, and
-  automation fingerprints (e.g. a `webdriver` flag). There is no keystroke
+  distance/sample counts, focus-loss counts, whether the report-only honeypot
+  was submitted, whether configured code canaries appeared in added diff lines,
+  and automation fingerprints (e.g. a `webdriver` flag). There is no keystroke
   logging or content capture, and its collection is disclosed on the quiz page.
-  No single signal blocks a pass on its own; multiple independent
-  challenge-assistance signals can fail the challenge.
+  Turnstile validation and browser automation flags can fail the challenge with
+  that reason; softer timing, pointer, honeypot, and code-canary signals remain
+  maintainer review evidence.
 - Webhook payloads are authenticated via HMAC-SHA256 signature verification
   (`x-hub-signature-256`) before any processing happens.
 
@@ -585,9 +585,11 @@ cannot run in CI. Walk each scenario and record the outcome:
       comment appears, status is `awaiting_approval`.
 - [ ] Comment `/clawptcha approve` from a maintainer account → the comment
       updates with the challenge link.
-- [ ] Open the link, OAuth as the PR author, pass Turnstile, answer the
-      quiz → green check, attestation comment posted, risk report visible in
-      the check run details.
+- [ ] Open the link, use "Copy command and open PR", paste the one-time
+      `/clawptcha verify <code>` command as the PR author, return to the
+      auto-advanced challenge tab, pass Turnstile, answer the quiz → green
+      check, attestation comment posted, risk report visible in the check run
+      details.
 - [ ] Push a new commit → the new head SHA keeps the existing pass (default
       `rechallenge.on_push: never`).
 - [ ] Open a docs-only PR → gets a success check with an "Exempt" summary.

@@ -45,8 +45,10 @@ output/
 
 # Local agent-tool config/cache (not project content)
 .agents/
+.claude/
 .codex/
 .impeccable/
 .playwright-mcp/
-.claude/settings.local.json
-.claude/skills/impeccable/
+
+# Internal planning artifacts
+docs/superpowers/

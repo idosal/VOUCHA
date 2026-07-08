@@ -1,11 +1,24 @@
 {
   "name": "clawptcha",
   "version": "0.1.0",
+  "description": "GitHub PR comprehension checks for maintainers.",
   "license": "MIT",
   "private": true,
+  "homepage": "https://clawptcha.dev",
+  "repository": {
+    "type": "git",
+    "url": "https://github.com/idosal/CLAWPTCHA.git"
+  },
+  "keywords": [
+    "github-app",
+    "pull-requests",
+    "code-review",
+    "cloudflare-workers",
+    "d1"
+  ],
   "type": "module",
   "engines": {
-    "node": ">=22.15.0"
+    "node": ">=22.22.1"
   },
   "scripts": {
     "dev": "npm run docs:build && vite dev",

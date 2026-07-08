@@ -21,11 +21,12 @@ import { evaluateLinkedIssueExemption } from "../policy/linked-issue";
 import {
   getChallengeByPr, getLatestChallengeForPr, hasPassedChallenge,
   insertChallenge, setChallengeStatus, supersedeOldChallenges,
-  updateChallengeCheckRun, randomToken,
+  updateChallengeCheckRun, randomToken, verifySessionFromComment,
 } from "../store";
 import { hasWriteRepositoryAccess } from "./permissions";
+import { sameGitHubLogin } from "./login";
 
-const CHECK_NAME = "clawptcha";
+const CHECK_NAME = "PR comprehension check";
 const CODE_HONEYPOT_SIGNAL = "the PR introduced a configured code honeypot marker";
 
 function emptyCodeHoneypotResult(): CodeHoneypotResult {
@@ -71,7 +72,7 @@ function commentBody(env: Env, challengeId: string, status: string, cfg: Clawptc
   const url = challengeUrl(env, challengeId);
   if (status === "awaiting_approval") {
     return [
-      "## 🦞 Clawptcha",
+      "## Clawptcha",
       "",
       "This PR requires a comprehension check before merge. A maintainer must approve the challenge first:",
       "",
@@ -79,17 +80,19 @@ function commentBody(env: Env, challengeId: string, status: string, cfg: Clawptc
       "",
       `Once approved, the author takes a short quiz about this change: ${url}`,
       "",
-      "_The author must answer the quiz from their own understanding; AI or agent assistance on the challenge is not allowed. Passing posts a public attestation that the author personally understands, tested, and can support this change._",
+      "_AI assistance in authoring is allowed. Challenge answers must come from the author's own understanding. Passing posts a public attestation that the author personally understands, tested, and can support this change._",
     ].join("\n");
   }
   return [
-    "## 🦞 Clawptcha",
+    "## Clawptcha",
     "",
     `@${authorLogin}: take a short comprehension quiz about this change to turn the check green (${cfg.max_attempts} attempts max):`,
     "",
     `➡️ **[Start the challenge](${url})**`,
     "",
-    "_Answer from your own understanding; AI or agent assistance on the challenge is not allowed. Passing posts a public attestation that you personally understand, tested, and can support this change. The quiz is generated from the diff; answers are graded automatically._",
+    "The challenge page copies the one-time verification command, opens this PR, and continues automatically after your comment lands.",
+    "",
+    "_AI assistance in authoring is allowed. Challenge answers must come from your own understanding. Passing posts a public attestation that you personally understand, tested, and can support this change. The quiz is generated from the diff; answers are graded automatically._",
   ].join("\n");
 }
 
@@ -151,7 +154,7 @@ export async function handlePullRequestEvent(
     });
     if (commentsEnabled(cfg)) {
       await api.upsertPrComment(repo, prNumber, [
-        "## 🦞 Clawptcha",
+        "## Clawptcha",
         "",
         accountability.summary,
       ].join("\n"));
@@ -283,16 +286,16 @@ export async function handlePullRequestEvent(
   const status = needsApproval ? "awaiting_approval" : "ready";
 
   const challengeId = randomToken();
-  const url = challengeUrl(env, challengeId);
   const checkRunId = await api.createCheckRun(repo, {
-    name: CHECK_NAME, head_sha: headSha, status: "queued", details_url: url,
+    name: CHECK_NAME, head_sha: headSha, status: "queued",
+    details_url: challengeUrl(env, challengeId),
     output: {
       title: needsApproval ? "Awaiting maintainer approval" : "Awaiting challenge",
       summary:
         (needsApproval
           ? "A maintainer must approve the challenge (`/clawptcha approve`) before the author can take it."
           : "The PR author must pass a comprehension quiz. Link in the PR comment.") +
-        `\n\nChallenge link: ${url}`,
+        `\n\nChallenge link: ${challengeUrl(env, challengeId)}`,
     },
   });
 
@@ -333,11 +336,21 @@ export async function handleIssueCommentEvent(
   if (payload.action !== "created") return;
   if (!payload.issue?.pull_request) return; // not a PR comment
   const body = (payload.comment.body as string).trim();
-  if (!/^\/clawptcha\s+approve\b/.test(body)) return;
 
   const repo = payload.repository.full_name as string;
   const prNumber = payload.issue.number as number;
   const commenter = payload.comment.user.login as string;
+
+  const verification = /^\/clawptcha\s+verify\s+([a-f0-9]{6,64})\b/i.exec(body);
+  if (verification) {
+    const challenge = await getLatestChallengeForPr(env.DB, repo, prNumber);
+    if (!challenge) return;
+    if (!sameGitHubLogin(challenge.author_login, commenter)) return;
+    await verifySessionFromComment(env.DB, challenge.id, verification[1].toLowerCase(), commenter);
+    return;
+  }
+
+  if (!/^\/clawptcha\s+approve\b/.test(body)) return;
 
   const permission = await api.getUserPermission(repo, commenter);
   if (!hasWriteRepositoryAccess(permission)) return;
@@ -349,6 +362,7 @@ export async function handleIssueCommentEvent(
   const storedCfg = resolveConfig(challenge.config_json);
   if (challenge.check_run_id) {
     await api.updateCheckRun(repo, challenge.check_run_id, {
+      details_url: challengeUrl(env, challenge.id),
       output: {
         title: "Awaiting challenge",
         summary: `Approved by @${commenter}. The PR author can now take the quiz.`,
