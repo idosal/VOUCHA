@@ -1,5 +1,7 @@
 {
-  "name": "voucha",
+  // Keep the established Worker identity so production deployments retain the
+  // existing GitHub App secrets. The public product remains VOUCHA at voucha.dev.
+  "name": "clawptcha",
   "main": "src/index.ts",
   "compatibility_date": "2025-09-06", // bump alongside wrangler upgrades
   "compatibility_flags": ["nodejs_compat"],
@@ -10,7 +12,7 @@
     // database only exists after deploy; the brief unmigrated window on a
     // first deploy is cushioned by the app's fail-open behavior.
     // Tests auto-generate a temp config with a dummy id (see vitest.config.ts).
-    { "binding": "DB", "database_name": "voucha" }
+    { "binding": "DB", "database_name": "clawptcha" }
   ],
   "assets": {
     "binding": "ASSETS",
@@ -40,7 +42,7 @@
     "AI_GATEWAY_ID": "default",
     // Temporary access gate: comma/whitespace-separated `owner/repo` or bare
     // `owner` entries. Empty/unset => act on every installed repo. Edit here and
-    // redeploy, or override in the Cloudflare dashboard (Workers > voucha >
+    // redeploy, or override in the Cloudflare dashboard (Workers > clawptcha >
     // Settings > Variables) for a code-free change — note a later `npm run
     // deploy` re-applies this value, so remove it here for pure dashboard control.
     "REPO_ALLOWLIST": "idosal/voucha,idosal/voucha-owner-check-e2e"
