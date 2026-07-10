@@ -29,7 +29,11 @@ import {
 import { prepareQuizForChallenge, startQuizAttempt, submitAnswer, type ChallengeDeps, type PrContext } from "./challenge";
 import { generateQuiz, generateQuizFromInvestigation } from "./quiz/generate";
 import { redactForClient, type Quiz } from "./quiz/schema";
-import { QUESTION_TIME_LIMIT_MS } from "./quiz/grade";
+import {
+  EXTENDED_QUESTION_TIME_LIMIT_MS,
+  QUESTION_TIME_LIMIT_MS,
+  questionRemainingMs,
+} from "./quiz/grade";
 import { getMultipleChoiceGate, hasHoneypotSignal, resolveConfig, type VouchaConfig } from "./config";
 import { providerFromEnv, type QuizProvider } from "./quiz/providers";
 import { matchesGlob } from "./policy/exemptions";
@@ -76,9 +80,9 @@ async function latestQuizResult(
   env: Env,
   challenge: Challenge,
   cfg: VouchaConfig
-): Promise<{ score: number; total: number; failureReason?: string } | null> {
+): Promise<{ score: number; total: number; finishedAt: string | null; failureReason?: string } | null> {
   const row = await env.DB.prepare(
-    `SELECT score, questions_json, answers_json, telemetry_json
+    `SELECT score, questions_json, answers_json, telemetry_json, finished_at
      FROM quizzes
      WHERE challenge_id=? AND score IS NOT NULL
      ORDER BY retry_cycle DESC, attempt_number DESC
@@ -88,6 +92,7 @@ async function latestQuizResult(
     questions_json: string;
     answers_json: string;
     telemetry_json: string;
+    finished_at: string | null;
   }>();
   if (!row) return null;
 
@@ -109,7 +114,9 @@ async function latestQuizResult(
     if (typeof telemetry.botFailureReason === "string") failureReason = telemetry.botFailureReason;
   } catch { /* no stored failure reason */ }
 
-  return failureReason ? { score: row.score, total, failureReason } : { score: row.score, total };
+  return failureReason
+    ? { score: row.score, total, finishedAt: row.finished_at, failureReason }
+    : { score: row.score, total, finishedAt: row.finished_at };
 }
 
 function cooldownMessage(until: string): string {
@@ -129,6 +136,18 @@ function challengePageActions(challenge: Pick<Challenge, "id" | "repo_full_name"
     { label: "Back to PR", href: githubPrUrl(challenge), primary: true, external: true },
     { label: "Refresh challenge", href: `/challenge/${challenge.id}` },
   ];
+}
+
+function terminalChallengeActions(
+  challenge: Pick<Challenge, "repo_full_name" | "pr_number">,
+  passed: boolean
+): PageAction[] {
+  return [{
+    label: passed ? "View PR record" : "Back to PR",
+    href: githubPrUrl(challenge),
+    primary: true,
+    external: true,
+  }];
 }
 
 function renderStartPage(
@@ -152,14 +171,22 @@ function renderStartPage(
   }
   return c.html(startPage(
     `${challenge.repo_full_name}#${challenge.pr_number}`, c.env.TURNSTILE_SITE_KEY, challenge.id,
-    hasHoneypotSignal(cfg), startError
+    hasHoneypotSignal(cfg), startError, {
+      questions: getMultipleChoiceGate(cfg).questions,
+      passThreshold: getMultipleChoiceGate(cfg).pass_threshold,
+      secondsPerQuestion: QUESTION_TIME_LIMIT_MS / 1000,
+      extendedSecondsPerQuestion: EXTENDED_QUESTION_TIME_LIMIT_MS / 1000,
+      maxAttempts: cfg.max_attempts,
+      attemptsUsed: challenge.attempts_used,
+      cooldownMinutes: cfg.cooldown_minutes,
+    }
   ), status);
 }
 
 function failedChallengeMessage(latest: { failureReason?: string } | null): string {
   const retry = "A maintainer can comment `/voucha retry` on the PR to start a fresh challenge for this commit.";
-  if (latest?.failureReason) return `Bot verification failed: ${latest.failureReason} ${retry}`;
-  return `No attempts remain. The PR check is failed; repository policy controls whether maintainers review manually or VOUCHA closes the PR. ${retry}`;
+  if (latest?.failureReason) return `The challenge could not be verified: ${latest.failureReason} ${retry}`;
+  return `Your attempts are exhausted. Repository policy controls whether maintainers review manually or VOUCHA closes the PR. ${retry}`;
 }
 
 function challengePathActions(path: string): PageAction[] {
@@ -465,7 +492,12 @@ app.get("/challenge/:id", async (c) => {
       latest?.score ?? gate.pass_threshold,
       latest?.total ?? gate.questions,
       "This challenge already passed. The PR check should be green and the attestation comment is on the PR.",
-      challengePageActions(challenge)
+      terminalChallengeActions(challenge, true),
+      {
+        prRef: `${challenge.repo_full_name}#${challenge.pr_number}`,
+        passThreshold: gate.pass_threshold,
+        recordedAt: latest?.finishedAt ?? undefined,
+      }
     ));
   }
   if (challenge.status === "failed_assisted" || challenge.status === "failed_final") {
@@ -474,7 +506,13 @@ app.get("/challenge/:id", async (c) => {
       latest?.score ?? 0,
       latest?.total ?? gate.questions,
       failedChallengeMessage(latest),
-      challengePageActions(challenge)
+      terminalChallengeActions(challenge, false),
+      {
+        prRef: `${challenge.repo_full_name}#${challenge.pr_number}`,
+        passThreshold: gate.pass_threshold,
+        recordedAt: latest?.finishedAt ?? undefined,
+        verificationFailure: challenge.status === "failed_assisted",
+      }
     ));
   }
   if (challenge.status === "ready" && challenge.cooldown_until && new Date(challenge.cooldown_until).getTime() > Date.now()) {
@@ -570,7 +608,7 @@ app.post("/challenge/:id/start", async (c) => {
   const result = await startQuizAttempt(
     c.env, challengeDeps(c.env), c.req.param("id"),
     session.gh_login, String(form["cf-turnstile-response"] ?? ""),
-    hasSubmittedHoneypot(form)
+    hasSubmittedHoneypot(form), form["extended_timing"] === "extended"
   );
   if (!result.ok) {
     if (result.error === "turnstile_missing") {
@@ -609,11 +647,13 @@ app.get("/challenge/:id/question", async (c) => {
   const quizId = getCookie(c, "voucha_quiz");
   if (!session?.gh_login || !quizId) return c.redirect(`/challenge/${c.req.param("id")}`);
   const quiz = await c.env.DB.prepare(
-    `SELECT q.questions_json, q.current_question, q.finished_at, ch.author_login, ch.config_json
+    `SELECT q.questions_json, q.current_question, q.finished_at, q.question_served_at,
+       q.time_limit_ms, ch.author_login, ch.config_json, ch.repo_full_name, ch.pr_number
      FROM quizzes q JOIN challenges ch ON ch.id = q.challenge_id WHERE q.id=?`
   ).bind(quizId).first<{
     questions_json: string; current_question: number; finished_at: string | null;
-    author_login: string; config_json: string;
+    question_served_at: string | null; time_limit_ms: number;
+    author_login: string; config_json: string; repo_full_name: string; pr_number: number;
   }>();
   // The quiz cookie is a capability token, but still bind it to the signed-in
   // author — a leaked/transplanted cookie must not expose questions to others.
@@ -623,16 +663,29 @@ app.get("/challenge/:id/question", async (c) => {
   const questions = (JSON.parse(quiz.questions_json) as Quiz).questions;
   const q = questions[quiz.current_question];
   if (!q) return c.redirect(`/challenge/${c.req.param("id")}`);
-  // Stamp served_at when the question page first renders — this starts the 60s
-  // window (submitAnswer clears it on advance, so each question stamps fresh
-  // here). COALESCE keeps the original stamp on refresh: no timer resets.
+  // Stamp served_at on first render, then read it back so refreshes and parallel
+  // tabs share one server-authoritative deadline.
+  const now = new Date();
   await c.env.DB.prepare(
     "UPDATE quizzes SET question_served_at=COALESCE(question_served_at, ?) WHERE id=?"
-  ).bind(new Date().toISOString(), quizId).run();
+  ).bind(now.toISOString(), quizId).run();
+  const timing = await c.env.DB.prepare(
+    "SELECT question_served_at, time_limit_ms FROM quizzes WHERE id=?"
+  ).bind(quizId).first<{ question_served_at: string | null; time_limit_ms: number }>();
+  if (!timing?.question_served_at) return c.redirect(`/challenge/${c.req.param("id")}`);
+  const remainingTimeMs = questionRemainingMs(
+    timing.question_served_at,
+    now,
+    timing.time_limit_ms
+  );
   return c.html(questionPage(
     c.req.param("id"), quiz.current_question, questions.length,
-    redactForClient(q), QUESTION_TIME_LIMIT_MS,
-    hasHoneypotSignal(resolveConfig(quiz.config_json))
+    redactForClient(q), remainingTimeMs,
+    hasHoneypotSignal(resolveConfig(quiz.config_json)), {
+      totalTimeMs: timing.time_limit_ms,
+      prRef: `${quiz.repo_full_name}#${quiz.pr_number}`,
+      prUrl: `${githubPrUrl(quiz)}/files`,
+    }
   ));
 });
 
@@ -667,14 +720,22 @@ app.post("/challenge/:id/answer", async (c) => {
   if ("error" in result) return c.redirect(`/challenge/${c.req.param("id")}`);
   if (!result.done) return c.redirect(`/challenge/${c.req.param("id")}/question`);
   const challenge = await getChallenge(c.env.DB, c.req.param("id"));
+  const cfg = challenge ? resolveConfig(challenge.config_json) : null;
+  const resultOptions = challenge && cfg ? {
+    prRef: `${challenge.repo_full_name}#${challenge.pr_number}`,
+    passThreshold: getMultipleChoiceGate(cfg).pass_threshold,
+    recordedAt: new Date().toISOString(),
+    verificationFailure: !result.passed && Boolean(result.failureReason),
+  } : undefined;
   return c.html(resultPage(
     result.passed, result.score, result.total,
     result.passed
       ? "The check is now green and an attestation was posted to the PR."
       : result.failureReason
-        ? `Bot verification failed: ${result.failureReason}. Repository policy controls manual review or auto-close.`
+        ? `The challenge could not be verified: ${result.failureReason} Repository policy controls manual review or auto-close.`
       : "Check the PR for retry availability (cooldown applies; retries get a fresh quiz).",
-    challenge ? challengePageActions(challenge) : challengePathActions(c.req.path)
+    challenge ? terminalChallengeActions(challenge, result.passed) : challengePathActions(c.req.path),
+    resultOptions
   ));
 });
 

@@ -54,13 +54,24 @@ describe("challenge pages", () => {
 
   it("renders the honeypot field when the signal is enabled", () => {
     const start = startPage("o/r#1", "site-key", "challenge-id", true);
-    const questionHtml = questionPage("challenge-id", 0, 4, question, 60_000, true);
+    const questionHtml = questionPage("challenge-id", 0, 4, question, 42_000, true, {
+      totalTimeMs: 60_000,
+      prRef: "o/r#1",
+      prUrl: "https://github.com/o/r/pull/1/files",
+    });
 
     expect(start).toContain(`name="${HONEYPOT_FIELD_NAME}"`);
     expect(start).toContain('name="terms_acceptance"');
     expect(start).toContain("Stand behind this PR.");
-    expect(start).toContain("I understand what will be posted.");
+    expect(start).toContain("I understand the challenge rules.");
     expect(start).toContain("post the result to the PR");
+    expect(start).toContain("4</b> questions");
+    expect(start).toContain("3/4</b> passes");
+    expect(start).toContain('name="extended_timing"');
+    expect(start).toContain("10 minutes per question");
+    expect(start).toContain("server-measured sub-two-second answers");
+    expect(start).toContain("Inconclusive interaction signals are report-only");
+    expect(start).toContain("Never recorded:");
     expect(start).toContain("/docs/privacy-data/");
     expect(start).toContain("Preparing the quiz");
     expect(start).toContain("Reading the pull request");
@@ -72,10 +83,19 @@ describe("challenge pages", () => {
     expect(start).toContain("window.vouchaTurnstileVerified = false");
     expect(questionHtml).toContain(`name="${HONEYPOT_FIELD_NAME}"`);
     expect(questionHtml).toContain('tabindex="-1"');
-    expect(start).toContain("Bot verification failures stop the challenge");
+    expect(start).toContain("AI-written code may be allowed");
     expect(start).not.toContain("Privacy posture");
     expect(start).toContain("@media (prefers-color-scheme:dark)");
     expect(start).toContain("color-scheme:dark");
+    expect(questionHtml).toContain('<span id="tnum">42</span>');
+    expect(questionHtml).toContain("command-meta has-timer");
+    expect(questionHtml).toContain("Open o/r#1 diff");
+    expect(questionHtml).toContain("You may consult the PR; tab changes are report-only.");
+    expect(questionHtml).toContain('aria-keyshortcuts="A"');
+    expect(questionHtml).toContain("Keys A–D select · Enter submits");
+    expect(questionHtml).toContain('id="timerAnnouncement" aria-live="polite"');
+    expect(questionHtml).toContain("body:not(.site-body) .command-meta.has-timer");
+    expect(questionHtml).not.toContain("correct answers are not sent to the browser");
   });
 
   it("renders GitHub comment verification without delegated account access", () => {
@@ -100,6 +120,8 @@ describe("challenge pages", () => {
     expect(html).toContain("cannot comment, approve, or answer on your behalf");
     expect(html).toContain('action="/challenge/challenge-id/verify"');
     expect(html).toContain("Copy failed. The command text is selected; copy it manually, then use Open PR");
+    expect(html).toContain("navigator.clipboard.writeText(commandText)");
+    expect(html).toContain("Verified as @");
   });
 
   it("renders terminal page actions back to the PR and challenge", () => {
@@ -117,6 +139,9 @@ describe("challenge pages", () => {
       expect(html).toContain("Refresh challenge");
       expect(html).toContain('href="/challenge/challenge-id"');
     }
+    expect(result).toContain("Attestation recorded");
+    expect(result).toContain('class="attestation-receipt"');
+    expect(result).toContain("Recorded now");
   });
 
   it("omits the honeypot field when signals are disabled", () => {

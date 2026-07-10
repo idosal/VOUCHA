@@ -208,5 +208,6 @@ comment volume:
 - `normal`: standard lifecycle comments;
 - `detailed`: lifecycle comments plus risk detail.
 
-`output.labels` controls whether a passed quiz with multiple passive risk
-signals gets the best-effort `pr-comprehension:flagged` label.
+`output.labels` controls whether a passed legacy/imported record with strong
+automation evidence gets the best-effort `pr-comprehension:flagged` label.
+Inconclusive signals never add the label.

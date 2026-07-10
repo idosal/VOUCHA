@@ -53,10 +53,23 @@ export function nextCooldown(cfg: VouchaConfig, now: Date): string {
   return new Date(now.getTime() + cfg.cooldown_minutes * 60_000).toISOString();
 }
 
-// Server-side per-question time limit: 60s + 15s grace for network latency.
+// Server-side per-question time limit: 60s by default, with a 10x accessible
+// timing option selected before the attempt starts. The grace period absorbs
+// network latency; it is not displayed as extra answer time.
 export const QUESTION_TIME_LIMIT_MS = 60_000;
+export const EXTENDED_QUESTION_TIME_LIMIT_MS = QUESTION_TIME_LIMIT_MS * 10;
 const QUESTION_GRACE_MS = 15_000;
 
-export function answerWithinTimeLimit(servedAt: string, now: Date): boolean {
-  return now.getTime() - new Date(servedAt).getTime() <= QUESTION_TIME_LIMIT_MS + QUESTION_GRACE_MS;
+export function questionRemainingMs(servedAt: string, now: Date, timeLimitMs: number): number {
+  const servedAtMs = new Date(servedAt).getTime();
+  if (!Number.isFinite(servedAtMs)) return 0;
+  return Math.max(0, timeLimitMs - Math.max(0, now.getTime() - servedAtMs));
+}
+
+export function answerWithinTimeLimit(
+  servedAt: string,
+  now: Date,
+  timeLimitMs = QUESTION_TIME_LIMIT_MS
+): boolean {
+  return now.getTime() - new Date(servedAt).getTime() <= timeLimitMs + QUESTION_GRACE_MS;
 }

@@ -50,6 +50,13 @@ the repository and PR context to generate the quiz, post the outcome on the PR,
 and store their answer selections plus summary signals for the PR's
 maintainers.
 
+The same screen offers a 10x extended-timing mode with no explanation required.
+Question deadlines are measured and preserved by the server, so refreshing the
+page never grants or removes time. Failed browser verification and repeated
+server-measured sub-two-second answers can invalidate a passing score; merely
+fast answers, pointer absence, focus loss, and honeypot findings remain
+maintainer-facing report context only.
+
 If the contributor does not accept, no quiz attempt is created and no answer or
 challenge telemetry is collected.
 

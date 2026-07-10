@@ -8,7 +8,7 @@ import { markChallengeAutoClosed, markChallengeTerminalReconciled } from "./stor
 
 const FLAGGED_LABEL = "pr-comprehension:flagged";
 const FLAGGED_LABEL_COLOR = "b60205";
-const FLAGGED_LABEL_DESCRIPTION = "Multiple passive risk signals were observed on a passed PR comprehension challenge.";
+const FLAGGED_LABEL_DESCRIPTION = "Strong automation evidence requires review on this PR comprehension record.";
 
 function challengeUrl(env: Env, challengeId: string): string {
   return `${env.APP_BASE_URL}/challenge/${challengeId}`;
@@ -152,7 +152,7 @@ export async function onChallengeResolved(
         status: "completed", conclusion: "success",
         details_url: url,
         output: {
-          title: report.automationLikely ? "Passed — but the quiz looks scripted" : "Passed",
+          title: report.automationLikely ? "Passed — strong automation evidence requires review" : "Passed",
           summary: `Score ${r.score}/${r.total}.\n\n${riskMd}`,
         },
       });
@@ -172,7 +172,7 @@ export async function onChallengeResolved(
           `@${r.challenge.author_login} certified under challenge that they personally understand this change (score ${r.score}/${r.total}).`,
           "",
           report.automationLikely
-            ? `> ⚠️ **Worth a second look before merging:** this quiz was completed in a way that looks scripted — ${report.signals.join("; ")}.`
+            ? `> ⚠️ **Review before merging:** strong automation evidence was recorded — ${report.signals.join("; ")}.`
             : "_Behavioral risk report attached to the check run for maintainers._",
           ...(detailedComments ? ["", riskMd] : []),
         ].join("\n"));

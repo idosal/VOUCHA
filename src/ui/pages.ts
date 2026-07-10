@@ -13,18 +13,41 @@ export interface PageAction {
   id?: string;
 }
 
+export interface ChallengeContract {
+  questions: number;
+  passThreshold: number;
+  secondsPerQuestion: number;
+  extendedSecondsPerQuestion: number;
+  maxAttempts: number;
+  attemptsUsed: number;
+  cooldownMinutes: number;
+}
+
+export interface QuestionPageOptions {
+  totalTimeMs?: number;
+  prRef?: string;
+  prUrl?: string;
+}
+
+export interface ResultPageOptions {
+  prRef?: string;
+  passThreshold?: number;
+  recordedAt?: string;
+  verificationFailure?: boolean;
+}
+
 const questionMeta: Record<ClientQuestion["type"], { label: string; hint: string }> = {
   consequence_mcq: {
-    label: "Consequence check",
-    hint: "Choose the outcome that follows from the PR.",
+    label: "Behavior outcome",
+    hint: "Choose what the change causes.",
   },
   blast_radius_multi: {
-    label: "Blast radius",
-    hint: "Select every affected area.",
+    label: "Affected surfaces",
+    hint: "Select every area this change can affect.",
   },
   false_claim: {
-    label: "False claim",
-    hint: "Pick the statement that misrepresents the change.",
+    label: "Find the mismatch",
+    hint: "Pick the statement that does not match the change.",
   },
 };
 
@@ -761,6 +784,31 @@ h1{
   text-wrap:pretty;
 }
 .lead b{color:var(--ink); font-weight:730}
+.challenge-contract{
+  display:flex;
+  flex-wrap:wrap;
+  gap:8px;
+  margin-top:18px;
+}
+.challenge-contract span{
+  display:inline-flex;
+  align-items:center;
+  gap:4px;
+  min-height:32px;
+  padding:0 10px;
+  border:1px solid var(--line);
+  border-radius:999px;
+  background:var(--panel);
+  color:var(--ink-dim);
+  font-size:.88rem;
+}
+.challenge-contract b{color:var(--ink); font-weight:780}
+.contract-note{
+  max-width:68ch;
+  margin-top:9px;
+  color:var(--ink-dim);
+  font-size:.88rem;
+}
 .rail{
   display:grid;
   grid-template-columns:repeat(var(--steps),1fr);
@@ -852,7 +900,7 @@ h1{
   font-variant-numeric:tabular-nums;
   transition:color .2s var(--ease),border-color .2s var(--ease),background .2s var(--ease);
 }
-.timer .u{color:var(--ink-faint); font-size:.76rem}
+.timer .u{color:var(--ink-dim); font-size:.76rem}
 .timer.warn{
   border-color:color-mix(in oklch,var(--warn) 55%,var(--line));
   background:var(--warn-soft);
@@ -969,6 +1017,7 @@ h1{
   border-color:var(--brand);
   background:var(--brand);
   color:var(--brand-ink);
+  animation:choice-confirm .18s var(--ease);
 }
 .opt .t{
   min-width:0;
@@ -989,7 +1038,7 @@ h1{
 }
 .choice-status{
   min-width:0;
-  color:var(--ink-faint);
+  color:var(--ink-dim);
   font-size:.92rem;
 }
 .action-group{
@@ -1028,6 +1077,11 @@ h1{
   .btn-secondary:hover{border-color:var(--ink-faint); background:var(--panel-2)}
 }
 .btn:active,.btn-secondary:active{transform:translateY(1px)}
+.btn.is-success,.btn-secondary.is-success{
+  border-color:color-mix(in oklch,var(--ok) 55%,var(--line));
+  background:var(--ok-soft);
+  color:var(--ok);
+}
 .btn:disabled,.btn-secondary:disabled{
   cursor:not-allowed;
   opacity:.48;
@@ -1117,6 +1171,11 @@ h1{
   gap:12px;
   min-width:min(100%,560px);
 }
+.author-rule{
+  color:var(--ink-dim);
+  font-size:.92rem;
+}
+.author-rule strong{color:var(--ink); font-weight:760}
 .data-line{
   max-width:60ch;
   color:var(--ink-faint);
@@ -1127,7 +1186,7 @@ h1{
   color:var(--accent);
   font-weight:740;
 }
-.consent-check{
+.consent-check,.timing-option{
   display:grid;
   grid-template-columns:22px minmax(0,1fr);
   gap:10px;
@@ -1140,26 +1199,76 @@ h1{
   color:var(--ink-dim);
   cursor:pointer;
 }
-.consent-check input{
+.consent-check input,.timing-option input{
   width:18px;
   height:18px;
   margin:2px 0 0;
   accent-color:var(--brand);
 }
-.consent-check span{
+.consent-check span,.timing-option span{
   overflow-wrap:anywhere;
 }
-.consent-check strong{
+.consent-check strong,.timing-option strong{
   display:block;
   color:var(--ink);
   font-weight:760;
 }
-.consent-check small{
+.consent-check small,.timing-option small{
   display:block;
   margin-top:3px;
   color:var(--ink-faint);
   font-size:.86rem;
   line-height:1.38;
+}
+.timing-option{
+  min-width:min(100%,520px);
+  padding:11px 14px;
+  border:1px solid var(--line);
+  border-radius:var(--radius-sm);
+  background:var(--panel);
+  color:var(--ink-dim);
+  cursor:pointer;
+}
+.signal-disclosure{
+  display:grid;
+  gap:6px;
+  max-width:68ch;
+  padding:12px 14px;
+  border:1px solid var(--line);
+  border-radius:var(--radius-sm);
+  background:var(--panel);
+  color:var(--ink-dim);
+  font-size:.86rem;
+  line-height:1.42;
+}
+.signal-disclosure strong{color:var(--ink); font-weight:740}
+.question-support{
+  display:flex;
+  align-items:center;
+  flex-wrap:wrap;
+  gap:7px 12px;
+  max-width:72ch;
+  margin-top:12px;
+  color:var(--ink-dim);
+  font-size:.86rem;
+}
+.pr-context-link{
+  display:inline-flex;
+  align-items:center;
+  min-height:44px;
+  padding:0 11px;
+  border:1px solid var(--line-strong);
+  border-radius:999px;
+  color:var(--accent);
+  font-weight:720;
+  text-decoration:none;
+}
+.pr-context-link:hover{background:var(--panel)}
+.pr-context-link:focus-visible{outline:3px solid var(--focus); outline-offset:3px}
+.keyboard-hint{
+  margin-left:auto;
+  color:var(--ink-dim);
+  font:650 .78rem/1.2 var(--mono);
 }
 .command-card{
   display:grid;
@@ -1447,6 +1556,48 @@ h1{
 .result-panel,.status-panel{
   max-width:620px;
 }
+.result-mark{
+  position:relative;
+  width:72px;
+  height:72px;
+  display:grid;
+  place-items:center;
+  margin-bottom:22px;
+}
+.result-mark .badge{margin:0; position:relative; z-index:2}
+.result-ring{
+  position:absolute;
+  inset:0;
+  border:1px solid color-mix(in oklch,var(--ok) 50%,transparent);
+  border-radius:999px;
+  opacity:0;
+  animation:result-ring .7s var(--ease) .08s both;
+}
+.result-ring.ring-two{animation-delay:.18s}
+.result-hero-copy{
+  max-width:62ch;
+  margin-top:12px;
+  color:var(--ink);
+  font-size:1.05rem;
+  text-wrap:pretty;
+}
+.attestation-receipt{
+  display:grid;
+  grid-template-columns:repeat(4,minmax(0,1fr));
+  margin:22px 0 18px;
+  border-block:1px solid var(--line);
+}
+.attestation-receipt span{
+  min-width:0;
+  display:grid;
+  gap:3px;
+  padding:12px 14px;
+  border-right:1px solid var(--line);
+}
+.attestation-receipt span:first-child{padding-left:0}
+.attestation-receipt span:last-child{border-right:0}
+.attestation-receipt small{color:var(--ink-dim); font-size:.76rem}
+.attestation-receipt strong{overflow-wrap:anywhere; color:var(--ink); font-size:.9rem}
 .badge{
   width:72px;
   height:72px;
@@ -1752,6 +1903,7 @@ body:not(.site-body) .terms-stack{
   gap:8px;
 }
 body:not(.site-body) .consent-check,
+body:not(.site-body) .timing-option,
 body:not(.site-body) .command-card{
   min-width:0;
   max-width:640px;
@@ -1763,11 +1915,13 @@ body:not(.site-body) .consent-check input{
   accent-color:var(--brand);
 }
 body:not(.site-body) .consent-check strong,
+body:not(.site-body) .timing-option strong,
 body:not(.site-body) .command-card strong{
   font-size:.94rem;
   font-weight:600;
 }
 body:not(.site-body) .consent-check small,
+body:not(.site-body) .timing-option small,
 body:not(.site-body) .command-card small{
   color:var(--ink-dim);
   font-size:.87rem;
@@ -1780,7 +1934,7 @@ body:not(.site-body) .command-card code{
 body:not(.site-body) .command-copy-button{
   width:auto;
   min-width:76px;
-  min-height:32px;
+  min-height:44px;
   padding:0 10px;
   font-size:.84rem;
 }
@@ -1814,7 +1968,7 @@ body:not(.site-body) .turnstile-box{
 }
 body:not(.site-body) .btn,
 body:not(.site-body) .btn-secondary{
-  min-height:40px;
+  min-height:44px;
   border-radius:6px;
   font-size:.94rem;
   font-weight:600;
@@ -1958,6 +2112,15 @@ body:not(.site-body) .timer{
   background:#f6f8fa;
   font-size:.88rem;
 }
+body:not(.site-body) .question-support{
+  margin-top:10px;
+}
+body:not(.site-body) .pr-context-link{
+  min-height:44px;
+  color:var(--brand);
+  font-size:.84rem;
+  font-weight:600;
+}
 body:not(.site-body) .timer.crit{
   border-color:var(--crit);
   background:var(--crit-soft);
@@ -1978,6 +2141,23 @@ body:not(.site-body) .badge{
   border-radius:999px;
   font-size:1rem;
 }
+body:not(.site-body) .result-mark{
+  width:48px;
+  height:48px;
+  margin-bottom:12px;
+}
+body:not(.site-body) .result-mark .badge{margin:0}
+body:not(.site-body) .result-hero-copy{
+  margin-top:8px;
+  color:var(--ink);
+  font-size:1rem;
+}
+body:not(.site-body) .attestation-receipt{
+  grid-template-columns:repeat(4,minmax(0,1fr));
+  margin:16px 0 14px;
+}
+body:not(.site-body) .attestation-receipt span{padding:10px}
+body:not(.site-body) .attestation-receipt span:first-child{padding-left:0}
 body:not(.site-body) .result-label,
 body:not(.site-body) .status-label{
   margin-bottom:6px;
@@ -2076,6 +2256,8 @@ body:not(.site-body) .state-card p{
   body:not(.site-body) .app,
   body:not(.site-body) .commandbar,
   body:not(.site-body) .consent-check,
+  body:not(.site-body) .timing-option,
+  body:not(.site-body) .signal-disclosure,
   body:not(.site-body) .command-card,
   body:not(.site-body) .state-card{
     background:var(--canvas);
@@ -2139,7 +2321,18 @@ body:not(.site-body) .state-card p{
   body:not(.site-body) .status-strip.info{border-color:#388bfd; background:var(--info-soft)}
 }
 @keyframes settle{from{opacity:.001; transform:translateY(6px)} to{opacity:1; transform:none}}
+@keyframes choice-confirm{from{transform:scale(.88)} to{transform:scale(1)}}
+@keyframes result-ring{
+  from{opacity:.5; transform:scale(.72)}
+  to{opacity:0; transform:scale(1.55)}
+}
+@keyframes verified-pulse{
+  0%{transform:scale(1)}
+  45%{transform:scale(1.18)}
+  100%{transform:scale(1)}
+}
 .app{animation:settle .22s var(--ease) both}
+.verification-complete .rail li.active b{animation:verified-pulse .4s var(--ease)}
 @media (prefers-reduced-motion:reduce){
   *,*::before,*::after{
     animation-duration:.001ms!important;
@@ -2483,8 +2676,28 @@ body:not(.site-body) .state-card p{
   body:not(.site-body) .command-ref{
     width:100%;
   }
+  body:not(.site-body) .commandbar:has(.command-meta.has-timer) .command-ref{
+    display:none;
+  }
   body:not(.site-body) .command-meta{
     display:none;
+  }
+  body:not(.site-body) .command-meta.has-timer{
+    position:fixed;
+    z-index:20;
+    top:20px;
+    right:20px;
+    display:block;
+  }
+  body:not(.site-body) .command-meta.has-timer .record-pill{
+    display:none;
+  }
+  body:not(.site-body) .command-meta.has-timer .timer{
+    min-width:72px;
+    min-height:44px;
+    border-color:var(--line-strong);
+    background:var(--canvas);
+    box-shadow:0 4px 8px color-mix(in oklch,var(--ink) 12%,transparent);
   }
   body:not(.site-body) .workspace,
   body:not(.site-body) .result-main,
@@ -2505,16 +2718,21 @@ body:not(.site-body) .state-card p{
   }
   body:not(.site-body) .rail{
     flex-wrap:wrap;
-    margin-bottom:20px;
+    margin-bottom:14px;
   }
   body:not(.site-body) .rail li span{
     display:inline;
+  }
+  body:not(.site-body) .rail li:not(.active) span{
+    display:none;
   }
   body:not(.site-body) .rail li + li::before{
     margin:0 8px;
   }
   body:not(.site-body) .inline-note,
   body:not(.site-body) .consent-check,
+  body:not(.site-body) .timing-option,
+  body:not(.site-body) .signal-disclosure,
   body:not(.site-body) .command-card,
   body:not(.site-body) .state-card,
   body:not(.site-body) .status-strip{
@@ -2529,6 +2747,24 @@ body:not(.site-body) .state-card p{
     margin:0 -16px -20px;
     padding:12px 16px;
   }
+  body:not(.site-body) .question-top{display:none}
+  body:not(.site-body) .question-support{
+    gap:6px;
+    margin-top:8px;
+    font-size:.82rem;
+  }
+  body:not(.site-body) .answer-form{margin-top:12px}
+  body:not(.site-body) .opts{padding-bottom:12px}
+  body:not(.site-body) .keyboard-hint{display:none}
+  body:not(.site-body) .attestation-receipt{
+    grid-template-columns:1fr 1fr;
+  }
+  body:not(.site-body) .attestation-receipt span{
+    border-right:0;
+    border-bottom:1px solid var(--line);
+    padding:10px 0;
+  }
+  body:not(.site-body) .attestation-receipt span:nth-last-child(-n+2){border-bottom:0}
   body:not(.site-body) .action-group,
   body:not(.site-body) .result-actions,
   body:not(.site-body) .status-actions{
@@ -4791,8 +5027,8 @@ function commandBar(tag: string, prRef?: string, timerHtml = ""): string {
     <span class="command-title">${esc(tag)}</span>
     ${prRef ? `<span class="command-sep" aria-hidden="true"></span><span class="command-ref">${esc(prRef)}</span>` : ""}
   </div>
-  <div class="command-meta">
-    <span class="command-pill"><span class="seal" aria-hidden="true">✓</span>PR record</span>
+  <div class="command-meta${timerHtml ? " has-timer" : ""}">
+    <span class="command-pill record-pill"><span class="seal" aria-hidden="true">↗</span>Linked PR</span>
     ${timerHtml}
   </div>
 </header>`;
@@ -4802,8 +5038,9 @@ function progressRail(index: number, total: number): string {
   const pct = total <= 1 ? 100 : Math.max(0, Math.min(100, (index / (total - 1)) * 100));
   const items = Array.from({ length: total }, (_, i) => {
     const state = i < index ? "done" : i === index ? "active" : "";
-    const mark = i < index ? "✓" : String(i + 1);
-    return `<li class="${state}"><b>${mark}</b><span>${i === index ? "Current" : `Question ${i + 1}`}</span></li>`;
+    const mark = i < index ? "—" : String(i + 1);
+    const label = i < index ? `Question ${i + 1} complete` : i === index ? "Current" : `Question ${i + 1}`;
+    return `<li class="${state}"${i === index ? ' aria-current="step"' : ""}><b>${mark}</b><span>${label}</span></li>`;
   }).join("");
   return `<ol class="rail" style="--steps:${total};--rail-scale:${pct / 100}">${items}</ol>`;
 }
@@ -4818,12 +5055,19 @@ function stageRail(stage: "verify" | "answer" | "attest"): string {
   const items = stages.map(([id, label], i) => {
     const state = i < activeIndex ? "done" : id === stage ? "active" : "";
     const mark = i < activeIndex ? "✓" : String(i + 1);
-    return `<li class="${state}"><b>${mark}</b><span>${label}</span></li>`;
+    return `<li class="${state}"${id === stage ? ' aria-current="step"' : ""}><b>${mark}</b><span>${label}</span></li>`;
   }).join("");
   return `<ol class="rail" style="--steps:3;--rail-scale:${activeIndex / 2}">${items}</ol>`;
 }
 
-function contextPanel(_prRef: string, variant: "verify" | "start" | "question"): string {
+function contextPanel(
+  _prRef: string,
+  variant: "verify" | "start" | "question",
+  secondsPerQuestion = 60
+): string {
+  const timeLabel = secondsPerQuestion >= 120
+    ? `${Math.round(secondsPerQuestion / 60)}m`
+    : `${secondsPerQuestion}s`;
   const specs: Record<"verify" | "start" | "question", {
     heading: string;
     items: Array<[icon: string, label: string, detail: string]>;
@@ -4842,7 +5086,7 @@ function contextPanel(_prRef: string, variant: "verify" | "start" | "question"):
       heading: "What to do",
       items: [
         ["PR", "From this PR", "Questions come from your actual diff."],
-        ["60s", "Per question", "A 60-second timer, then it advances."],
+        [timeLabel, "Per question", `A ${timeLabel} timer, then it advances.`],
         ["✓", "On finish", "Your result posts to the PR as a check."],
       ],
       note: "Your answers and timing summaries stay with maintainers.",
@@ -4850,11 +5094,11 @@ function contextPanel(_prRef: string, variant: "verify" | "start" | "question"):
     question: {
       heading: "During the quiz",
       items: [
-        ["60s", "Per question", "The timer runs; if it ends, the question is skipped."],
+        [timeLabel, "Per question", "The timer runs; if it ends, the question is skipped."],
         ["→", "One at a time", "Answering moves you to the next question."],
         ["✓", "On finish", "Your result posts to the PR."],
       ],
-      note: "Timing and pointer summaries stay with maintainers. Bot checks can stop the challenge.",
+      note: "Strong timing or browser-verification evidence can stop the challenge. Other interaction summaries are report-only.",
     },
   };
   const spec = specs[variant];
@@ -4924,6 +5168,7 @@ export function verificationPage(
   const command = `/voucha verify ${verifyCode}`;
   const commandJson = JSON.stringify(command);
   const prUrlJson = JSON.stringify(prUrl);
+  const authorJson = JSON.stringify(authorLogin);
   const statusUrlJson = JSON.stringify(`/challenge/${challengeId}/verify/status`);
   const challengeUrlJson = JSON.stringify(`/challenge/${challengeId}`);
   return layout("Verify author", `
@@ -4959,6 +5204,7 @@ export function verificationPage(
 (function () {
   var commandText = ${commandJson};
   var prUrl = ${prUrlJson};
+  var authorLogin = ${authorJson};
   var statusUrl = ${statusUrlJson};
   var challengeUrl = ${challengeUrlJson};
   var copyOpenButton = document.getElementById("copyOpenPr");
@@ -4971,6 +5217,7 @@ export function verificationPage(
     if (status) status.textContent = text;
   }
   function copyWithTextarea() {
+    var previousFocus = document.activeElement;
     var textarea = document.createElement("textarea");
     textarea.value = commandText;
     textarea.setAttribute("readonly", "");
@@ -4990,16 +5237,19 @@ export function verificationPage(
       return false;
     } finally {
       document.body.removeChild(textarea);
+      if (previousFocus && typeof previousFocus.focus === "function") previousFocus.focus();
     }
   }
   function copyCommand() {
-    if (copyWithTextarea()) {
-      return Promise.resolve();
-    }
     if (navigator.clipboard && window.isSecureContext) {
-      return navigator.clipboard.writeText(commandText);
+      return navigator.clipboard.writeText(commandText).catch(function () {
+        if (copyWithTextarea()) return;
+        throw new Error("Clipboard copy failed");
+      });
     }
-    return Promise.reject(new Error("Clipboard copy failed"));
+    return copyWithTextarea()
+      ? Promise.resolve()
+      : Promise.reject(new Error("Clipboard copy failed"));
   }
   function selectCommandText() {
     if (!command || !window.getSelection || !document.createRange) return;
@@ -5014,6 +5264,7 @@ export function verificationPage(
     window.setTimeout(function () {
       button.disabled = false;
       button.textContent = label;
+      button.classList.remove("is-success");
     }, 1800);
   }
   function openPr() {
@@ -5029,7 +5280,8 @@ export function verificationPage(
     button.disabled = true;
     setStatus("Copying the command...");
     copyCommand().then(function () {
-      button.textContent = options.open ? "Copied - opening PR" : "Copied";
+      button.textContent = options.open ? "Copied ✓ — opening PR" : "Copied ✓";
+      button.classList.add("is-success");
       if (options.open) {
         var opened = openPr();
         setStatus(opened
@@ -5057,8 +5309,10 @@ export function verificationPage(
       return res.json();
     }).then(function (data) {
       if (data && data.verified) {
-        setStatus("Verified. Opening the challenge...");
-        window.location.assign(challengeUrl);
+        setStatus("Verified as @" + authorLogin + ". Opening the challenge...");
+        var app = document.querySelector(".app");
+        if (app) app.classList.add("verification-complete");
+        window.setTimeout(function () { window.location.assign(challengeUrl); }, 450);
         return;
       }
       if (!pollTimer) {
@@ -5204,8 +5458,21 @@ export function homePage(servedOrigin = "https://voucha.dev"): string {
 
 export function startPage(
   prRef: string, turnstileSiteKey: string, challengeId: string, honeypotEnabled = true,
-  startError = ""
+  startError = "",
+  contract: ChallengeContract = {
+    questions: 4,
+    passThreshold: 3,
+    secondsPerQuestion: 60,
+    extendedSecondsPerQuestion: 600,
+    maxAttempts: 3,
+    attemptsUsed: 0,
+    cooldownMinutes: 15,
+  }
 ): string {
+  const attemptNumber = Math.min(contract.maxAttempts, contract.attemptsUsed + 1);
+  const approximateMinutes = Math.max(1, Math.ceil(
+    contract.questions * contract.secondsPerQuestion / 60
+  ));
   return layout("Challenge", `
 <div class="app">
   ${commandBar("PR author check", prRef)}
@@ -5215,16 +5482,33 @@ export function startPage(
       <div class="prelude">
         <p class="kicker-row"><span class="pill">PR challenge</span><span class="ref">${esc(prRef)}</span></p>
         <h1 id="challenge-title">Stand behind this PR.</h1>
-        <p class="lead">Answer PR-specific questions about <b>intent, behavior, and blast radius</b>. Passing records that you understand the change.</p>
+        <p class="lead">Answer PR-specific questions about <b>intent, behavior, and affected surfaces</b>. Passing records that you understand the change.</p>
+        <div class="challenge-contract" aria-label="Challenge format">
+          <span><b>${contract.questions}</b> questions</span>
+          <span><b>${contract.secondsPerQuestion}s</b> each</span>
+          <span><b>${contract.passThreshold}/${contract.questions}</b> passes</span>
+          <span><b>~${approximateMinutes} min</b> total</span>
+        </div>
+        <p class="contract-note">Attempt ${attemptNumber} of ${contract.maxAttempts}. ${contract.maxAttempts > 1 ? `Retries use a fresh quiz after a ${contract.cooldownMinutes}-minute cooldown.` : "A maintainer can reset the challenge if review is needed."}</p>
         <form class="start-actions" method="POST" action="/challenge/${esc(challengeId)}/start" id="startForm">
           ${honeypotField(honeypotEnabled)}
           ${startError ? `<p class="form-error" role="alert">${esc(startError)}</p>` : ""}
           <div class="terms-stack">
+            <p class="author-rule"><strong>AI-written code may be allowed.</strong> These challenge answers must be yours.</p>
             <label class="consent-check">
               <input type="checkbox" name="terms_acceptance" value="accepted" required>
-              <span><strong>I understand what will be posted.</strong><small>Generate a PR-specific quiz, post the result to the PR, and keep my answers plus summary signals for maintainers.</small></span>
+              <span><strong>I understand the challenge rules.</strong><small>Generate a PR-specific quiz, post the result to the PR, and retain my answers plus the disclosed summaries for maintainers.</small></span>
             </label>
-            <p class="data-line">Bot verification failures stop the challenge. Privacy and permission details live in the docs. <a href="/docs/privacy-data/" target="_blank" rel="noopener noreferrer">Read details</a>.</p>
+            <label class="timing-option">
+              <input type="checkbox" name="extended_timing" value="extended">
+              <span><strong>Use extended timing</strong><small>${Math.round(contract.extendedSecondsPerQuestion / 60)} minutes per question instead of ${contract.secondsPerQuestion} seconds. No explanation required.</small></span>
+            </label>
+            <div class="signal-disclosure" role="note" aria-label="Challenge data disclosure">
+              <p><strong>Recorded:</strong> selected answers, server-measured timing, answer changes, tab changes, and summary pointer/browser signals.</p>
+              <p><strong>Never recorded:</strong> keystrokes, written content, screen, webcam, or microphone.</p>
+              <p><strong>Outcome:</strong> repeated, server-measured sub-two-second answers or failed browser verification can invalidate a pass. Inconclusive interaction signals are report-only.</p>
+            </div>
+            <p class="data-line">Privacy, retention, and permission details live in the docs. <a href="/docs/privacy-data/" target="_blank" rel="noopener noreferrer">Read details</a>.</p>
           </div>
           <div class="turnstile-box" aria-label="Browser verification"><div class="cf-turnstile" data-sitekey="${esc(turnstileSiteKey)}" data-callback="vouchaTurnstileReady" data-expired-callback="vouchaTurnstileExpired" data-error-callback="vouchaTurnstileExpired" data-timeout-callback="vouchaTurnstileExpired"></div><span class="turnstile-fallback">Browser verification</span></div>
           <button class="btn" type="submit" id="startButton" disabled>Verifying browser...</button>
@@ -5239,7 +5523,7 @@ export function startPage(
         </form>
       </div>
     </section>
-    ${contextPanel(prRef, "start")}
+    ${contextPanel(prRef, "start", contract.secondsPerQuestion)}
   </div>
 </div>
 <script>
@@ -5312,18 +5596,28 @@ export function startPage(
 }
 
 export function questionPage(
-  challengeId: string, index: number, total: number, q: ClientQuestion, timeLimitMs: number,
-  honeypotEnabled = true
+  challengeId: string,
+  index: number,
+  total: number,
+  q: ClientQuestion,
+  remainingTimeMs: number,
+  honeypotEnabled = true,
+  pageOptions: QuestionPageOptions = {}
 ): string {
   const inputType = q.multiSelect ? "checkbox" : "radio";
   const meta = questionMeta[q.type];
+  const totalTimeMs = pageOptions.totalTimeMs ?? remainingTimeMs;
+  const totalTimeSeconds = Math.max(1, Math.round(totalTimeMs / 1000));
   const options = q.options
     .map(
       (opt, i) =>
-        `<label class="opt"><input type="${inputType}" name="answer" value="${i}"><span class="choice-letter" aria-hidden="true">${choiceLabels[i] ?? i + 1}</span><span class="t">${esc(opt)}</span></label>`
+        `<label class="opt"><input type="${inputType}" name="answer" value="${i}" aria-keyshortcuts="${choiceLabels[i] ?? ""}"><span class="choice-letter" aria-hidden="true">${choiceLabels[i] ?? i + 1}</span><span class="t">${esc(opt)}</span></label>`
     )
     .join("");
-  const timer = `<span class="command-pill timer" id="timer" role="timer" aria-live="off"><span id="tnum">${Math.ceil(timeLimitMs / 1000)}</span><span class="u">s</span></span>`;
+  const timer = `<span class="command-pill timer" id="timer" role="timer" aria-label="${Math.ceil(remainingTimeMs / 1000)} seconds remaining"><span id="tnum">${Math.ceil(remainingTimeMs / 1000)}</span><span class="u">s</span></span>`;
+  const prLink = pageOptions.prUrl
+    ? `<a class="pr-context-link" href="${esc(pageOptions.prUrl)}" target="_blank" rel="noopener noreferrer">Open ${esc(pageOptions.prRef ?? "PR")} diff</a>`
+    : "";
   return layout(`Question ${index + 1}`, `
 <div class="app">
   ${commandBar("PR author check", `Question ${index + 1} of ${total}`, timer)}
@@ -5335,7 +5629,12 @@ export function questionPage(
       </div>
       <p class="question-type">${esc(meta.label)}</p>
       <h1 class="qh" id="question-title">${esc(q.prompt)}</h1>
-      <p class="hint">${esc(meta.hint)} Answer from the PR diff; correct answers are not sent to the browser.</p>
+      <p class="hint">${esc(meta.hint)} Use your understanding and consult the PR diff if you need it.</p>
+      <div class="question-support">
+        ${prLink}
+        <span>You may consult the PR; tab changes are report-only.</span>
+        <span class="keyboard-hint" aria-hidden="true">Keys A–D select · Enter submits</span>
+      </div>
       <form class="answer-form" method="POST" action="/challenge/${esc(challengeId)}/answer" id="f" data-answer-form>
         ${honeypotField(honeypotEnabled)}
         <fieldset class="opts">
@@ -5344,6 +5643,7 @@ export function questionPage(
         </fieldset>
         <input type="hidden" name="qi" value="${index}">
         <input type="hidden" name="telemetry" id="telemetry">
+        <span class="sr-only" id="timerAnnouncement" aria-live="polite"></span>
         <div class="actionbar">
           <p class="choice-status" id="choiceStatus" aria-live="polite">Select an answer to continue.</p>
           <div class="action-group">
@@ -5353,14 +5653,16 @@ export function questionPage(
         </div>
       </form>
     </section>
-    ${contextPanel("Challenge context", "question")}
+    ${contextPanel("Challenge context", "question", totalTimeSeconds)}
   </div>
 </div>
 <script>
 (function () {
-  var LIMIT = ${timeLimitMs};
+  var LIMIT = ${Math.max(0, remainingTimeMs)};
   var deadline = Date.now() + LIMIT;
   var forceSubmit = false;
+  var announced30 = false;
+  var announced10 = false;
   var t = { start: Date.now(), changes: 0, dist: 0, samples: 0, focusLoss: 0,
             webdriver: !!navigator.webdriver, lx: null, ly: null };
   document.addEventListener("pointermove", function (e) {
@@ -5371,6 +5673,7 @@ export function questionPage(
   var submit = document.getElementById("submitButton");
   var skip = document.getElementById("skipButton");
   var status = document.getElementById("choiceStatus");
+  var timerAnnouncement = document.getElementById("timerAnnouncement");
   var inputs = Array.prototype.slice.call(document.querySelectorAll("input[name=answer]"));
   function checkedCount() {
     return inputs.filter(function (el) { return el.checked; }).length;
@@ -5386,6 +5689,24 @@ export function questionPage(
   inputs.forEach(function (el) {
     el.addEventListener("change", function () { t.changes++; updateChoiceStatus(); });
   });
+  document.addEventListener("keydown", function (event) {
+    if (event.defaultPrevented || event.repeat || event.altKey || event.ctrlKey || event.metaKey) return;
+    var target = event.target;
+    if (target && /^(INPUT|BUTTON|A|TEXTAREA|SELECT)$/.test(target.tagName)) return;
+    var key = String(event.key || "").toUpperCase();
+    var choiceIndex = ["A", "B", "C", "D"].indexOf(key);
+    if (choiceIndex >= 0 && inputs[choiceIndex]) {
+      event.preventDefault();
+      if (${q.multiSelect ? "true" : "false"}) inputs[choiceIndex].checked = !inputs[choiceIndex].checked;
+      else inputs[choiceIndex].checked = true;
+      inputs[choiceIndex].dispatchEvent(new Event("change", { bubbles: true }));
+      return;
+    }
+    if (event.key === "Enter" && submit && !submit.disabled) {
+      event.preventDefault();
+      form.requestSubmit(submit);
+    }
+  });
   updateChoiceStatus();
   window.addEventListener("blur", function () { t.focusLoss++; });
   form.addEventListener("submit", function (event) {
@@ -5396,8 +5717,7 @@ export function questionPage(
       return;
     }
     document.getElementById("telemetry").value = JSON.stringify({
-      elapsedMs: Date.now() - t.start, answerChanges: t.changes,
-      pointerDistancePx: Math.round(t.dist), pointerSamples: t.samples,
+      answerChanges: t.changes, pointerDistancePx: Math.round(t.dist), pointerSamples: t.samples,
       focusLossCount: t.focusLoss, webdriver: t.webdriver
     });
     if (submitter && submitter !== skip) submitter.textContent = "Submitting...";
@@ -5412,9 +5732,19 @@ export function questionPage(
     tnum.textContent = secs;
     var warn = secs <= 30, crit = secs <= 10;
     timer.className = "command-pill timer" + (crit ? " crit" : warn ? " warn" : "");
+    timer.setAttribute("aria-label", secs + " seconds remaining");
+    if (secs <= 30 && secs > 10 && !announced30) {
+      announced30 = true;
+      if (timerAnnouncement) timerAnnouncement.textContent = "30 seconds remaining.";
+    }
+    if (secs <= 10 && secs > 0 && !announced10) {
+      announced10 = true;
+      if (timerAnnouncement) timerAnnouncement.textContent = "10 seconds remaining.";
+    }
     if (status && crit && checkedCount() === 0) status.textContent = "Time is almost up. Choose an answer or skip.";
     if (left <= 0) {
       forceSubmit = true;
+      if (timerAnnouncement) timerAnnouncement.textContent = "Time expired. Moving to the next question.";
       if (status) status.textContent = "Time expired. Submitting this question as unanswered.";
       form.requestSubmit(skip);
       return;
@@ -5425,25 +5755,56 @@ export function questionPage(
 </script>`);
 }
 
+function formatRecordedAt(recordedAt?: string): string {
+  if (!recordedAt) return "Recorded now";
+  const date = new Date(recordedAt);
+  if (Number.isNaN(date.getTime())) return "Recorded now";
+  return `Recorded ${date.toLocaleString("en-US", {
+    month: "short",
+    day: "numeric",
+    hour: "numeric",
+    minute: "2-digit",
+    timeZoneName: "short",
+  })}`;
+}
+
 export function resultPage(
   passed: boolean,
   score: number,
   total: number,
   message: string,
-  actions: PageAction[] = []
+  actions: PageAction[] = [],
+  options: ResultPageOptions = {}
 ): string {
-  const tone = passed ? "ok" : message.toLowerCase().includes("bot verification") ? "crit" : "warn";
-  const title = passed ? "Passed" : tone === "crit" ? "Bot verification failed" : "Challenge not passed";
+  const tone = passed ? "ok" : options.verificationFailure ? "crit" : "warn";
+  const title = passed
+    ? "Attestation recorded"
+    : tone === "crit"
+      ? "Challenge needs review"
+      : "Challenge not passed";
+  const passThreshold = options.passThreshold ?? Math.min(total, Math.max(1, total));
+  const recordedLabel = formatRecordedAt(options.recordedAt);
   return layout(passed ? "Passed" : "Not passed", `
 <div class="app">
   ${commandBar("Challenge result")}
   <div class="result-layout">
-    <section class="result-main" aria-labelledby="result-title">
+    <section class="result-main${passed ? " passed" : ""}" aria-labelledby="result-title">
       <div class="result-panel">
-        <div class="badge ${tone}" aria-hidden="true">${passed ? "✓" : "!"}</div>
-        <p class="result-label">Result</p>
+        <div class="result-mark ${tone}" aria-hidden="true">
+          ${passed ? '<span class="result-ring ring-one"></span><span class="result-ring ring-two"></span>' : ""}
+          <span class="badge ${tone}">${passed ? "✓" : "!"}</span>
+        </div>
+        <p class="result-label">${passed ? "Challenge complete" : "Result"}</p>
         <h1 id="result-title">${title}</h1>
-        <div class="score">${score}<span class="of">/${total}</span></div>
+        <p class="result-hero-copy">${passed
+          ? `You passed with ${score}/${total}. VOUCHA recorded that you understand ${esc(options.prRef ?? "this pull request")}.`
+          : `You finished with ${score}/${total}; ${passThreshold}/${total} is required to pass.`}</p>
+        <div class="attestation-receipt" aria-label="Challenge receipt">
+          <span><small>Score</small><strong>${score}/${total}</strong></span>
+          <span><small>Required</small><strong>${passThreshold}/${total}</strong></span>
+          ${options.prRef ? `<span><small>Pull request</small><strong>${esc(options.prRef)}</strong></span>` : ""}
+          <span><small>Record</small><strong>${esc(recordedLabel)}</strong></span>
+        </div>
         <p class="result-copy">${esc(message)}</p>
         ${actionLinks(actions, "result-actions")}
       </div>
@@ -5451,19 +5812,19 @@ export function resultPage(
     <aside class="result-side" aria-label="Result details">
       <div class="status-strip ${tone}">
         <span class="status-dot">${passed ? "✓" : "!"}</span>
-        <span class="status-copy"><b>${passed ? "Passed" : tone === "crit" ? "Verification failed" : "Not passed"}</b><span>${score}/${total} correct</span></span>
+        <span class="status-copy"><b>${passed ? "Recorded on the PR" : tone === "crit" ? "Review required" : "Not passed"}</b><span>${score}/${total} correct</span></span>
       </div>
       <section class="state-card">
         <h2>What happens next</h2>
         <p>${passed
-          ? "The PR receives a record that you understand this change. Maintainers still see summary risk signals."
+          ? "The PR check is green and your attestation is ready for maintainers. The code still receives normal review."
           : tone === "crit"
-            ? "The PR check stays failed. Repository policy controls manual review or auto-close."
+            ? "The PR check stays failed with the specific verification reason. A maintainer can review or reset the challenge."
             : "Retry timing is controlled by repository policy. A retry receives a fresh quiz when available."}</p>
       </section>
       <div class="status-strip info">
-        <span class="status-dot">i</span>
-        <span class="status-copy"><b>PR record</b><span>Detailed answers and summary signals stay with the PR record.</span></span>
+        <span class="status-dot">${passed ? "↗" : "i"}</span>
+        <span class="status-copy"><b>${passed ? "Continue on GitHub" : "Need help?"}</b><span>${passed ? "Open the PR to see the green check and attestation." : "Open the PR to ask a maintainer about retry or manual review."}</span></span>
       </div>
     </aside>
   </div>

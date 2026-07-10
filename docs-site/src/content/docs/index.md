@@ -27,7 +27,7 @@ comprehension challenge before maintainer review.
 | Path-specific policy | first matching `path_rules` entry | Sensitive paths can override gates, approval, attempts, cooldown, and scope. |
 | Accountability | optional PR-body acknowledgement and AI disclosure fields | Missing required policy fields fail before a quiz is created. |
 | Exemptions | configurable default author trust, author rules, teams, repository roles, prior merged PRs, paths, size, issue context | Trusted or out-of-scope work gets an explanatory success check. |
-| Bot verification and signals | Turnstile, browser automation flags, hidden form fields, code canaries, timing, pointer summaries | Turnstile and browser automation failures stop the gate with a reason; softer signals are summarized for maintainers. |
+| Bot verification and signals | Turnstile, browser automation flags, hidden form fields, code canaries, timing, pointer summaries | Turnstile, browser automation, and repeated server-measured sub-two-second answers can stop the gate; inconclusive signals are report-only. |
 | Challenge | generated questions about intent, behavior, affected surfaces, and blast radius | A passing author attests that they understand the change. |
 
 ## What maintainers get

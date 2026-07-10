@@ -95,15 +95,15 @@ describe("onChallengeResolved", () => {
       "o/r",
       "pr-comprehension:flagged",
       "b60205",
-      "Multiple passive risk signals were observed on a passed PR comprehension challenge."
+      "Strong automation evidence requires review on this PR comprehension record."
     );
     expect(api.addLabels).toHaveBeenCalledWith("o/r", 1, ["pr-comprehension:flagged"]);
 
     const [, , patch] = (api.updateCheckRun as ReturnType<typeof vi.fn>).mock.calls[0];
-    expect(patch.output.title).toBe("Passed — but the quiz looks scripted");
+    expect(patch.output.title).toBe("Passed — strong automation evidence requires review");
 
     const [, , comment] = (api.upsertPrComment as ReturnType<typeof vi.fn>).mock.calls[0];
-    expect(comment).toContain("looks scripted");
+    expect(comment).toContain("strong automation evidence");
     expect(comment).toContain("every answer took under 10 seconds");
     expect(comment).not.toContain("see the check run details");
   });
@@ -142,7 +142,7 @@ describe("onChallengeResolved", () => {
     expect(api.ensureLabel).not.toHaveBeenCalled();
     expect(api.addLabels).not.toHaveBeenCalled();
     const [, , patch] = (api.updateCheckRun as ReturnType<typeof vi.fn>).mock.calls[0];
-    expect(patch.output.title).toBe("Passed — but the quiz looks scripted");
+    expect(patch.output.title).toBe("Passed — strong automation evidence requires review");
   });
 
   it("withholds the risk report on a retryable failure (no mid-challenge signal feedback)", async () => {

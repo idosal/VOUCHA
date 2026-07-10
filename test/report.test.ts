@@ -60,14 +60,15 @@ describe("buildRiskReport", () => {
     expect(r.signals).toEqual(["a hidden form field was submitted"]);
   });
 
-  it("combines honeypot with another independent signal", () => {
+  it("keeps combined inconclusive interaction signals report-only", () => {
     const r = buildRiskReport({
       ...humanTelemetry,
       pointerDistancePx: 0,
       pointerSamples: 0,
       honeypotTriggered: true,
     });
-    expect(r.automationLikely).toBe(true);
+    expect(r.automationLikely).toBe(false);
+    expect(r.strongTimingEvidence).toBe(false);
     expect(r.signals).toContain("a hidden form field was submitted");
     expect(r.signals).toContain("almost no mouse movement");
   });
@@ -78,15 +79,41 @@ describe("buildRiskReport", () => {
     expect(r.signals).toEqual(["the PR introduced a configured code honeypot marker"]);
   });
 
-  it("keeps code honeypot evidence out of the challenge-assistance verdict", () => {
+  it("treats a failed Turnstile result as strong evidence while keeping the code canary report-only", () => {
     const r = buildRiskReport({
       ...humanTelemetry,
       turnstileOk: false,
       codeHoneypotTriggered: true,
     });
-    expect(r.automationLikely).toBe(false);
+    expect(r.automationLikely).toBe(true);
+    expect(r.strongTimingEvidence).toBe(false);
     expect(r.signals).toContain("the bot check (Turnstile) did not pass");
     expect(r.signals).toContain("the PR introduced a configured code honeypot marker");
+  });
+
+  it("allows repeated server-measured sub-two-second answers to invalidate", () => {
+    const r = buildRiskReport({
+      ...humanTelemetry,
+      perQuestionMs: [1_200, 1_450, 900, 1_100],
+      pointerDistancePx: 0,
+      pointerSamples: 0,
+    });
+    expect(r.automationLikely).toBe(true);
+    expect(r.strongTimingEvidence).toBe(true);
+    expect(r.signals).toContain("every answer arrived in under 2 seconds");
+  });
+
+  it("keeps merely fast answers report-only", () => {
+    const r = buildRiskReport({
+      ...humanTelemetry,
+      perQuestionMs: [4_000, 5_000, 3_500, 4_200],
+      pointerDistancePx: 0,
+      pointerSamples: 0,
+    });
+    expect(r.automationLikely).toBe(false);
+    expect(r.strongTimingEvidence).toBe(false);
+    expect(r.signals).toContain("every answer took under 10 seconds");
+    expect(r.signals).toContain("almost no mouse movement");
   });
 });
 

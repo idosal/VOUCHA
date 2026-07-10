@@ -7,6 +7,8 @@ import {
 import { getPreparedQuiz, insertChallenge, randomToken, getChallenge, upsertPreparedQuiz } from "../src/store";
 import { DEFAULT_CONFIG } from "../src/config";
 import type { Env } from "../src/types";
+import { EXTENDED_QUESTION_TIME_LIMIT_MS, QUESTION_TIME_LIMIT_MS } from "../src/quiz/grade";
+import { STRONG_TIMING_FAILURE_REASON } from "../src/risk/report";
 
 const testEnv = env as unknown as Env;
 
@@ -67,6 +69,20 @@ describe("startQuizAttempt", () => {
     const r = await startQuizAttempt(testEnv, d, id, "alice", "turnstile-token");
     expect(r.ok).toBe(true);
     expect(d.generateQuiz).toHaveBeenCalledTimes(1);
+    if (!r.ok) return;
+    const row = await testEnv.DB.prepare(
+      "SELECT question_served_at, time_limit_ms FROM quizzes WHERE id=?"
+    ).bind(r.quizId).first<{ question_served_at: string | null; time_limit_ms: number }>();
+    expect(row).toEqual({ question_served_at: null, time_limit_ms: QUESTION_TIME_LIMIT_MS });
+  });
+
+  it("stores the opt-in extended timing accommodation on the attempt", async () => {
+    const id = await makeChallenge();
+    const r = await startQuizAttempt(testEnv, deps(), id, "alice", "tok", false, true);
+    if (!r.ok) throw new Error("setup failed");
+    const row = await testEnv.DB.prepare("SELECT time_limit_ms FROM quizzes WHERE id=?")
+      .bind(r.quizId).first<{ time_limit_ms: number }>();
+    expect(row?.time_limit_ms).toBe(EXTENDED_QUESTION_TIME_LIMIT_MS);
   });
 
   it("uses a prepared quiz after Turnstile without generating during start", async () => {
@@ -305,9 +321,24 @@ describe("submitAnswer", () => {
     d: ChallengeDeps, quizId: string, index: number, ans: number[],
     honeypotTriggered = false, telemetryJson = telemetry
   ) {
+    const servedAt = new Date(d.now().getTime() - 30_000).toISOString();
     await testEnv.DB.prepare(
       "UPDATE quizzes SET question_served_at=COALESCE(question_served_at, ?) WHERE id=?"
-    ).bind(d.now().toISOString(), quizId).run();
+    ).bind(servedAt, quizId).run();
+    return submitAnswer(testEnv, d, quizId, index, ans, telemetryJson, honeypotTriggered);
+  }
+
+  async function answerWithServerElapsed(
+    d: ChallengeDeps,
+    quizId: string,
+    index: number,
+    ans: number[],
+    elapsedMs: number,
+    telemetryJson = telemetry,
+    honeypotTriggered = false
+  ) {
+    await testEnv.DB.prepare("UPDATE quizzes SET question_served_at=? WHERE id=?")
+      .bind(new Date(d.now().getTime() - elapsedMs).toISOString(), quizId).run();
     return submitAnswer(testEnv, d, quizId, index, ans, telemetryJson, honeypotTriggered);
   }
 
@@ -380,6 +411,55 @@ describe("submitAnswer", () => {
         telemetry: expect.objectContaining({ honeypotTriggered: true }),
       })
     );
+  });
+
+  it("keeps fast answers and pointer absence report-only", async () => {
+    const { quizId, d } = await startedQuiz();
+    const noPointerTelemetry = JSON.stringify({
+      elapsedMs: 1,
+      answerChanges: 0,
+      pointerDistancePx: 0,
+      pointerSamples: 0,
+      focusLossCount: 1,
+      webdriver: false,
+    });
+    await answerWithServerElapsed(d, quizId, 0, [0], 5_000, noPointerTelemetry);
+    await answerWithServerElapsed(d, quizId, 1, [1, 2], 5_000, noPointerTelemetry);
+    await answerWithServerElapsed(d, quizId, 2, [3], 5_000, noPointerTelemetry);
+    const final = await answerWithServerElapsed(d, quizId, 3, [2], 5_000, noPointerTelemetry, true);
+    expect(final).toEqual({ done: true, passed: true, score: 4, total: 4 });
+  });
+
+  it("invalidates an otherwise correct quiz on repeated server-measured sub-two-second answers", async () => {
+    const { challengeId, quizId, d } = await startedQuiz();
+    await answerWithServerElapsed(d, quizId, 0, [0], 1_000);
+    await answerWithServerElapsed(d, quizId, 1, [1, 2], 1_100);
+    await answerWithServerElapsed(d, quizId, 2, [3], 900);
+    const final = await answerWithServerElapsed(d, quizId, 3, [2], 1_200);
+    expect(final).toEqual({
+      done: true,
+      passed: false,
+      score: 4,
+      total: 4,
+      failureReason: STRONG_TIMING_FAILURE_REASON,
+    });
+    expect((await getChallenge(testEnv.DB, challengeId))?.status).toBe("failed_assisted");
+  });
+
+  it("uses the server timestamp instead of a client-provided elapsed value", async () => {
+    const { quizId, d } = await startedQuiz();
+    const forgedTiming = JSON.stringify({
+      elapsedMs: 1,
+      answerChanges: 1,
+      pointerDistancePx: 900,
+      pointerSamples: 50,
+      focusLossCount: 0,
+      webdriver: false,
+    });
+    await answerWithServerElapsed(d, quizId, 0, [0], 30_000, forgedTiming);
+    const row = await testEnv.DB.prepare("SELECT telemetry_json FROM quizzes WHERE id=?")
+      .bind(quizId).first<{ telemetry_json: string }>();
+    expect(JSON.parse(row!.telemetry_json).perQuestion[0].elapsedMs).toBe(30_000);
   });
 
   it("carries a report-only code honeypot hit into final telemetry without changing score", async () => {

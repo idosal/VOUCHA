@@ -158,9 +158,9 @@ During rollout, `output.comments: normal` makes the workflow easy to inspect.
 Use `detailed` briefly when maintainers need risk detail in PR comments. Use
 `quiet` for high-volume repositories where check-run output is enough.
 
-Keep `output.labels: true` if maintainers triage from the PR list. When a quiz
-passes but multiple passive risk signals fire, VOUCHA best-effort applies
-`pr-comprehension:flagged` so the pass is visible without opening the check run.
+Keep `output.labels: true` as defense in depth for legacy or imported passed
+records that contain strong automation evidence. Inconclusive signals remain in
+the check-run report and never add a label by themselves.
 
 ## Treat large PRs as investigation problems
 

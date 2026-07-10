@@ -96,7 +96,7 @@ with `enforcement.auto_close`.
 | Outcome | Check behavior |
 | --- | --- |
 | Passed | Green check with an attestation summary. |
-| Passed with multiple passive signals | Green check, explicit risk title, and optional `pr-comprehension:flagged` label. |
+| Passed with inconclusive signals | Green check; signals remain report-only in the check details. |
 | Failed attempt | Cooldown and retry policy apply; detailed signal feedback is withheld until final outcome. |
 | Challenge assistance detected | Failed check; optional PR auto-close when configured for `failed_assisted`; a maintainer can start a fresh cycle with `/voucha retry`. |
 | Attempts exhausted | Failed check; optional PR auto-close when configured for `failed_final`; a maintainer can start a fresh cycle with `/voucha retry`. |

@@ -74,14 +74,16 @@ Those summaries are only collected after the contributor accepts the challenge
 terms on the start page. See [Privacy and data](/docs/privacy-data/) for the
 full data boundary.
 
-VOUCHA treats two or more independent unusual signals as automation-likely
-for reporting purposes. A single signal is intentionally not enough: keyboard
-navigation, browser extensions, network issues, and accessibility setups can
-look unusual without implying bad faith.
+VOUCHA separates strong evidence from inconclusive context. Failed Turnstile,
+an explicit browser `webdriver` flag, or repeated server-measured answers under
+two seconds are strong challenge-taking evidence. Merely fast answers, pointer
+absence, focus loss, form honeypots, and code canaries remain report-only:
+keyboard navigation, touch input, browser extensions, network issues, and
+accessibility setups can all look unusual without implying bad faith.
 
-When a quiz passes but the risk report is automation-likely, the check title
-calls that out. If `output.labels: true`, VOUCHA also best-effort creates
-and applies `pr-comprehension:flagged`.
+When strong evidence is present, the challenge is not accepted as author
+attestation and the result states the reason. Inconclusive signals stay in the
+maintainer-facing risk report without changing the score or result.
 
 ## Why report-only
 
@@ -89,12 +91,12 @@ Passive signals can be noisy:
 
 - bots can avoid hidden fields once they know about them;
 - humans can accidentally trip canaries while moving examples;
-- timing and pointer signals can fail for environmental reasons;
+- faster-than-average timing and pointer signals can reflect normal input;
 - most automation hints are useful for review but weak as standalone proof.
 
-For that reason, form honeypot and code honeypot signals are forced
-report-only. A config that sets `report_only: false` for those signals is
-normalized back to report-only behavior.
+For that reason, merely fast answers, pointer/focus summaries, form honeypots,
+and code honeypots are report-only. A config that sets `report_only: false` for
+honeypots is normalized back to report-only behavior.
 
 ## Practical canary design
 

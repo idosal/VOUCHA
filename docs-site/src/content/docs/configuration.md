@@ -368,9 +368,9 @@ output:
   labels: true
 ```
 
-`comments` accepts `quiet`, `normal`, or `detailed`. `labels: true` enables the
-best-effort `pr-comprehension:flagged` label when a passed quiz has multiple passive
-risk signals.
+`comments` accepts `quiet`, `normal`, or `detailed`. `labels: true` keeps a
+defense-in-depth `pr-comprehension:flagged` label for passed legacy/imported
+records with strong automation evidence. Inconclusive signals never add it.
 
 `enforcement.auto_close` is off by default. When enabled, VOUCHA closes the PR
 after configured terminal hard-failure outcomes; it never closes retryable

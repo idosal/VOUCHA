@@ -20,9 +20,9 @@ attestation; maintainers get a behavioral risk report.
    VOUCHA first builds a cached PR investigation from the file map and selected patch
    evidence, then generates the author-facing quiz from that artifact. Today
    the shipped gate is a multiple-choice quiz about intent, behavior, and
-   blast radius. Turnstile and browser automation checks can fail the gate with
-   a clear reason; timing, pointer, and report-only honeypot signals feed the
-   risk report rather than the quiz score.
+   affected surfaces. Turnstile, browser automation checks, and repeated
+   server-measured sub-two-second answers can fail the gate with a clear reason;
+   merely fast answers, pointer/focus summaries, and honeypots stay report-only.
 4. Pass (3 of 4 by default) → green check + attestation comment. Fail →
    15-minute cooldown, fresh quiz on retry, up to 3 attempts by default.
 5. The check run summary includes a risk report (timings, Turnstile verdict,
@@ -354,14 +354,14 @@ records "the PR introduced a configured code honeypot marker" without exposing
 the exact marker in the PR comment. If the PR is exempt or reuses a prior pass,
 the same report-only signal is shown in the success check summary.
 
-Like Turnstile, timing, pointer summaries, and `webdriver`, passive honeypots
-are report-only. A filled form honeypot or matched code canary never changes
-the quiz score and never silently fails an otherwise correct challenge on its
-own.
+Turnstile, `webdriver`, and repeated server-measured sub-two-second answers are
+strong challenge-taking evidence and can invalidate an otherwise correct quiz.
+Merely fast answers, pointer absence, focus loss, form honeypots, and code
+canaries are inconclusive and remain report-only. They never combine into a
+hidden behavioral verdict.
 
-When a passed quiz has multiple passive risk signals, VOUCHA marks the check
-title and PR comment, and best-effort creates/applies the
-`pr-comprehension:flagged` label so maintainers can spot it from the PR list.
+Inconclusive signals remain inside the check-run risk report. They do not change
+the check title, add a label, or invalidate an otherwise correct challenge.
 
 ### Path scope
 
@@ -554,8 +554,9 @@ If you prefer doing it by hand, or a wizard phase fails and points you here:
   was submitted, whether configured code canaries appeared in added diff lines,
   and automation fingerprints (e.g. a `webdriver` flag). There is no keystroke
   logging or content capture, and its collection is disclosed on the quiz page.
-  Turnstile validation and browser automation flags can fail the challenge with
-  that reason; softer timing, pointer, honeypot, and code-canary signals remain
+  Turnstile validation, browser automation flags, and repeated server-measured
+  sub-two-second answers can fail the challenge with that reason. Merely fast
+  answers, pointer/focus summaries, honeypots, and code-canary signals remain
   maintainer review evidence.
 - Webhook payloads are authenticated via HMAC-SHA256 signature verification
   (`x-hub-signature-256`) before any processing happens.

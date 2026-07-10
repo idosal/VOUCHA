@@ -147,7 +147,7 @@ describe("GET /challenge/:id", () => {
     expect(await after.json()).toEqual({ verified: true });
   });
 
-  it("renders terminal challenge pages with PR and challenge actions", async () => {
+  it("renders terminal challenge pages as a celebratory PR receipt", async () => {
     await testEnv.DB.prepare(
       `INSERT INTO challenges (id, installation_id, repo_full_name, pr_number, head_sha,
         author_login, status, config_json) VALUES ('chPassedActions', 1, 'o/r', 5, 's5', 'alice', 'passed', '{}')`
@@ -161,11 +161,11 @@ describe("GET /challenge/:id", () => {
 
     expect(res.status).toBe(200);
     const html = await res.text();
-    expect(html).toContain("<h1 id=\"result-title\">Passed</h1>");
-    expect(html).toContain("Back to PR");
+    expect(html).toContain("<h1 id=\"result-title\">Attestation recorded</h1>");
+    expect(html).toContain("View PR record");
     expect(html).toContain('href="https://github.com/o/r/pull/5"');
-    expect(html).toContain("Refresh challenge");
-    expect(html).toContain('href="/challenge/chPassedActions"');
+    expect(html).toContain('class="attestation-receipt"');
+    expect(html).not.toContain("Refresh challenge");
   });
 
   it("renders assisted failures as failed results instead of stale challenges", async () => {
@@ -187,8 +187,8 @@ describe("GET /challenge/:id", () => {
 
     expect(res.status).toBe(200);
     const html = await res.text();
-    expect(html).toContain('<h1 id="result-title">Bot verification failed</h1>');
-    expect(html).toContain("Bot verification failed: Turnstile did not validate this browser session.");
+    expect(html).toContain('<h1 id="result-title">Challenge needs review</h1>');
+    expect(html).toContain("The challenge could not be verified: Turnstile did not validate this browser session.");
     expect(html).not.toContain("Challenge no longer active");
   });
 
@@ -212,8 +212,47 @@ describe("GET /challenge/:id", () => {
 
     expect(res.status).toBe(200);
     const html = await res.text();
-    expect(html).toContain('<h1 id="result-title">Passed</h1>');
-    expect(html).toContain('<div class="score">4<span class="of">/4</span></div>');
+    expect(html).toContain('<h1 id="result-title">Attestation recorded</h1>');
+    expect(html).toContain('<strong>4/4</strong>');
+  });
+
+  it("keeps the rendered countdown on the original server deadline after refresh", async () => {
+    await testEnv.DB.prepare(
+      `INSERT INTO challenges (id, installation_id, repo_full_name, pr_number, head_sha,
+        author_login, status, config_json) VALUES ('chTimer', 1, 'o/r', 9, 's9', 'alice', 'ready', '{}')`
+    ).run();
+    await testEnv.DB.prepare(
+      "INSERT INTO sessions (id, challenge_id, gh_login) VALUES ('sessTimer', 'chTimer', 'alice')"
+    ).run();
+    await testEnv.DB.prepare(
+      `INSERT INTO quizzes (id, challenge_id, attempt_number, questions_json, time_limit_ms)
+       VALUES ('quizTimer', 'chTimer', 1,
+         '{"questions":[{"type":"consequence_mcq","prompt":"What does the change do?","options":["a","b","c","d"],"correct":[0]}]}',
+         60000)`
+    ).run();
+    const sessionCookie = await signSessionCookie(testEnv.SESSION_SIGNING_KEY, "sessTimer");
+    const headers = { cookie: `voucha_session=${sessionCookie}; voucha_quiz=quizTimer` };
+
+    const first = await worker.fetch(
+      new Request("https://x/challenge/chTimer/question", { headers }),
+      testEnv,
+      createExecutionContext()
+    );
+    expect(first.status).toBe(200);
+    expect(await first.text()).toContain('<span id="tnum">60</span>');
+
+    await testEnv.DB.prepare("UPDATE quizzes SET question_served_at=? WHERE id='quizTimer'")
+      .bind(new Date(Date.now() - 30_000).toISOString()).run();
+    const refreshed = await worker.fetch(
+      new Request("https://x/challenge/chTimer/question", { headers }),
+      testEnv,
+      createExecutionContext()
+    );
+    const refreshedHtml = await refreshed.text();
+    const seconds = Number(/<span id="tnum">(\d+)<\/span>/.exec(refreshedHtml)?.[1]);
+    expect(seconds).toBeGreaterThanOrEqual(29);
+    expect(seconds).toBeLessThanOrEqual(30);
+    expect(refreshedHtml).toContain("https://github.com/o/r/pull/9/files");
   });
 
   it("does not render Cloudflare testing site keys on production challenge pages", async () => {
@@ -301,6 +340,53 @@ describe("POST /challenge/:id/start", () => {
     const row = await testEnv.DB.prepare("SELECT COUNT(*) AS count FROM quizzes WHERE challenge_id='chMissingTurnstile'")
       .first<{ count: number }>();
     expect(row?.count).toBe(0);
+  });
+
+  it("persists the extended timing option selected on the start form", async () => {
+    await testEnv.DB.prepare(
+      `INSERT INTO challenges (id, installation_id, repo_full_name, pr_number, head_sha,
+        author_login, status, config_json) VALUES ('chExtended', 1, 'o/r', 10, 's10', 'alice', 'ready', '{}')`
+    ).run();
+    await testEnv.DB.prepare(
+      "INSERT INTO sessions (id, challenge_id, gh_login) VALUES ('sessExtended', 'chExtended', 'alice')"
+    ).run();
+    const preparedQuiz = {
+      questions: [0, 1, 2, 3].map((index) => ({
+        type: "consequence_mcq",
+        prompt: `Question ${index + 1} is long enough`,
+        options: ["a", "b", "c", "d"],
+        correct: [0],
+      })),
+    };
+    await testEnv.DB.prepare(
+      "INSERT INTO prepared_quizzes (challenge_id, questions_json) VALUES (?, ?)"
+    ).bind("chExtended", JSON.stringify(preparedQuiz)).run();
+    const cookie = await signSessionCookie(testEnv.SESSION_SIGNING_KEY, "sessExtended");
+    vi.stubGlobal("fetch", vi.fn(async () => new Response(JSON.stringify({ success: true }), {
+      status: 200,
+      headers: { "content-type": "application/json" },
+    })));
+    try {
+      const res = await worker.fetch(new Request("https://x/challenge/chExtended/start", {
+        method: "POST",
+        headers: {
+          "content-type": "application/x-www-form-urlencoded",
+          cookie: `voucha_session=${cookie}`,
+        },
+        body: new URLSearchParams({
+          terms_acceptance: "accepted",
+          extended_timing: "extended",
+          "cf-turnstile-response": "tok",
+        }),
+      }), testEnv, createExecutionContext());
+      expect(res.status).toBe(302);
+      const row = await testEnv.DB.prepare(
+        "SELECT question_served_at, time_limit_ms FROM quizzes WHERE challenge_id='chExtended'"
+      ).first<{ question_served_at: string | null; time_limit_ms: number }>();
+      expect(row).toEqual({ question_served_at: null, time_limit_ms: 600_000 });
+    } finally {
+      vi.unstubAllGlobals();
+    }
   });
 });
 

@@ -16,11 +16,22 @@ import {
 } from "./config";
 import { validateQuiz, type Quiz, type Question } from "./quiz/schema";
 import {
-  canStartAttempt, scoreQuiz, nextCooldown, answerWithinTimeLimit, type Answer,
+  canStartAttempt,
+  scoreQuiz,
+  nextCooldown,
+  answerWithinTimeLimit,
+  EXTENDED_QUESTION_TIME_LIMIT_MS,
+  QUESTION_TIME_LIMIT_MS,
+  type Answer,
 } from "./quiz/grade";
 import { checkAndRecordRate } from "./policy/ratelimit";
 import { evaluateCodeHoneypotSignals } from "./policy/code-honeypot";
-import { buildRiskReport, telemetrySchema, type Telemetry } from "./risk/report";
+import {
+  buildRiskReport,
+  STRONG_TIMING_FAILURE_REASON,
+  telemetrySchema,
+  type Telemetry,
+} from "./risk/report";
 import type { GenerateResult } from "./quiz/generate";
 import { normalizeGitHubLogin, sameGitHubLogin } from "./github/login";
 
@@ -182,7 +193,7 @@ export async function prepareQuizForChallenge(
 
 export async function startQuizAttempt(
   env: Env, deps: ChallengeDeps, challengeId: string, ghLogin: string, turnstileToken: string,
-  honeypotTriggered = false
+  honeypotTriggered = false, useExtendedTiming = false
 ): Promise<StartResult> {
   const challenge = await getChallenge(env.DB, challengeId);
   if (!challenge) return { ok: false, error: "not_found" };
@@ -269,12 +280,15 @@ export async function startQuizAttempt(
   if (hasHoneypotSignal(cfg) && honeypotTriggered) initialTelemetry.honeypotTriggered = true;
   if (codeHoneypot.triggered) initialTelemetry.codeHoneypotTriggered = true;
   await env.DB.prepare(
-    `INSERT INTO quizzes (id, challenge_id, attempt_number, retry_cycle, questions_json, question_served_at, turnstile_ok, telemetry_json)
-     VALUES (?, ?, ?, ?, ?, ?, ?, ?)`
+    `INSERT INTO quizzes (id, challenge_id, attempt_number, retry_cycle, questions_json,
+       question_served_at, time_limit_ms, turnstile_ok, telemetry_json)
+     VALUES (?, ?, ?, ?, ?, NULL, ?, ?, ?)`
   ).bind(
     quizId, challenge.id, challenge.attempts_used + 1,
     challenge.retry_cycle,
-    JSON.stringify(generated.quiz), now.toISOString(), 1,
+    JSON.stringify(generated.quiz),
+    useExtendedTiming ? EXTENDED_QUESTION_TIME_LIMIT_MS : QUESTION_TIME_LIMIT_MS,
+    1,
     JSON.stringify(initialTelemetry)
   ).run();
   return { ok: true, quizId };
@@ -283,7 +297,7 @@ export async function startQuizAttempt(
 interface QuizRow {
   id: string; challenge_id: string; questions_json: string; current_question: number;
   question_served_at: string | null; answers_json: string; telemetry_json: string;
-  turnstile_ok: number | null; finished_at: string | null;
+  turnstile_ok: number | null; finished_at: string | null; time_limit_ms: number;
 }
 
 export type SubmitResult =
@@ -301,6 +315,32 @@ interface StoredTelemetry {
   honeypotTriggered: boolean;
   codeHoneypotTriggered: boolean;
   botFailureReason?: string;
+}
+
+function finiteNonNegative(value: unknown, fallback = 0): number {
+  return typeof value === "number" && Number.isFinite(value) && value >= 0 ? value : fallback;
+}
+
+function parsePerQuestionTelemetry(
+  json: string,
+  serverElapsedMs: number | null
+): PerQuestionTelemetry | null {
+  if (serverElapsedMs === null) return null;
+  try {
+    const parsed = JSON.parse(json) as Record<string, unknown>;
+    return {
+      // Timing used for risk decisions is measured by the server-authoritative
+      // served timestamp, never by the browser-provided elapsed value.
+      elapsedMs: serverElapsedMs,
+      answerChanges: Math.floor(finiteNonNegative(parsed.answerChanges)),
+      pointerDistancePx: finiteNonNegative(parsed.pointerDistancePx),
+      pointerSamples: Math.floor(finiteNonNegative(parsed.pointerSamples)),
+      focusLossCount: Math.floor(finiteNonNegative(parsed.focusLossCount)),
+      webdriver: parsed.webdriver === true,
+    };
+  } catch {
+    return null;
+  }
 }
 
 function parseStoredTelemetry(json: string): StoredTelemetry {
@@ -354,9 +394,15 @@ export async function submitAnswer(
   const questions = (JSON.parse(quiz.questions_json) as Quiz).questions;
   const answers = JSON.parse(quiz.answers_json) as Answer[];
   const now = deps.now();
+  const servedAtMs = quiz.question_served_at === null
+    ? Number.NaN
+    : new Date(quiz.question_served_at).getTime();
+  const serverElapsedMs = Number.isFinite(servedAtMs)
+    ? Math.max(0, now.getTime() - servedAtMs)
+    : null;
 
   const withinTime = quiz.question_served_at !== null &&
-    answerWithinTimeLimit(quiz.question_served_at, now);
+    answerWithinTimeLimit(quiz.question_served_at, now, quiz.time_limit_ms);
   answers.push(withinTime ? answer : null);
 
   // accumulate per-question telemetry (best-effort; malformed input → skipped)
@@ -365,9 +411,8 @@ export async function submitAnswer(
   const perQuestion = stored.perQuestion;
   const sawHoneypot = stored.honeypotTriggered || (hasHoneypotSignal(cfg) && honeypotTriggered);
   const sawCodeHoneypot = stored.codeHoneypotTriggered;
-  try {
-    perQuestion.push(JSON.parse(telemetryJson) as PerQuestionTelemetry);
-  } catch { /* missing telemetry is itself a signal, handled at report time */ }
+  const questionTelemetry = parsePerQuestionTelemetry(telemetryJson, serverElapsedMs);
+  if (questionTelemetry) perQuestion.push(questionTelemetry);
 
   const nextIndex = quiz.current_question + 1;
   const isLast = nextIndex >= questions.length;
@@ -432,7 +477,7 @@ async function finalizeQuiz(
       });
   const report = buildRiskReport(telemetry);
   const assistanceReason = botFailureReason ??
-    (scorePassed && report.automationLikely ? "Challenge assistance signals were detected." : undefined);
+    (scorePassed && report.strongTimingEvidence ? STRONG_TIMING_FAILURE_REASON : undefined);
   const passed = scorePassed && !assistanceReason;
 
   if (assistanceReason) {
