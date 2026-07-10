@@ -4830,22 +4830,22 @@ function contextPanel(_prRef: string, variant: "verify" | "start" | "question"):
     note: string;
   }> = {
     verify: {
-      heading: "What to expect",
+      heading: "What to do",
       items: [
-        ["1", "Post the command", "As the author, in the PR thread."],
+        ["1", "Post the verification comment in the GitHub PR", "As the author, in the PR thread."],
         ["2", "GitHub confirms it's you", "Authorship is checked from the comment."],
         ["3", "Then answer", "This tab continues on its own."],
       ],
-      note: "VOUCHA records timing summaries for maintainers. No keystrokes, webcam, or screen recording.",
+      note: "VOUCHA records timing summaries for maintainers.",
     },
     start: {
-      heading: "What to expect",
+      heading: "What to do",
       items: [
         ["PR", "From this PR", "Questions come from your actual diff."],
         ["60s", "Per question", "A 60-second timer, then it advances."],
         ["✓", "On finish", "Your result posts to the PR as a check."],
       ],
-      note: "Your answers and timing summaries stay with maintainers. No keystrokes, webcam, or screen recording.",
+      note: "Your answers and timing summaries stay with maintainers.",
     },
     question: {
       heading: "During the quiz",
@@ -4862,7 +4862,7 @@ function contextPanel(_prRef: string, variant: "verify" | "start" | "question"):
     .map(([icon, label, detail]) =>
       `<div class="info-item"><span class="info-icon">${esc(icon)}</span><span><b>${esc(label)}</b>${esc(detail)}</span></div>`)
     .join("\n      ");
-  return `<aside class="context-panel" aria-label="What to expect">
+  return `<aside class="context-panel" aria-label="What to do">
   <section class="context-section">
     <h2>${esc(spec.heading)}</h2>
     <div class="info-list">
