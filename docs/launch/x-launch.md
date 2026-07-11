@@ -39,7 +39,7 @@ The post is 279 characters as written.
 > VOUCHA check, author verification, diff-specific challenge, and recorded
 > result—including the PR label selected by repository settings.
 >
-> https://github.com/idosal/voucha-owner-check-e2e/pull/10
+> https://github.com/idosal/voucha-owner-check-e2e/pull/11
 
 ### Reply 2 — install
 
@@ -73,7 +73,7 @@ discussion. Do not mass-tag the list below.
 > open while requiring the author to answer questions about their own diff.
 > It’s not an AI detector; it is a comprehension and accountability check. If
 > useful, I’ll configure it on a sandbox/public repo with you and remove it if
-> it adds noise. Live example: https://github.com/idosal/voucha-owner-check-e2e/pull/10
+> it adds noise. Live example: https://github.com/idosal/voucha-owner-check-e2e/pull/11
 
 ## Priority outreach list
 
