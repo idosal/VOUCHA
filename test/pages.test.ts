@@ -30,6 +30,8 @@ describe("challenge pages", () => {
     expect(html).toContain('<meta property="og:image:width" content="1200">');
     expect(html).toContain('<meta property="og:image:height" content="630">');
     expect(html).toContain('<source media="(prefers-color-scheme: dark)" srcset="/voucha-logo-dark.svg">');
+    expect(html).toContain("body:not(.site-body) .brand-mark{");
+    expect(html).toContain("background:transparent");
     expect(html).toContain('<link rel="icon" type="image/svg+xml" href="/favicon-dark.svg" media="(prefers-color-scheme: dark)">');
     expect(html).toContain('<link rel="apple-touch-icon" href="/apple-touch-icon-dark.png" media="(prefers-color-scheme: dark)">');
     expect(html).toContain("Deploy to Cloudflare");

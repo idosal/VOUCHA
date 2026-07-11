@@ -4760,6 +4760,14 @@ body:not(.site-body) .state-card p{
   padding:0;
   overflow:visible;
 }
+body:not(.site-body) .brand-mark{
+  border:0;
+  border-radius:0;
+  background:transparent;
+  color:inherit;
+  padding:0;
+  overflow:visible;
+}
 .brand-mark{
   width:34px;
   height:34px;

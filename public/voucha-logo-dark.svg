@@ -1,13 +1,10 @@
 <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 240 240" role="img" aria-labelledby="title desc">
   <title id="title">VOUCHA logo mark for dark mode</title>
-  <desc id="desc">A block V made from outlined policy tiles above the official Git mark.</desc>
+  <desc id="desc">A block V made from light policy tiles above the official Git mark.</desc>
   <defs>
     <style>
       .ink {
-        fill: #101816;
-        stroke: #edf6ec;
-        stroke-width: 3;
-        vector-effect: non-scaling-stroke;
+        fill: #edf6ec;
       }
     </style>
   </defs>
