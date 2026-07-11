@@ -6,13 +6,16 @@ description: A practical first rollout path for adding VOUCHA to a repository.
 Start with a narrow policy, verify the check-run behavior on a few known PRs,
 then tighten path-specific rules only where maintainers actually need them.
 
-## 1. Self-deploy the service
+## 1. Install VOUCHA
 
-VOUCHA is currently self-deployed. Run the Cloudflare Worker, D1 database,
-GitHub App credentials, Turnstile keys, and model provider in your own account.
+For a public repository, [install the hosted GitHub App](https://github.com/apps/voucha-app/installations/new)
+and select the repositories it may access. The hosted service is free and uses
+the built-in policy until you add `.github/voucha.yml` to a merge target.
+
+For private repositories or a fully operator-owned data boundary, self-host the
+Worker, D1 database, GitHub App credentials, Turnstile keys, and model provider.
 The setup wizard deploys the Worker, creates the GitHub App through GitHub's
-manifest flow, writes Worker secrets, and leaves repository policy in
-`.github/voucha.yml`.
+manifest flow, and writes Worker secrets:
 
 ```bash
 npx wrangler login && npm run setup
@@ -21,6 +24,9 @@ npx wrangler login && npm run setup
 The Worker uses Workers AI by default. External model providers and the
 optional Flue investigator are advanced deployment choices, not prerequisites
 for the first repository.
+
+See the entire hosted flow on the
+[public demo pull request](https://github.com/idosal/voucha-owner-check-e2e/pull/6).
 
 ## 2. Add the first policy file
 

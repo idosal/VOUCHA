@@ -114,5 +114,5 @@ Quiz questions and correct answers are needed while a challenge is active. Once
 the challenge reaches a terminal result, stored question text is purged while
 score, answers, status, and summary telemetry remain as the audit trail.
 
-See [Privacy and data](/docs/privacy-data/) for the self-deployed data boundary
-and the contributor acceptance flow.
+See [Privacy and data](/docs/privacy-data/) for the hosted and self-hosted data
+boundaries and the contributor acceptance flow.

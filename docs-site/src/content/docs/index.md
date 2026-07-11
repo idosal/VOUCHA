@@ -55,10 +55,10 @@ comprehension challenge before maintainer review.
 | --- | --- |
 | [Why use VOUCHA](/docs/why-voucha/) | Decide whether this belongs in the repository's review path. |
 | [Getting started](/docs/getting-started/) | Add the first policy file and verify the first scenarios. |
-| [Deployment](/docs/deployment/) | Self-deploy the Worker, then configure GitHub App, Turnstile, model provider, and Flue. |
+| [Deployment](/docs/deployment/) | Install the hosted app or self-host the Worker, GitHub App, Turnstile, model provider, and Flue. |
 | [Common practices](/docs/common-practices/) | Roll out accountability, GitHub PR limits, trust tiers, honeypots, path rules, drafts, retries, and output volume. |
 | [Verification checklist](/docs/verification/) | Smoke-test a real repository, drill failure modes, and record rollout evidence. |
-| [Privacy and data](/docs/privacy-data/) | Explain the self-deployed data boundary and contributor challenge acceptance. |
+| [Privacy and data](/docs/privacy-data/) | Explain hosted and self-hosted data boundaries and contributor challenge acceptance. |
 | [Configuration](/docs/configuration/) | Check the full current policy surface and defaults. |
 
 ## Default failure posture

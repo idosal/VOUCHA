@@ -1,14 +1,18 @@
 ---
 title: Deployment
-description: Self-deployed setup for VOUCHA, including GitHub App, Turnstile, model provider, Flue, and cron requirements.
+description: Hosted installation and self-deployed setup for VOUCHA, including GitHub App, Turnstile, model provider, Flue, and cron requirements.
 ---
 
-VOUCHA currently runs as a self-deployed Cloudflare Worker in your own
-account. Repository policy stays in `.github/voucha.yml`; credentials and
-storage stay under the operator's Cloudflare and GitHub accounts.
+Public repositories can use the
+[hosted GitHub App](https://github.com/apps/voucha-app/installations/new)
+without deploying infrastructure or supplying a model key. Install the app,
+select the repositories it may access, and optionally add `.github/voucha.yml`
+to a merge target.
 
-Self-deploy when you want to control Cloudflare account, storage, model
-provider, GitHub App, secrets, and retention posture.
+Self-deploy for private repositories or when you want to control the Cloudflare
+account, storage, model provider, GitHub App, secrets, and retention posture.
+
+## Self-hosted setup
 
 Local setup requires Node.js 22.22.1 or newer and npm.
 

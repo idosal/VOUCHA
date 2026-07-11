@@ -3,8 +3,10 @@ title: Privacy and data
 description: What VOUCHA stores, what it reads transiently, and what contributors accept before a challenge starts.
 ---
 
-VOUCHA is currently self-deployed. Operators control their own Cloudflare
-storage, GitHub App credentials, model provider choices, and data retention.
+The hosted VOUCHA App is available for public repositories and stores its
+challenge records in the managed VOUCHA Cloudflare deployment. Self-hosted
+operators control their own Cloudflare storage, GitHub App credentials, model
+provider choices, and data retention.
 
 The product is designed to keep data custody narrow: enough public PR context
 to run the gate, plus the answers and summary signals a contributor accepts

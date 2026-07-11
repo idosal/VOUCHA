@@ -7,6 +7,28 @@ submitting changes without understanding them is not. Challenge answers must
 come from the PR author's own understanding. Passing posts a public
 attestation; maintainers get a behavioral risk report.
 
+**[Install VOUCHA on GitHub](https://github.com/apps/voucha-app/installations/new)**
+· **[See the live demo](https://github.com/idosal/voucha-owner-check-e2e/pull/6)**
+· **[Read the docs](https://voucha.dev/docs/)**
+
+The hosted app is free for public repositories. Install it, select a repository,
+and open a pull request; the built-in defaults work without a policy file.
+Private repositories and teams that want full control can
+[self-host the same open-source app](#self-host-voucha).
+
+## Quick start
+
+1. [Install the hosted GitHub App](https://github.com/apps/voucha-app/installations/new)
+   and select a public repository.
+2. Open a pull request. VOUCHA resolves trust and path exemptions first, then
+   adds a comprehension check only when the repository policy calls for one.
+3. Keep the defaults, or copy [`templates/voucha.yml`](templates/voucha.yml) to
+   `.github/voucha.yml` on the merge target branch and adapt it to your review
+   risks.
+4. Walk through [the public demo PR](https://github.com/idosal/voucha-owner-check-e2e/pull/6)
+   to see the GitHub check, author verification, diff-specific challenge, and
+   resulting attestation in context.
+
 ## How it works
 
 1. Install the GitHub App on a repo and add `.github/voucha.yml` if the
@@ -392,16 +414,28 @@ segment (split on `/`) — no regex, so it can't backtrack pathologically:
 - Every other character — including `?`, `.`, `(` — is matched **literally**,
   not as a special glob/regex character.
 
-## Deploy
+## Install or self-host
+
+### Hosted GitHub App
+
+For public repositories, use the managed service:
+
+**[Install VOUCHA on GitHub](https://github.com/apps/voucha-app/installations/new)**
+
+No Cloudflare account or model key is required. Select the repositories VOUCHA
+may access, then use the built-in policy or add `.github/voucha.yml` to the base
+branch. The hosted app intentionally supports public repositories only.
+
+### Self-host VOUCHA
 
 [![Deploy to Cloudflare](https://deploy.workers.cloudflare.com/button)](https://deploy.workers.cloudflare.com/?url=https://github.com/idosal/VOUCHA)
 
 Local CLI setup requires Node.js 22.22.1+ and npm. VOUCHA uses Vite with
 Cloudflare's Workers plugin for local development and build output.
 
-VOUCHA is currently self-deployed. The managed GitHub App is not public yet;
-the shareable path is to deploy the Worker and create a GitHub App in your own
-GitHub account through the setup wizard.
+Self-host when you need private-repository support, your own Cloudflare and
+model-provider boundary, or full control over retention and operations. The
+setup wizard deploys the Worker and creates a GitHub App in your own account.
 
 Two self-deploy paths — both end with the same wizard:
 
