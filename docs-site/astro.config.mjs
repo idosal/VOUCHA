@@ -38,6 +38,7 @@ export default defineConfig({
           label: "Operate",
           items: [
             { label: "Policy evaluation", slug: "policy" },
+            { label: "Vouch integration", slug: "vouch-integration" },
             { label: "Issue-backed triage", slug: "issue-triage" },
             { label: "Passive signals", slug: "passive-signals" },
             { label: "Challenge lifecycle", slug: "challenge-lifecycle" },

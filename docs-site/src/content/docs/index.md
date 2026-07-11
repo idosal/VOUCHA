@@ -26,6 +26,7 @@ comprehension challenge before maintainer review.
 | Repository policy | `.github/voucha.yml` from the merge target | PRs cannot relax their own gate by editing config on the feature branch. |
 | Path-specific policy | first matching `path_rules` entry | Sensitive paths can override gates, approval, attempts, cooldown, and scope. |
 | Accountability | optional PR-body acknowledgement and AI disclosure fields | Missing required policy fields fail before a quiz is created. |
+| Vouch trust | optional merge-target `VOUCHED.td` lookup | Vouched authors skip the challenge, unknown authors continue, and denounced authors receive a failed check. |
 | Exemptions | configurable default author trust, author rules, teams, repository roles, prior merged PRs, paths, size, issue context | Trusted or out-of-scope work gets an explanatory success check. |
 | Bot verification and signals | Turnstile, browser automation flags, hidden form fields, code canaries, timing, pointer summaries | Turnstile, browser automation, and repeated server-measured sub-two-second answers can stop the gate; inconclusive signals are report-only. |
 | Challenge | generated questions about intent, behavior, affected surfaces, and blast radius | A passing author attests that they understand the change. |
@@ -57,6 +58,7 @@ comprehension challenge before maintainer review.
 | [Why use VOUCHA](/docs/why-voucha/) | Decide whether this belongs in the repository's review path. |
 | [Getting started](/docs/getting-started/) | Add the first policy file and verify the first scenarios. |
 | [Deployment](/docs/deployment/) | Install the hosted app or self-host the Worker, GitHub App, Turnstile, model provider, and Flue. |
+| [Vouch integration](/docs/vouch-integration/) | Compose durable community trust with per-PR comprehension evidence. |
 | [Common practices](/docs/common-practices/) | Roll out accountability, GitHub PR limits, trust tiers, honeypots, path rules, drafts, retries, and output volume. |
 | [Verification checklist](/docs/verification/) | Smoke-test a real repository, drill failure modes, and record rollout evidence. |
 | [Privacy and data](/docs/privacy-data/) | Explain hosted and self-hosted data boundaries and contributor challenge acceptance. |

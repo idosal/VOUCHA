@@ -131,6 +131,9 @@ otherwise apply. Missing files and read errors fall through to the normal gate.
 VOUCHA never writes to the Vouch list or converts a challenge pass into a
 durable community endorsement.
 
+See [Vouch integration](/docs/vouch-integration/) for the complete setup and
+operational contract.
+
 `repository_permission` matches GitHub's `role_name` values, including
 `maintain`, `admin`, and custom repository roles, as well as the legacy
 `permission` values returned by the same endpoint.
@@ -233,5 +236,5 @@ comment volume:
 independently control their matching `pr-comprehension:*` labels. VOUCHA
 removes stale outcome labels as the check state changes. A passed
 legacy/imported record with strong automation evidence receives the flagged
-label when enabled; inconclusive signals never add it. Legacy boolean `labels`
-settings remain supported.
+label when enabled; inconclusive signals never add it. Configure labels with
+the outcome-specific nested object.

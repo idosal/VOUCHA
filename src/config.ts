@@ -271,16 +271,11 @@ const rechallengeSchema = z.object({
   questions: DEFAULT_RECHALLENGE.questions,
 }));
 
-const outputLabelsSchema = z.union([
-  z.boolean().transform((enabled) => enabled
-    ? { ...DEFAULT_OUTPUT_LABELS }
-    : { passed: false, failed: false, flagged: false }),
-  z.object({
-    passed: z.boolean().catch(DEFAULT_OUTPUT_LABELS.passed),
-    failed: z.boolean().catch(DEFAULT_OUTPUT_LABELS.failed),
-    flagged: z.boolean().catch(DEFAULT_OUTPUT_LABELS.flagged),
-  }).catch(() => ({ ...DEFAULT_OUTPUT_LABELS })),
-]).catch(() => ({ ...DEFAULT_OUTPUT_LABELS }));
+const outputLabelsSchema = z.object({
+  passed: z.boolean().catch(DEFAULT_OUTPUT_LABELS.passed),
+  failed: z.boolean().catch(DEFAULT_OUTPUT_LABELS.failed),
+  flagged: z.boolean().catch(DEFAULT_OUTPUT_LABELS.flagged),
+}).catch(() => ({ ...DEFAULT_OUTPUT_LABELS }));
 
 const outputSchema = z.object({
   comments: z.enum(["quiet", "normal", "detailed"]).catch(DEFAULT_OUTPUT.comments),

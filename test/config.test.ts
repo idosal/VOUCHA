@@ -255,17 +255,10 @@ describe("parseConfig", () => {
     expect(cfg.context.ignore_paths).toEqual(["dist/**", "*.lock"]);
   });
 
-  it("keeps legacy boolean label settings compatible", () => {
-    expect(parseConfig("output:\n  labels: true\n").output.labels).toEqual({
-      passed: false,
-      failed: true,
-      flagged: true,
-    });
-    expect(parseConfig("output:\n  labels: false\n").output.labels).toEqual({
-      passed: false,
-      failed: false,
-      flagged: false,
-    });
+  it("requires outcome-specific label settings", () => {
+    expect(parseConfig("output:\n  labels: false\n").output.labels).toEqual(
+      DEFAULT_CONFIG.output.labels
+    );
   });
 
   it("parses accountability settings", () => {

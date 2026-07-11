@@ -243,6 +243,9 @@ policy, and denounced authors receive a failed check. A missing or unreadable
 file fails closed to the normal gate. Passing VOUCHA does not modify the Vouch
 list or turn a one-PR result into a durable contributor endorsement.
 
+See [Vouch integration](/docs/vouch-integration/) for status precedence,
+Trustdown compatibility, security boundaries, and rollout checks.
+
 `author_login` and `author_association` add repository-specific trust. `repository_permission`
 reuses GitHub's collaborator permission API, matching both `role_name` values
 such as `maintain`, `admin`, and custom repository roles, and legacy
@@ -408,9 +411,8 @@ outcome labels as the check moves between passing and failing states. The
 flagged label remains defense in depth for passed legacy/imported records with
 strong automation evidence; inconclusive signals never add it.
 
-For compatibility, legacy `labels: true` maps to `{ passed: false, failed: true,
-flagged: true }`, preserving the pre-object behavior. Legacy `labels: false`
-disables all three labels.
+Use the nested object form shown above; scalar boolean values are invalid and
+fall back to the default outcome-specific settings.
 
 `contributor_message` optionally replaces the opening text in an active
 challenge comment (including after maintainer approval or a retry). It accepts
