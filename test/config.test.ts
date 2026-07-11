@@ -220,6 +220,7 @@ describe("parseConfig", () => {
       "output:",
       "  comments: detailed",
       "  labels: false",
+      "  contributor_message: 'Thanks {{author}}. You have {{max_attempts}} attempts.'",
       "context:",
       "  ignore_paths: ['dist/**', '*.lock', 'dist/**']",
       "",
@@ -234,7 +235,11 @@ describe("parseConfig", () => {
       ignore_paths: ["docs/**"],
       questions: 2,
     });
-    expect(cfg.output).toEqual({ comments: "detailed", labels: false });
+    expect(cfg.output).toEqual({
+      comments: "detailed",
+      labels: false,
+      contributor_message: "Thanks {{author}}. You have {{max_attempts}} attempts.",
+    });
     expect(cfg.context.ignore_paths).toEqual(["dist/**", "*.lock"]);
   });
 

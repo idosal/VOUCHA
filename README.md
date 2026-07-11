@@ -155,6 +155,8 @@ max_context_tokens: null
 output:
   comments: normal        # quiet | normal | detailed
   labels: true
+  # Optional Markdown intro; supports {{author}}, {{max_attempts}}, and {{challenge_url}}
+  contributor_message: null
 enforcement:
   auto_close: false       # false | true, or { enabled: true, outcomes: [failed_final] }
 ```
@@ -179,7 +181,7 @@ enforcement:
 | `include_paths` | `[]` | Optional glob list for opt-in scope. When non-empty, a PR is exempt unless at least one changed file matches one of these patterns. PRs with zero reported changed files are never exempted this way. |
 | `context` | `{ strategy: "adaptive", investigator: "auto", map_tokens: 8000, detail_tokens: 24000, max_files: 12, max_model_calls: 3, ignore_paths: [], large_pr: { changed_files: 100, changed_lines: 5000 } }` | Controls PR investigation before quiz generation. `context.ignore_paths` removes low-signal files from quiz evidence without changing whether the PR is challenged. `context.investigator: auto` uses the Flue investigator for large PRs when configured. |
 | `max_context_tokens` | `null` | Legacy/direct-generation cap used when `context.strategy: truncate`. `null` = uncapped: the full diff is sent to the LLM (bounded only by the model's context window). If set to a positive integer, the diff sent to the LLM is truncated to roughly that many tokens (~4 chars/token estimate) and replaced past that point with a full list of changed filenames. Invalid values fall back to `null`. Adaptive fallback uses a bounded cap from `context.detail_tokens`; large/Flue investigation failures do not fall back to direct raw-diff generation. |
-| `output` | `{ comments: "normal", labels: true }` | Controls PR comment volume and whether flagged-pass labels are applied. `comments: quiet` relies on check-run output only; `detailed` includes risk detail in outcome comments. |
+| `output` | `{ comments: "normal", labels: true, contributor_message: null }` | Controls PR comment volume, optional repository-specific challenge wording, and flagged-pass labels. `contributor_message` supports Markdown plus `{{author}}`, `{{max_attempts}}`, and `{{challenge_url}}`; `comments: quiet` relies on check-run output only, while `detailed` includes risk detail in outcome comments. |
 | `enforcement` | `{ auto_close: { enabled: false, outcomes: ["failed_assisted", "failed_final"] } }` | Optional PR auto-close behavior. When enabled, VOUCHA closes PRs after configured terminal hard failures only; retryable failures and neutral service failures are never auto-closed. |
 
 Maintainers, repo admins, and users with `OWNER`/`MEMBER`/`COLLABORATOR`

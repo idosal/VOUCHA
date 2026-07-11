@@ -75,6 +75,24 @@ async function commentAuthorCanMaintain(api: GitHubApi, repo: string, payload: a
   return hasWriteRepositoryAccess(await api.getUserPermission(repo, payload.comment.user.login));
 }
 
+function contributorMessage(
+  cfg: VouchaConfig,
+  authorLogin: string,
+  url: string,
+  shortDeltaBase?: string
+): string {
+  const fallback = shortDeltaBase
+    ? `@${authorLogin}: take a short follow-up quiz about changes since ${shortDeltaBase} to turn the check green (${cfg.max_attempts} attempts max):`
+    : `@${authorLogin}: take a short comprehension quiz about this change to turn the check green (${cfg.max_attempts} attempts max):`;
+  const template = cfg.output.contributor_message;
+  if (!template) return fallback;
+
+  return template
+    .replaceAll("{{author}}", `@${authorLogin}`)
+    .replaceAll("{{max_attempts}}", String(cfg.max_attempts))
+    .replaceAll("{{challenge_url}}", url);
+}
+
 function commentBody(
   env: Env,
   challengeId: string,
@@ -103,13 +121,11 @@ function commentBody(
   return [
     "## VOUCHA",
     "",
-    shortDeltaBase
-      ? `@${authorLogin}: take a short follow-up quiz about changes since ${shortDeltaBase} to turn the check green (${cfg.max_attempts} attempts max):`
-      : `@${authorLogin}: take a short comprehension quiz about this change to turn the check green (${cfg.max_attempts} attempts max):`,
+    contributorMessage(cfg, authorLogin, url, shortDeltaBase),
     "",
     `➡️ **[Start the challenge](${url})**`,
     "",
-    "The challenge page copies the one-time verification command, opens this PR, and continues automatically after your comment lands.",
+    "To start, open the challenge page, copy the one-time verification command, and reply to this PR. The process continues automatically in the challenge page after your comment lands.",
     "",
     shortDeltaBase
       ? "_AI assistance in authoring is allowed. Challenge answers must come from your own understanding. This follow-up quiz is generated only from the commits after your previous pass; answers are graded automatically._"

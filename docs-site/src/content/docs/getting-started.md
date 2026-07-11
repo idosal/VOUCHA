@@ -52,11 +52,17 @@ skip_paths: ["docs/**", "*.md"]
 min_changed_lines: 10
 output:
   comments: normal
+  contributor_message: >
+    Thanks for contributing, {{author}}. Please complete this short check
+    when you're ready.
 ```
 
 This gives first-time contributors a maintainer checkpoint before the quiz,
 keeps draft PRs quiet until they are ready for review, skips docs-only work,
 and records the default form honeypot signal as review evidence.
+`contributor_message` is optional; it lets the repository set the tone of the
+action-required PR comment while VOUCHA keeps the challenge link and status
+wording consistent.
 
 Also copy or adapt `templates/contributing-policy.md` into `CONTRIBUTING.md`
 and `templates/pull_request_template.md` into the repository PR template. It

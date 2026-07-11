@@ -86,6 +86,9 @@ max_context_tokens: null
 output:
   comments: normal
   labels: true
+  # Optional Markdown intro for the action-required comment. Available
+  # placeholders: {{author}}, {{max_attempts}}, {{challenge_url}}.
+  contributor_message: null
 
 enforcement:
   auto_close:

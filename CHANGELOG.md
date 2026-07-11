@@ -20,6 +20,8 @@ VOUCHA's first stable public release.
   and small changes.
 - Path-specific policy overrides, delta-aware challenges after new commits,
   maintainer approval, retry, and optional terminal-failure auto-close.
+- Repository-specific contributor wording for active challenge comments, with
+  safe placeholders for the author, attempt limit, and challenge URL.
 - Report-only form honeypots and maintainer-authored code canaries.
 
 ### Contributor and review workflow

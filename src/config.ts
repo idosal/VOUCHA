@@ -77,6 +77,7 @@ const DEFAULT_DRAFT_PRS = "ignore" as const;
 const DEFAULT_OUTPUT = Object.freeze({
   comments: "normal" as const,
   labels: true,
+  contributor_message: null as string | null,
 });
 
 const DEFAULT_AUTO_CLOSE = Object.freeze({
@@ -261,9 +262,11 @@ const rechallengeSchema = z.object({
 const outputSchema = z.object({
   comments: z.enum(["quiet", "normal", "detailed"]).catch(DEFAULT_OUTPUT.comments),
   labels: z.boolean().catch(DEFAULT_OUTPUT.labels),
+  contributor_message: z.string().trim().min(1).max(2000).nullable().catch(DEFAULT_OUTPUT.contributor_message),
 }).catch(() => ({
   comments: DEFAULT_OUTPUT.comments,
   labels: DEFAULT_OUTPUT.labels,
+  contributor_message: DEFAULT_OUTPUT.contributor_message,
 }));
 
 function defaultAutoClosePolicy() {

@@ -105,6 +105,7 @@ max_context_tokens: null
 output:
   comments: normal
   labels: true
+  contributor_message: null
 
 enforcement:
   auto_close:
@@ -122,7 +123,7 @@ enforcement:
 | Approval and retry | `require_approval`, `accountability`, `max_attempts`, `cooldown_minutes`, `draft_prs`, `rechallenge` | Human approval, required PR-body accountability fields, drafts, retry limits, cooldown, and new-commit behavior. |
 | Passive evidence | `signals`, `output.labels` | Honeypot fields, code canaries, and flagged-pass labels. |
 | Investigation | `context`, `max_context_tokens` | How PR evidence is condensed before quiz generation. |
-| Reporting | `output.comments`, `output.labels` | PR comment volume and best-effort labels. |
+| Reporting | `output.comments`, `output.contributor_message`, `output.labels` | PR comment volume, contributor-facing wording, and best-effort labels. |
 | Enforcement | `enforcement.auto_close` | Optional PR auto-close behavior after terminal hard failures. |
 
 ## Gates
@@ -366,11 +367,20 @@ omitted.
 output:
   comments: normal
   labels: true
+  contributor_message: >
+    Thanks for contributing, {{author}}. You have {{max_attempts}} attempts;
+    use {{challenge_url}} when you're ready.
 ```
 
 `comments` accepts `quiet`, `normal`, or `detailed`. `labels: true` keeps a
 defense-in-depth `pr-comprehension:flagged` label for passed legacy/imported
 records with strong automation evidence. Inconclusive signals never add it.
+
+`contributor_message` optionally replaces the opening text in an active
+challenge comment (including after maintainer approval or a retry). It accepts
+Markdown and the `{{author}}`, `{{max_attempts}}`, and `{{challenge_url}}`
+placeholders. VOUCHA retains the challenge link and outcome wording so the PR
+always has an unambiguous next step and status.
 
 `enforcement.auto_close` is off by default. When enabled, VOUCHA closes the PR
 after configured terminal hard-failure outcomes; it never closes retryable
@@ -447,5 +457,5 @@ older truncation path.
 | `skip_paths` | `["docs/**", "*.md"]` |
 | `include_paths` | `[]` |
 | `context` | adaptive Worker/Flue auto selection with 8000 map tokens, 24000 detail tokens, 12 files, and large PR threshold of 100 files or 5000 changed lines |
-| `output` | `{ comments: "normal", labels: true }` |
+| `output` | `{ comments: "normal", labels: true, contributor_message: null }` |
 | `enforcement` | `{ auto_close: { enabled: false, outcomes: ["failed_assisted", "failed_final"] } }` |

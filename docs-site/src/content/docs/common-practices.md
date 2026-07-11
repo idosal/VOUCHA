@@ -158,6 +158,11 @@ During rollout, `output.comments: normal` makes the workflow easy to inspect.
 Use `detailed` briefly when maintainers need risk detail in PR comments. Use
 `quiet` for high-volume repositories where check-run output is enough.
 
+Set `output.contributor_message` when the repository wants its own welcome or
+review language in the action-required comment. The message supports Markdown
+and `{{author}}`, `{{max_attempts}}`, and `{{challenge_url}}`; keep it short and
+leave policy outcomes to VOUCHA so contributors always see a clear status.
+
 Keep `output.labels: true` as defense in depth for legacy or imported passed
 records that contain strong automation evidence. Inconclusive signals remain in
 the check-run report and never add a label by themselves.

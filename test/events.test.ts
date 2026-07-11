@@ -110,6 +110,28 @@ describe("handlePullRequestEvent", () => {
     expect(ch?.status).toBe("ready");
   });
 
+  it("uses a repository's contributor message in the challenge comment", async () => {
+    const api = stubApi({
+      getFileContent: vi.fn(async () => [
+        "output:",
+        "  contributor_message: 'Welcome {{author}}. You have {{max_attempts}} attempts; use {{challenge_url}} when you are ready.'",
+        "",
+      ].join("\n")),
+      getPr: vi.fn(async () => ({ ...pr, author_association: "CONTRIBUTOR" })),
+    });
+    const n = uniq + 3;
+    const p = payloadFor(n);
+    p.pull_request.author_association = "CONTRIBUTOR";
+
+    await handlePullRequestEvent(testEnv, api, p);
+
+    const [, , comment] = (api.upsertPrComment as ReturnType<typeof vi.fn>).mock.calls[0];
+    expect(comment).toContain("Welcome @contributor. You have 3 attempts; use https://voucha.dev/challenge/");
+    expect(comment).not.toContain("{{author}}");
+    expect(comment).not.toContain("take a short comprehension quiz");
+    expect(comment).toContain("**[Start the challenge](https://voucha.dev/challenge/");
+  });
+
   it("creates a challenge for owner PRs when default author association trust is disabled", async () => {
     const api = stubApi({
       getFileContent: vi.fn(async () => [
