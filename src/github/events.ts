@@ -19,6 +19,7 @@ import {
   shouldRechallengeOnPush,
 } from "../policy/exemptions";
 import { evaluateLinkedIssueExemption } from "../policy/linked-issue";
+import { evaluateVouchTrust } from "../policy/vouch";
 import {
   getChallengeByPr, getLatestChallengeForPr, getLatestPassedChallenge,
   insertChallenge, restartChallengeForRetry, setChallengeStatus, supersedeOldChallenges,
@@ -196,6 +197,38 @@ export async function handlePullRequestEvent(
         accountability.summary,
       ].join("\n"));
     }
+    return;
+  }
+
+  const vouch = await evaluateVouchTrust(
+    { repo, authorLogin: pr.author_login, baseRef: baseConfigRef },
+    cfg,
+    { getFileContent: (repoName, path, ref) => api.getFileContent(repoName, path, ref) }
+  );
+  if (vouch.status === "vouched") {
+    await api.createCheckRun(repo, {
+      name: CHECK_NAME, head_sha: headSha, status: "completed", conclusion: "success",
+      output: {
+        title: "Trusted by Vouch",
+        summary: withCodeHoneypotSummary(
+          `No challenge required: @${pr.author_login} is vouched in ${vouch.file}.`,
+          codeHoneypot
+        ),
+      },
+    });
+    return;
+  }
+  if (vouch.status === "denounced") {
+    await api.createCheckRun(repo, {
+      name: CHECK_NAME, head_sha: headSha, status: "completed", conclusion: "failure",
+      output: {
+        title: "Blocked by Vouch",
+        summary: withCodeHoneypotSummary(
+          `Repository trust policy: @${pr.author_login} is denounced in ${vouch.file}.`,
+          codeHoneypot
+        ),
+      },
+    });
     return;
   }
 

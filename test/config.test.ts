@@ -26,6 +26,11 @@ describe("parseConfig", () => {
       ignore_paths: ["docs/**", "*.md"],
       questions: 2,
     });
+    expect(DEFAULT_CONFIG.output.labels).toEqual({
+      passed: false,
+      failed: true,
+      flagged: true,
+    });
   });
 
   it("keeps the default repository template in sync with DEFAULT_CONFIG", () => {
@@ -219,7 +224,10 @@ describe("parseConfig", () => {
       "  questions: 2",
       "output:",
       "  comments: detailed",
-      "  labels: false",
+      "  labels:",
+      "    passed: true",
+      "    failed: false",
+      "    flagged: false",
       "  contributor_message: 'Thanks {{author}}. You have {{max_attempts}} attempts.'",
       "context:",
       "  ignore_paths: ['dist/**', '*.lock', 'dist/**']",
@@ -237,10 +245,27 @@ describe("parseConfig", () => {
     });
     expect(cfg.output).toEqual({
       comments: "detailed",
-      labels: false,
+      labels: {
+        passed: true,
+        failed: false,
+        flagged: false,
+      },
       contributor_message: "Thanks {{author}}. You have {{max_attempts}} attempts.",
     });
     expect(cfg.context.ignore_paths).toEqual(["dist/**", "*.lock"]);
+  });
+
+  it("keeps legacy boolean label settings compatible", () => {
+    expect(parseConfig("output:\n  labels: true\n").output.labels).toEqual({
+      passed: false,
+      failed: true,
+      flagged: true,
+    });
+    expect(parseConfig("output:\n  labels: false\n").output.labels).toEqual({
+      passed: false,
+      failed: false,
+      flagged: false,
+    });
   });
 
   it("parses accountability settings", () => {
@@ -304,6 +329,23 @@ describe("parseConfig", () => {
       "  default_author_associations: [owner, nope]",
       "",
     ].join("\n")).trust.default_author_associations).toEqual(["OWNER", "MEMBER", "COLLABORATOR"]);
+  });
+
+  it("parses the optional Vouch trust provider", () => {
+    expect((parseConfig(null).trust as any).vouch).toEqual({
+      enabled: false,
+      file: ".github/VOUCHED.td",
+    });
+    expect((parseConfig([
+      "trust:",
+      "  vouch:",
+      "    enabled: true",
+      "    file: VOUCHED.td",
+      "",
+    ].join("\n")).trust as any).vouch).toEqual({
+      enabled: true,
+      file: "VOUCHED.td",
+    });
   });
 
   it("maps legacy bot and rechallenge booleans into structured policies", () => {

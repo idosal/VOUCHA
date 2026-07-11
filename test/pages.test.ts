@@ -43,7 +43,7 @@ describe("challenge pages", () => {
     expect(html).toContain("Is this a quiz, or a governance layer?");
     expect(html).toContain('href="/docs/challenge-lifecycle/"');
     expect(html).toContain('href="/docs/"');
-    expect(html).toContain('href="https://github.com/apps/voucha-app/installations/new"');
+    expect(html).toContain('href="https://github.com/apps/voucha-checks/installations/new"');
     expect(html).not.toContain("Open the Starlight docs");
     expect(html).not.toContain("VOUCHAA");
     expect(html).toContain("short configurable tests scoped to the diff");

@@ -42,6 +42,9 @@ trust:
   # Set default_author_associations: [] when owners, members, and
   # collaborators should take the challenge too.
   default_author_associations: [OWNER, MEMBER, COLLABORATOR]
+  vouch:
+    enabled: false
+    file: .github/VOUCHED.td
 
 accountability:
   # When true, the PR body must include:
@@ -85,7 +88,10 @@ max_context_tokens: null
 
 output:
   comments: normal
-  labels: true
+  labels:
+    passed: false # add pr-comprehension:passed after a pass
+    failed: true # add pr-comprehension:failed while the check is failing
+    flagged: true # add pr-comprehension:flagged on a suspicious pass
   # Optional Markdown intro for the action-required comment. Available
   # placeholders: {{author}}, {{max_attempts}}, {{challenge_url}}.
   contributor_message: null

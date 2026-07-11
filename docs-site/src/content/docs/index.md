@@ -47,6 +47,7 @@ comprehension challenge before maintainer review.
 - Adaptive PR investigation for normal and large PRs, with optional Flue-backed
   investigation when configured.
 - Output controls for quiet, normal, or detailed PR comments and optional
+  `pr-comprehension:passed`, `pr-comprehension:failed`, and
   `pr-comprehension:flagged` labels.
 
 ## Start here

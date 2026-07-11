@@ -238,6 +238,78 @@ describe("handlePullRequestEvent", () => {
     expect(await getChallengeByPr(testEnv.DB, "o/r", n, "abc123")).toBeNull();
   });
 
+  it("trusts a Vouch-vouched author without creating a challenge", async () => {
+    const api = stubApi({
+      getFileContent: vi.fn(async (_repo: string, path: string) => {
+        if (path === ".github/voucha.yml") {
+          return "trust:\n  vouch:\n    enabled: true\n";
+        }
+        if (path === ".github/VOUCHED.td") return "github:contributor trusted contributor\n";
+        return null;
+      }),
+    });
+    const n = uniq + 27;
+
+    await handlePullRequestEvent(testEnv, api, payloadFor(n));
+
+    expect(api.getFileContent).toHaveBeenCalledWith("o/r", ".github/VOUCHED.td", "main");
+    expect(api.createCheckRun).toHaveBeenCalledWith("o/r", expect.objectContaining({
+      status: "completed",
+      conclusion: "success",
+      output: expect.objectContaining({
+        title: "Trusted by Vouch",
+        summary: expect.stringContaining("@contributor is vouched in .github/VOUCHED.td"),
+      }),
+    }));
+    expect(await getChallengeByPr(testEnv.DB, "o/r", n, "abc123")).toBeNull();
+  });
+
+  it("fails the check for a Vouch-denounced author", async () => {
+    const api = stubApi({
+      getFileContent: vi.fn(async (_repo: string, path: string) => {
+        if (path === ".github/voucha.yml") {
+          return "trust:\n  vouch:\n    enabled: true\n";
+        }
+        if (path === ".github/VOUCHED.td") return "-contributor private moderation reason\n";
+        return null;
+      }),
+      listPrFiles: vi.fn(async () => ["docs/readme.md"]),
+    });
+    const n = uniq + 28;
+
+    await handlePullRequestEvent(testEnv, api, payloadFor(n));
+
+    expect(api.createCheckRun).toHaveBeenCalledWith("o/r", expect.objectContaining({
+      status: "completed",
+      conclusion: "failure",
+      output: expect.objectContaining({
+        title: "Blocked by Vouch",
+        summary: expect.stringContaining("@contributor is denounced in .github/VOUCHED.td"),
+      }),
+    }));
+    expect(await getChallengeByPr(testEnv.DB, "o/r", n, "abc123")).toBeNull();
+  });
+
+  it("uses the normal VOUCHA policy for authors unknown to Vouch", async () => {
+    const api = stubApi({
+      getFileContent: vi.fn(async (_repo: string, path: string) => {
+        if (path === ".github/voucha.yml") {
+          return "trust:\n  vouch:\n    enabled: true\n";
+        }
+        if (path === ".github/VOUCHED.td") return "github:someone-else\n";
+        return null;
+      }),
+    });
+    const n = uniq + 29;
+
+    await handlePullRequestEvent(testEnv, api, payloadFor(n));
+
+    expect(api.createCheckRun).toHaveBeenCalledWith("o/r", expect.objectContaining({
+      status: "queued",
+    }));
+    expect(await getChallengeByPr(testEnv.DB, "o/r", n, "abc123")).not.toBeNull();
+  });
+
   it("exempts PRs that do not touch configured include paths", async () => {
     const api = stubApi({
       getFileContent: vi.fn(async () => "include_paths: ['src/core/**']\n"),

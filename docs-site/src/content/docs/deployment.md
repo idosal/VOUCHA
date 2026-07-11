@@ -4,7 +4,7 @@ description: Hosted installation and self-deployed setup for VOUCHA, including G
 ---
 
 Public repositories can use the
-[hosted GitHub App](https://github.com/apps/voucha-app/installations/new)
+[hosted GitHub App](https://github.com/apps/voucha-checks/installations/new)
 without deploying infrastructure or supplying a model key. Install the app,
 select the repositories it may access, and optionally add `.github/voucha.yml`
 to a merge target.

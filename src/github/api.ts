@@ -286,6 +286,14 @@ export class GitHubApi {
     if (!res.ok) throw new Error(`addLabels ${res.status}: ${await res.text()}`);
   }
 
+  async removeLabel(repo: string, issueNumber: number, label: string): Promise<void> {
+    const res = await this.req(
+      `/repos/${this.repoPath(repo)}/issues/${issueNumber}/labels/${encodeURIComponent(label)}`,
+      { method: "DELETE" }
+    );
+    if (!res.ok && res.status !== 404) throw new Error(`removeLabel ${res.status}: ${await res.text()}`);
+  }
+
   async ensureLabel(repo: string, name: string, color: string, description: string): Promise<void> {
     const encodedName = encodeURIComponent(name);
     const existing = await this.req(`/repos/${this.repoPath(repo)}/labels/${encodedName}`);

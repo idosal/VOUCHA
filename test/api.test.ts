@@ -214,6 +214,17 @@ describe("GitHubApi", () => {
     expect(JSON.parse(init!.body as string)).toEqual({ labels: ["pr-comprehension:flagged"] });
   });
 
+  it("removes a label from a PR via the issues labels endpoint", async () => {
+    const f = mockFetch(200, { name: "pr-comprehension:failed" });
+    const api = new GitHubApi("tok", f as unknown as typeof fetch);
+    await api.removeLabel("o/r", 5, "pr-comprehension:failed");
+    const [url, init] = f.mock.calls[0];
+    expect(String(url)).toBe(
+      "https://api.github.com/repos/o/r/issues/5/labels/pr-comprehension%3Afailed"
+    );
+    expect(init!.method).toBe("DELETE");
+  });
+
   it("closes a pull request through the pulls endpoint", async () => {
     const f = mockFetch(200, { number: 5, state: "closed" });
     const api = new GitHubApi("tok", f as unknown as typeof fetch);

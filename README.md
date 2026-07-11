@@ -7,7 +7,7 @@ submitting changes without understanding them is not. Challenge answers must
 come from the PR author's own understanding. Passing posts a public
 attestation; maintainers get a behavioral risk report.
 
-**[Install VOUCHA on GitHub](https://github.com/apps/voucha-app/installations/new)**
+**[Install VOUCHA on GitHub](https://github.com/apps/voucha-checks/installations/new)**
 · **[See the live demo](https://github.com/idosal/voucha-owner-check-e2e/pull/10)**
 · **[Read the docs](https://voucha.dev/docs/)**
 
@@ -20,7 +20,7 @@ Private repositories and teams that want full control can
 
 ## Quick start
 
-1. [Install the hosted GitHub App](https://github.com/apps/voucha-app/installations/new)
+1. [Install the hosted GitHub App](https://github.com/apps/voucha-checks/installations/new)
    and select a public repository.
 2. Open a pull request. VOUCHA resolves trust and path exemptions first, then
    adds a comprehension check only when the repository policy calls for one.
@@ -156,7 +156,10 @@ context:
 max_context_tokens: null
 output:
   comments: normal        # quiet | normal | detailed
-  labels: true
+  labels:
+    passed: false         # add pr-comprehension:passed after a pass
+    failed: true          # add pr-comprehension:failed while the check is failing
+    flagged: true         # add pr-comprehension:flagged on a suspicious pass
   # Optional Markdown intro; supports {{author}}, {{max_attempts}}, and {{challenge_url}}
   contributor_message: null
 enforcement:
@@ -174,7 +177,7 @@ enforcement:
 | `cooldown_minutes` | `0` | Integer, ≥ 0. Minutes an author must wait after a failed (non-final) attempt before starting a retry. `0` makes retries immediate. |
 | `draft_prs` | `"ignore"` | Enum: `challenge` \| `neutral` \| `ignore`. Controls whether draft PRs get the normal challenge, a neutral check, or no check. The default keeps drafts quiet until `ready_for_review`. |
 | `require_approval` | `"first_time"` | Enum: `first_time` \| `always` \| `never`. `first_time` requires maintainer approval (`/voucha approve` PR comment) only when the author's GitHub `author_association` is `FIRST_TIME_CONTRIBUTOR`, `FIRST_TIMER`, or `NONE`; `always` requires approval for every PR; `never` skips the approval gate entirely. An invalid value falls back to `first_time`. |
-| `trust` | `{ default_author_associations: ["OWNER", "MEMBER", "COLLABORATOR"] }` | Built-in GitHub `author_association` classes that skip the challenge before other author, size, and path rules. Set `default_author_associations: []` when owners, members, and collaborators should take the challenge too. |
+| `trust` | `{ default_author_associations: ["OWNER", "MEMBER", "COLLABORATOR"], vouch: { enabled: false, file: ".github/VOUCHED.td" } }` | Built-in GitHub trust plus optional integration with Mitchell Hashimoto's Vouch. When enabled, vouched authors skip the challenge, unknown authors continue through normal VOUCHA policy, and denounced authors receive a failed check. |
 | `accountability` | `{ require_pr_acknowledgement: false, require_ai_disclosure: false }` | Optional PR-body preflight. When enabled, VOUCHA fails the check before creating a quiz unless the PR body has the configured acknowledgement and/or AI assistance disclosure line. |
 | `bot_policy` | `{ default: "skip", trusted_logins: [] }` | Structured bot handling. `default: challenge` lets repos challenge bots except named trusted bot logins. Legacy `skip_bots` maps into this when `bot_policy` is omitted. |
 | `rechallenge` | `{ on_push: "included_paths", ignore_paths: ["docs/**", "*.md"], questions: 2 }` | Delta-aware push policy. VOUCHA compares the latest passed head with the new head. `never` carries the pass forward, `always` resets on any non-ignored delta, and `included_paths` resets only when the delta reaches the effective `include_paths` (or any non-ignored file when `include_paths` is empty). A reset creates an up-to-`questions`-long follow-up quiz using only that delta and excludes ignored files from its evidence. |
@@ -183,7 +186,7 @@ enforcement:
 | `include_paths` | `[]` | Optional glob list for opt-in scope. When non-empty, a PR is exempt unless at least one changed file matches one of these patterns. PRs with zero reported changed files are never exempted this way. |
 | `context` | `{ strategy: "adaptive", investigator: "auto", map_tokens: 8000, detail_tokens: 24000, max_files: 12, max_model_calls: 3, ignore_paths: [], large_pr: { changed_files: 100, changed_lines: 5000 } }` | Controls PR investigation before quiz generation. `context.ignore_paths` removes low-signal files from quiz evidence without changing whether the PR is challenged. `context.investigator: auto` uses the Flue investigator for large PRs when configured. |
 | `max_context_tokens` | `null` | Legacy/direct-generation cap used when `context.strategy: truncate`. `null` = uncapped: the full diff is sent to the LLM (bounded only by the model's context window). If set to a positive integer, the diff sent to the LLM is truncated to roughly that many tokens (~4 chars/token estimate) and replaced past that point with a full list of changed filenames. Invalid values fall back to `null`. Adaptive fallback uses a bounded cap from `context.detail_tokens`; large/Flue investigation failures do not fall back to direct raw-diff generation. |
-| `output` | `{ comments: "normal", labels: true, contributor_message: null }` | Controls PR comment volume, optional repository-specific challenge wording, and flagged-pass labels. `contributor_message` supports Markdown plus `{{author}}`, `{{max_attempts}}`, and `{{challenge_url}}`; `comments: quiet` relies on check-run output only, while `detailed` includes risk detail in outcome comments. |
+| `output` | `{ comments: "normal", labels: { passed: false, failed: true, flagged: true }, contributor_message: null }` | Controls PR comment volume, optional repository-specific challenge wording, and best-effort labels. The three label switches independently control `pr-comprehension:passed`, `pr-comprehension:failed`, and `pr-comprehension:flagged`; stale outcome labels are removed as the check state changes. Legacy `labels: true` preserves failed and flagged labels, while `labels: false` disables all three. `contributor_message` supports Markdown plus `{{author}}`, `{{max_attempts}}`, and `{{challenge_url}}`; `comments: quiet` relies on check-run output only, while `detailed` includes risk detail in outcome comments. |
 | `enforcement` | `{ auto_close: { enabled: false, outcomes: ["failed_assisted", "failed_final"] } }` | Optional PR auto-close behavior. When enabled, VOUCHA closes PRs after configured terminal hard failures only; retryable failures and neutral service failures are never auto-closed. |
 
 Maintainers, repo admins, and users with `OWNER`/`MEMBER`/`COLLABORATOR`
@@ -191,6 +194,32 @@ Maintainers, repo admins, and users with `OWNER`/`MEMBER`/`COLLABORATOR`
 (checked before configured author/size/path rules, per `src/policy/exemptions.ts`).
 Set that list to `[]` when a repository wants maintainers and owners to take
 the challenge too.
+
+### Vouch integration
+
+[Vouch](https://github.com/mitchellh/vouch) manages who a project community
+trusts to participate; VOUCHA checks whether an author understands a specific
+change. Repositories using both can make Vouch an upstream trust source:
+
+```yaml
+trust:
+  vouch:
+    enabled: true
+    file: .github/VOUCHED.td
+```
+
+VOUCHA reads the Trustdown file from the PR's merge target, never from the
+contributor branch. An unprefixed handle or `github:` handle is matched
+case-insensitively. A vouched author receives a successful `Trusted by Vouch`
+check without a quiz; an unknown author follows the remaining VOUCHA policy;
+and a denounced author receives a failed `Blocked by Vouch` check. Missing
+files, malformed unrelated entries, and GitHub read failures fall back to the
+normal VOUCHA gate. Denouncement reasons remain private to the file and are not
+copied into check output.
+
+Passing a VOUCHA challenge never edits `VOUCHED.td` or promotes the author into
+community trust. Comprehending one PR is evidence about that change, not a
+maintainer endorsement of the contributor.
 
 ### Author exemptions
 
@@ -424,7 +453,7 @@ segment (split on `/`) — no regex, so it can't backtrack pathologically:
 
 For public repositories, use the managed service:
 
-**[Install VOUCHA on GitHub](https://github.com/apps/voucha-app/installations/new)**
+**[Install VOUCHA on GitHub](https://github.com/apps/voucha-checks/installations/new)**
 
 No Cloudflare account or model key is required. Select the repositories VOUCHA
 may access, then use the built-in policy or add `.github/voucha.yml` to the base

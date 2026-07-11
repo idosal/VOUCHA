@@ -163,9 +163,12 @@ review language in the action-required comment. The message supports Markdown
 and `{{author}}`, `{{max_attempts}}`, and `{{challenge_url}}`; keep it short and
 leave policy outcomes to VOUCHA so contributors always see a clear status.
 
-Keep `output.labels: true` as defense in depth for legacy or imported passed
-records that contain strong automation evidence. Inconclusive signals remain in
-the check-run report and never add a label by themselves.
+Use `output.labels.failed` to make failing checks visible from the PR list,
+`output.labels.passed` when successful checks should be visible there too, and
+`output.labels.flagged` as defense in depth for passed records that contain
+strong automation evidence. VOUCHA removes stale outcome labels as the check
+state changes. Inconclusive signals remain in the check-run report and never
+add a flagged label by themselves.
 
 ## Treat large PRs as investigation problems
 

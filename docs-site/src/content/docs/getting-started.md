@@ -8,7 +8,7 @@ then tighten path-specific rules only where maintainers actually need them.
 
 ## 1. Install VOUCHA
 
-For a public repository, [install the hosted GitHub App](https://github.com/apps/voucha-app/installations/new)
+For a public repository, [install the hosted GitHub App](https://github.com/apps/voucha-checks/installations/new)
 and select the repositories it may access. The hosted service is free and uses
 the built-in policy until you add `.github/voucha.yml` to a merge target.
 

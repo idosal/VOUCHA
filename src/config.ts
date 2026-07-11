@@ -74,9 +74,15 @@ const DEFAULT_RECHALLENGE = Object.freeze({
 
 const DEFAULT_DRAFT_PRS = "ignore" as const;
 
+const DEFAULT_OUTPUT_LABELS = Object.freeze({
+  passed: false,
+  failed: true,
+  flagged: true,
+});
+
 const DEFAULT_OUTPUT = Object.freeze({
   comments: "normal" as const,
-  labels: true,
+  labels: DEFAULT_OUTPUT_LABELS,
   contributor_message: null as string | null,
 });
 
@@ -94,8 +100,14 @@ const DEFAULT_ACCOUNTABILITY = Object.freeze({
   require_ai_disclosure: false,
 });
 
+const DEFAULT_VOUCH_TRUST = Object.freeze({
+  enabled: false,
+  file: ".github/VOUCHED.td",
+});
+
 const DEFAULT_TRUST = Object.freeze({
   default_author_associations: Object.freeze(["OWNER", "MEMBER", "COLLABORATOR"] as AuthorAssociation[]),
+  vouch: DEFAULT_VOUCH_TRUST,
 });
 
 const multipleChoiceGateSchema = z.object({
@@ -259,13 +271,24 @@ const rechallengeSchema = z.object({
   questions: DEFAULT_RECHALLENGE.questions,
 }));
 
+const outputLabelsSchema = z.union([
+  z.boolean().transform((enabled) => enabled
+    ? { ...DEFAULT_OUTPUT_LABELS }
+    : { passed: false, failed: false, flagged: false }),
+  z.object({
+    passed: z.boolean().catch(DEFAULT_OUTPUT_LABELS.passed),
+    failed: z.boolean().catch(DEFAULT_OUTPUT_LABELS.failed),
+    flagged: z.boolean().catch(DEFAULT_OUTPUT_LABELS.flagged),
+  }).catch(() => ({ ...DEFAULT_OUTPUT_LABELS })),
+]).catch(() => ({ ...DEFAULT_OUTPUT_LABELS }));
+
 const outputSchema = z.object({
   comments: z.enum(["quiet", "normal", "detailed"]).catch(DEFAULT_OUTPUT.comments),
-  labels: z.boolean().catch(DEFAULT_OUTPUT.labels),
+  labels: outputLabelsSchema,
   contributor_message: z.string().trim().min(1).max(2000).nullable().catch(DEFAULT_OUTPUT.contributor_message),
 }).catch(() => ({
   comments: DEFAULT_OUTPUT.comments,
-  labels: DEFAULT_OUTPUT.labels,
+  labels: { ...DEFAULT_OUTPUT.labels },
   contributor_message: DEFAULT_OUTPUT.contributor_message,
 }));
 
@@ -317,15 +340,23 @@ const accountabilitySchema = z.object({
   require_ai_disclosure: DEFAULT_ACCOUNTABILITY.require_ai_disclosure,
 }));
 
+const vouchTrustSchema = z.object({
+  enabled: z.boolean().catch(DEFAULT_VOUCH_TRUST.enabled),
+  file: z.string().trim().min(1).max(200).catch(DEFAULT_VOUCH_TRUST.file),
+}).catch(() => ({ ...DEFAULT_VOUCH_TRUST }));
+
 const trustSchema = z.object({
   default_author_associations: authorAssociationListSchema.catch(() => [
     ...DEFAULT_TRUST.default_author_associations,
   ]),
+  vouch: vouchTrustSchema,
 }).transform((trust) => ({
   ...trust,
   default_author_associations: normalizeStringList(trust.default_author_associations),
+  vouch: { ...trust.vouch },
 })).catch(() => ({
   default_author_associations: [...DEFAULT_TRUST.default_author_associations],
+  vouch: { ...DEFAULT_TRUST.vouch },
 }));
 
 const configSchema = z.object({
@@ -461,7 +492,10 @@ function normalizeConfig(
       ...parsed.rechallenge,
       ignore_paths: [...parsed.rechallenge.ignore_paths],
     },
-    output: { ...parsed.output },
+    output: {
+      ...parsed.output,
+      labels: { ...parsed.output.labels },
+    },
     enforcement: {
       auto_close: {
         ...parsed.enforcement.auto_close,
@@ -472,6 +506,7 @@ function normalizeConfig(
     trust: {
       ...parsed.trust,
       default_author_associations: [...parsed.trust.default_author_associations],
+      vouch: { ...parsed.trust.vouch },
     },
     skip_authors: [...parsed.skip_authors],
     skip_paths: [...parsed.skip_paths],
@@ -551,11 +586,13 @@ function freezeConfig(cfg: VouchaConfig): VouchaConfig {
   Object.freeze(cfg.bot_policy);
   Object.freeze(cfg.rechallenge.ignore_paths);
   Object.freeze(cfg.rechallenge);
+  Object.freeze(cfg.output.labels);
   Object.freeze(cfg.output);
   Object.freeze(cfg.enforcement.auto_close.outcomes);
   Object.freeze(cfg.enforcement.auto_close);
   Object.freeze(cfg.enforcement);
   Object.freeze(cfg.accountability);
+  Object.freeze(cfg.trust.vouch);
   Object.freeze(cfg.trust.default_author_associations);
   Object.freeze(cfg.trust);
   Object.freeze(cfg.gates);

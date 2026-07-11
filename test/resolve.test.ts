@@ -27,6 +27,7 @@ function stubApi(overrides: Partial<Record<keyof GitHubApi, any>> = {}): GitHubA
     upsertPrComment: vi.fn(async () => {}),
     ensureLabel: vi.fn(async () => {}),
     addLabels: vi.fn(async () => {}),
+    removeLabel: vi.fn(async () => {}),
     closePullRequest: vi.fn(async () => {}),
     ...overrides,
   } as unknown as GitHubApi;
@@ -108,7 +109,7 @@ describe("onChallengeResolved", () => {
     expect(comment).not.toContain("see the check run details");
   });
 
-  it("does not label a clean pass and keeps the plain title", async () => {
+  it("clears the failed label on a clean pass and keeps the plain title", async () => {
     const api = stubApi();
     await onChallengeResolved(testEnv, {
       challenge: passedChallenge(), outcome: "passed", score: 4, total: 4,
@@ -117,8 +118,35 @@ describe("onChallengeResolved", () => {
 
     expect(api.ensureLabel).not.toHaveBeenCalled();
     expect(api.addLabels).not.toHaveBeenCalled();
+    expect(api.removeLabel).toHaveBeenCalledWith("o/r", 1, "pr-comprehension:failed");
+    expect(api.removeLabel).toHaveBeenCalledWith("o/r", 1, "pr-comprehension:passed");
+    expect(api.removeLabel).toHaveBeenCalledWith("o/r", 1, "pr-comprehension:flagged");
     const [, , patch] = (api.updateCheckRun as ReturnType<typeof vi.fn>).mock.calls[0];
     expect(patch.output.title).toBe("Passed");
+  });
+
+  it("adds a passed label when enabled", async () => {
+    const api = stubApi();
+    await onChallengeResolved(testEnv, {
+      challenge: passedChallenge(), outcome: "passed", score: 4, total: 4,
+      telemetry: null,
+      cfg: parseConfig([
+        "output:",
+        "  labels:",
+        "    passed: true",
+        "    failed: true",
+        "    flagged: true",
+        "",
+      ].join("\n")),
+    }, async () => api);
+
+    expect(api.ensureLabel).toHaveBeenCalledWith(
+      "o/r",
+      "pr-comprehension:passed",
+      "0e8a16",
+      "The VOUCHA comprehension check passed."
+    );
+    expect(api.addLabels).toHaveBeenCalledWith("o/r", 1, ["pr-comprehension:passed"]);
   });
 
   it("suppresses outcome comments when output comments are quiet", async () => {
@@ -136,11 +164,20 @@ describe("onChallengeResolved", () => {
     const api = stubApi();
     await onChallengeResolved(testEnv, {
       challenge: passedChallenge(), outcome: "passed", score: 4, total: 4,
-      telemetry: scriptedTelemetry, cfg: parseConfig("output:\n  labels: false\n"),
+      telemetry: scriptedTelemetry,
+      cfg: parseConfig([
+        "output:",
+        "  labels:",
+        "    passed: false",
+        "    failed: true",
+        "    flagged: false",
+        "",
+      ].join("\n")),
     }, async () => api);
 
     expect(api.ensureLabel).not.toHaveBeenCalled();
     expect(api.addLabels).not.toHaveBeenCalled();
+    expect(api.removeLabel).toHaveBeenCalledWith("o/r", 1, "pr-comprehension:flagged");
     const [, , patch] = (api.updateCheckRun as ReturnType<typeof vi.fn>).mock.calls[0];
     expect(patch.output.title).toBe("Passed — strong automation evidence requires review");
   });
@@ -161,6 +198,15 @@ describe("onChallengeResolved", () => {
     expect(api.upsertPrComment).toHaveBeenCalledWith("o/r", 1, expect.stringContaining("VOUCHA — retry needed"));
     expect(api.upsertPrComment).toHaveBeenCalledWith("o/r", 1, expect.stringContaining("/challenge/ch-1"));
     expect(api.upsertPrComment).toHaveBeenCalledWith("o/r", 1, expect.stringContaining("Retry immediately"));
+    expect(api.ensureLabel).toHaveBeenCalledWith(
+      "o/r",
+      "pr-comprehension:failed",
+      "b60205",
+      "The VOUCHA comprehension check is currently failing."
+    );
+    expect(api.addLabels).toHaveBeenCalledWith("o/r", 1, ["pr-comprehension:failed"]);
+    expect(api.removeLabel).toHaveBeenCalledWith("o/r", 1, "pr-comprehension:passed");
+    expect(api.removeLabel).toHaveBeenCalledWith("o/r", 1, "pr-comprehension:flagged");
   });
 
   it("reports a configured retry cooldown", async () => {
@@ -187,6 +233,48 @@ describe("onChallengeResolved", () => {
     const [, , patch] = (api.updateCheckRun as ReturnType<typeof vi.fn>).mock.calls[0];
     expect(patch.output.summary).toContain("Risk report");
     expect(patch.output.summary).toContain("every answer took under 10 seconds");
+  });
+
+  it.each(["failed_assisted", "failed_final"] as const)(
+    "ensures and applies a failed label on %s terminal failure",
+    async (outcome) => {
+      const api = stubApi();
+      await onChallengeResolved(testEnv, {
+        challenge: { ...passedChallenge(), status: outcome }, outcome,
+        score: 1, total: 4, telemetry: scriptedTelemetry, cfg: parseConfig(null),
+      }, async () => api);
+
+      expect(api.ensureLabel).toHaveBeenCalledWith(
+        "o/r",
+        "pr-comprehension:failed",
+        "b60205",
+        "The VOUCHA comprehension check is currently failing."
+      );
+      expect(api.addLabels).toHaveBeenCalledWith("o/r", 1, ["pr-comprehension:failed"]);
+    }
+  );
+
+  it("can disable failure labels while preserving the failed check", async () => {
+    const api = stubApi();
+    await onChallengeResolved(testEnv, {
+      challenge: { ...passedChallenge(), status: "failed_final" }, outcome: "failed_final",
+      score: 1, total: 4, telemetry: scriptedTelemetry,
+      cfg: parseConfig([
+        "output:",
+        "  labels:",
+        "    passed: false",
+        "    failed: false",
+        "    flagged: true",
+        "",
+      ].join("\n")),
+    }, async () => api);
+
+    expect(api.ensureLabel).not.toHaveBeenCalled();
+    expect(api.addLabels).not.toHaveBeenCalled();
+    expect(api.removeLabel).toHaveBeenCalledWith("o/r", 1, "pr-comprehension:failed");
+    expect(api.updateCheckRun).toHaveBeenCalledWith(
+      "o/r", 42, expect.objectContaining({ conclusion: "failure" })
+    );
   });
 
   it("auto-closes configured terminal failures", async () => {

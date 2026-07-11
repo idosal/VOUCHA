@@ -18,12 +18,14 @@ down the check or silently erase the rest of the repository policy.
    included even when the PR is later exempt.
 4. Resolve draft PR handling.
 5. Run the optional `accountability` PR-body preflight.
-6. Resolve default author-association trust, author rules, bot
+6. If configured, resolve the author against the merge-target Vouch file:
+   vouched skips, denounced fails, and unknown continues.
+7. Resolve default author-association trust, author rules, bot
    behavior, size, and path scope.
-7. Apply GitHub team, repository permission, and prior merged PR exemptions.
-8. Evaluate issue-backed context when `linked_issue_match` is configured.
-9. Reuse or invalidate a prior pass according to `rechallenge`.
-10. Create an author-facing challenge only if no exemption applies.
+8. Apply GitHub team, repository permission, and prior merged PR exemptions.
+9. Evaluate issue-backed context when `linked_issue_match` is configured.
+10. Reuse or invalidate a prior pass according to `rechallenge`.
+11. Create an author-facing challenge only if no exemption applies.
 
 Form honeypot signals are collected during challenge submission. Code honeypot
 signals are available earlier because they come from the pull request diff.
@@ -110,6 +112,24 @@ collaborators should take the challenge too.
 trust:
   default_author_associations: []
 ```
+
+VOUCHA can also consume Mitchell Hashimoto's
+[Vouch](https://github.com/mitchellh/vouch) Trustdown file as an upstream
+community-trust decision:
+
+```yaml
+trust:
+  vouch:
+    enabled: true
+    file: .github/VOUCHED.td
+```
+
+The file is read from the merge target. `vouched` produces a success check
+without a quiz, `unknown` falls through to the remaining policy, and
+`denounced` produces a failed check even when a size or path exemption would
+otherwise apply. Missing files and read errors fall through to the normal gate.
+VOUCHA never writes to the Vouch list or converts a challenge pass into a
+durable community endorsement.
 
 `repository_permission` matches GitHub's `role_name` values, including
 `maintain`, `admin`, and custom repository roles, as well as the legacy
@@ -209,6 +229,9 @@ comment volume:
 - `normal`: standard lifecycle comments;
 - `detailed`: lifecycle comments plus risk detail.
 
-`output.labels` controls whether a passed legacy/imported record with strong
-automation evidence gets the best-effort `pr-comprehension:flagged` label.
-Inconclusive signals never add the label.
+`output.labels.passed`, `output.labels.failed`, and `output.labels.flagged`
+independently control their matching `pr-comprehension:*` labels. VOUCHA
+removes stale outcome labels as the check state changes. A passed
+legacy/imported record with strong automation evidence receives the flagged
+label when enabled; inconclusive signals never add it. Legacy boolean `labels`
+settings remain supported.

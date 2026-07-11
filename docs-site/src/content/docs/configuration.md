@@ -70,6 +70,9 @@ draft_prs: ignore
 
 trust:
   default_author_associations: [OWNER, MEMBER, COLLABORATOR]
+  vouch:
+    enabled: false
+    file: .github/VOUCHED.td
 
 accountability:
   require_pr_acknowledgement: false
@@ -104,7 +107,10 @@ max_context_tokens: null
 
 output:
   comments: normal
-  labels: true
+  labels:
+    passed: false
+    failed: true
+    flagged: true
   contributor_message: null
 
 enforcement:
@@ -119,7 +125,7 @@ enforcement:
 | --- | --- | --- |
 | Author-facing proof | `gates` | The challenge type, question count, and passing threshold. |
 | Scope | `skip_paths`, `include_paths`, `min_changed_lines`, `path_rules` | Which PRs should skip, enter, or receive stricter policy. |
-| Trust | `trust`, `exemptions`, `bot_policy` | Which default author associations, authors, teams, repository roles, contributor history, bots, and planned issues can avoid a challenge. |
+| Trust | `trust`, `exemptions`, `bot_policy` | Which default author associations, Vouch statuses, authors, teams, repository roles, contributor history, bots, and planned issues can avoid a challenge or be rejected. |
 | Approval and retry | `require_approval`, `accountability`, `max_attempts`, `cooldown_minutes`, `draft_prs`, `rechallenge` | Human approval, required PR-body accountability fields, drafts, retry limits, cooldown, and new-commit behavior. |
 | Passive evidence | `signals`, `output.labels` | Honeypot fields, code canaries, and flagged-pass labels. |
 | Investigation | `context`, `max_context_tokens` | How PR evidence is condensed before quiz generation. |
@@ -217,6 +223,25 @@ Set the list to `[]` when they should take the challenge too:
 trust:
   default_author_associations: []
 ```
+
+### Vouch as upstream community trust
+
+[Vouch](https://github.com/mitchellh/vouch) answers whether a project community
+already trusts a contributor to participate. VOUCHA answers whether an author
+understands a particular PR. Enable the integration to compose those decisions:
+
+```yaml
+trust:
+  vouch:
+    enabled: true
+    file: .github/VOUCHED.td
+```
+
+VOUCHA reads the configured Trustdown file from the merge target. Vouched
+authors skip the challenge, unknown authors continue through normal VOUCHA
+policy, and denounced authors receive a failed check. A missing or unreadable
+file fails closed to the normal gate. Passing VOUCHA does not modify the Vouch
+list or turn a one-PR result into a durable contributor endorsement.
 
 `author_login` and `author_association` add repository-specific trust. `repository_permission`
 reuses GitHub's collaborator permission API, matching both `role_name` values
@@ -367,15 +392,25 @@ omitted.
 ```yaml
 output:
   comments: normal
-  labels: true
+  labels:
+    passed: false
+    failed: true
+    flagged: true
   contributor_message: >
     Thanks for contributing, {{author}}. You have {{max_attempts}} attempts;
     use {{challenge_url}} when you're ready.
 ```
 
-`comments` accepts `quiet`, `normal`, or `detailed`. `labels: true` keeps a
-defense-in-depth `pr-comprehension:flagged` label for passed legacy/imported
-records with strong automation evidence. Inconclusive signals never add it.
+`comments` accepts `quiet`, `normal`, or `detailed`. The nested `labels`
+switches independently control `pr-comprehension:passed`,
+`pr-comprehension:failed`, and `pr-comprehension:flagged`. VOUCHA removes stale
+outcome labels as the check moves between passing and failing states. The
+flagged label remains defense in depth for passed legacy/imported records with
+strong automation evidence; inconclusive signals never add it.
+
+For compatibility, legacy `labels: true` maps to `{ passed: false, failed: true,
+flagged: true }`, preserving the pre-object behavior. Legacy `labels: false`
+disables all three labels.
 
 `contributor_message` optionally replaces the opening text in an active
 challenge comment (including after maintainer approval or a retry). It accepts
@@ -458,5 +493,5 @@ older truncation path.
 | `skip_paths` | `["docs/**", "*.md"]` |
 | `include_paths` | `[]` |
 | `context` | adaptive Worker/Flue auto selection with 8000 map tokens, 24000 detail tokens, 12 files, and large PR threshold of 100 files or 5000 changed lines |
-| `output` | `{ comments: "normal", labels: true, contributor_message: null }` |
+| `output` | `{ comments: "normal", labels: { passed: false, failed: true, flagged: true }, contributor_message: null }` |
 | `enforcement` | `{ auto_close: { enabled: false, outcomes: ["failed_assisted", "failed_final"] } }` |

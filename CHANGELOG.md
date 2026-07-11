@@ -18,6 +18,9 @@ VOUCHA's first stable public release.
 - Trust rules for repository relationships, named authors, GitHub teams,
   permissions, prior merged contributions, linked issues, paths, bots, drafts,
   and small changes.
+- Optional Vouch integration: merge-target `VOUCHED.td` status can exempt
+  vouched authors, preserve normal policy for unknown authors, and fail checks
+  for denounced authors without promoting VOUCHA passes into durable trust.
 - Path-specific policy overrides, delta-aware challenges after new commits,
   maintainer approval, retry, and optional terminal-failure auto-close.
 - Repository-specific contributor wording for active challenge comments, with
@@ -38,4 +41,4 @@ VOUCHA's first stable public release.
 - Hosted product and documentation at [voucha.dev](https://voucha.dev).
 - Inspectable end-to-end workflow in the
   [public demo repository](https://github.com/idosal/voucha-owner-check-e2e)
-  and [curated demo PR](https://github.com/idosal/voucha-owner-check-e2e/pull/7).
+  and [curated demo PR](https://github.com/idosal/voucha-owner-check-e2e/pull/10).

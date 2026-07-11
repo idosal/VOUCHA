@@ -9,6 +9,12 @@ import { markChallengeAutoClosed, markChallengeTerminalReconciled } from "./stor
 const FLAGGED_LABEL = "pr-comprehension:flagged";
 const FLAGGED_LABEL_COLOR = "b60205";
 const FLAGGED_LABEL_DESCRIPTION = "Strong automation evidence requires review on this PR comprehension record.";
+const PASSED_LABEL = "pr-comprehension:passed";
+const PASSED_LABEL_COLOR = "0e8a16";
+const PASSED_LABEL_DESCRIPTION = "The VOUCHA comprehension check passed.";
+const FAILED_LABEL = "pr-comprehension:failed";
+const FAILED_LABEL_COLOR = "b60205";
+const FAILED_LABEL_DESCRIPTION = "The VOUCHA comprehension check is currently failing.";
 
 function challengeUrl(env: Env, challengeId: string): string {
   return `${env.APP_BASE_URL}/challenge/${challengeId}`;
@@ -124,6 +130,38 @@ export async function apiForInstallation(env: Env, installationId: number): Prom
   return new GitHubApi(token);
 }
 
+async function applyFailureLabel(api: GitHubApi, repo: string, pr: number): Promise<void> {
+  try {
+    await api.ensureLabel(repo, FAILED_LABEL, FAILED_LABEL_COLOR, FAILED_LABEL_DESCRIPTION);
+    await api.addLabels(repo, pr, [FAILED_LABEL]);
+  } catch { /* the failed check remains the enforcement source of truth */ }
+}
+
+async function applyPassedLabel(api: GitHubApi, repo: string, pr: number): Promise<void> {
+  try {
+    await api.ensureLabel(repo, PASSED_LABEL, PASSED_LABEL_COLOR, PASSED_LABEL_DESCRIPTION);
+    await api.addLabels(repo, pr, [PASSED_LABEL]);
+  } catch { /* the successful check remains the source of truth */ }
+}
+
+async function clearLabel(api: GitHubApi, repo: string, pr: number, label: string): Promise<void> {
+  try {
+    await api.removeLabel(repo, pr, label);
+  } catch { /* label reconciliation must not override the check-run outcome */ }
+}
+
+async function reconcileFailureLabels(
+  api: GitHubApi,
+  repo: string,
+  pr: number,
+  failedLabelEnabled: boolean
+): Promise<void> {
+  await clearLabel(api, repo, pr, PASSED_LABEL);
+  await clearLabel(api, repo, pr, FLAGGED_LABEL);
+  if (failedLabelEnabled) await applyFailureLabel(api, repo, pr);
+  else await clearLabel(api, repo, pr, FAILED_LABEL);
+}
+
 type CheckRunPatch = Parameters<GitHubApi["updateCheckRun"]>[2];
 
 async function updateTerminalCheckRun(
@@ -169,7 +207,10 @@ export async function onChallengeResolved(
           summary: `Score ${r.score}/${r.total}.\n\n${riskMd}`,
         },
       });
-      if (report.automationLikely && r.cfg.output.labels) {
+      await clearLabel(api, repo, pr, FAILED_LABEL);
+      if (r.cfg.output.labels.passed) await applyPassedLabel(api, repo, pr);
+      else await clearLabel(api, repo, pr, PASSED_LABEL);
+      if (report.automationLikely && r.cfg.output.labels.flagged) {
         // Comment edits don't notify anyone; the label is what makes a flagged
         // pass visible from the PR list. Best-effort: a labeling failure (e.g.
         // missing permission) must not block the attestation below.
@@ -177,7 +218,7 @@ export async function onChallengeResolved(
           await api.ensureLabel(repo, FLAGGED_LABEL, FLAGGED_LABEL_COLOR, FLAGGED_LABEL_DESCRIPTION);
           await api.addLabels(repo, pr, [FLAGGED_LABEL]);
         } catch { /* attestation still posts; check title carries the flag */ }
-      }
+      } else await clearLabel(api, repo, pr, FLAGGED_LABEL);
       if (commentsEnabled) {
         await api.upsertPrComment(repo, pr, [
           "## VOUCHA — passed",
@@ -205,6 +246,7 @@ export async function onChallengeResolved(
           summary: `Score ${r.score}/${r.total}. ${retry.summary} A behavioral report accompanies the final result.`,
         },
       });
+      await reconcileFailureLabels(api, repo, pr, r.cfg.output.labels.failed);
       if (commentsEnabled) {
         await api.upsertPrComment(repo, pr, [
           "## VOUCHA — retry needed",
@@ -232,6 +274,7 @@ export async function onChallengeResolved(
           )}\n\n${riskMd}`,
         },
       });
+      await reconcileFailureLabels(api, repo, pr, r.cfg.output.labels.failed);
       if (commentsEnabled) {
         await api.upsertPrComment(repo, pr, [
           "## VOUCHA — challenge failed",
@@ -260,6 +303,7 @@ export async function onChallengeResolved(
           )}\n\n${riskMd}`,
         },
       });
+      await reconcileFailureLabels(api, repo, pr, r.cfg.output.labels.failed);
       if (commentsEnabled) {
         await api.upsertPrComment(repo, pr, [
           "## VOUCHA — challenge failed",

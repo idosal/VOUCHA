@@ -5242,7 +5242,7 @@ export function verificationPage(
 }
 
 export function homePage(servedOrigin = "https://voucha.dev"): string {
-  const INSTALL_URL = "https://github.com/apps/voucha-app/installations/new";
+  const INSTALL_URL = "https://github.com/apps/voucha-checks/installations/new";
   const origin = (() => {
     try {
       return new URL(servedOrigin).origin;
