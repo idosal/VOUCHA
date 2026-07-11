@@ -67,15 +67,21 @@ describe("challenge pages", () => {
     expect(start).toContain("post the result to the PR");
     expect(start).toContain("4</b> questions");
     expect(start).toContain("3/4</b> passes");
+    expect(start).toContain("Retries are available immediately with a fresh quiz.");
     expect(start).not.toContain('name="extended_timing"');
     expect(start).not.toContain("Recorded:");
     expect(start).not.toContain("Never recorded:");
     expect(start).not.toContain("Outcome:");
     expect(start).toContain("/docs/privacy-data/");
-    expect(start).toContain("Preparing the quiz");
-    expect(start).toContain("Reading the pull request");
-    expect(start).toContain("Generating PR-specific questions");
-    expect(start).toContain("First runs and larger diffs can take a little longer.");
+    expect(start).toContain("Preparing your challenge");
+    expect(start).toContain("Creating questions from this PR. This usually takes less than a minute.");
+    expect(start).toContain("Taking a little longer than usual");
+    expect(start).toContain("your PR won't be blocked.");
+    expect(start).not.toContain("the check will go neutral");
+    expect(start).not.toContain("Reading the pull request");
+    expect(start).not.toContain("Generating PR-specific questions");
+    expect(start).toContain("button.hidden = true");
+    expect(start).toContain("#startButton[hidden]");
     expect(start).toContain('data-callback="vouchaTurnstileReady"');
     expect(start).toContain('data-expired-callback="vouchaTurnstileExpired"');
     expect(start).toContain('data-appearance="interaction-only"');
@@ -143,6 +149,24 @@ describe("challenge pages", () => {
     expect(result).toContain("Attestation recorded");
     expect(result).toContain('class="attestation-receipt"');
     expect(result).toContain("Recorded now");
+  });
+
+  it("keeps retryable failures in the app", () => {
+    const html = resultPage(false, 2, 4, "You can retry immediately with a fresh quiz.", [
+      { label: "Try again", href: "/challenge/challenge-id", primary: true },
+      { label: "Back to PR", href: "https://github.com/o/r/pull/1", external: true },
+    ], {
+      prRef: "o/r#1",
+      passThreshold: 3,
+      retryState: "immediate",
+    });
+
+    expect(html).toContain("Try again");
+    expect(html).toContain('href="/challenge/challenge-id"');
+    expect(html).toContain("Start a fresh quiz here when you're ready.");
+    expect(html).toContain("You don't need to return to GitHub.");
+    expect(html).toContain("Stay in VOUCHA");
+    expect(html).not.toContain("Open the PR to ask a maintainer about retry");
   });
 
   it("omits the honeypot field when signals are disabled", () => {

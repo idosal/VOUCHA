@@ -68,8 +68,9 @@ repository policy requirements.
   check should become neutral rather than blocking the merge.
 - Configure `context.investigator: flue` without a working Flue service. Quiz
   generation should become neutral.
-- Submit a wrong quiz answer. A non-final failure should enter cooldown and a
-  later retry should get a fresh quiz.
+- Submit a wrong quiz answer. A non-final failure should offer **Try again** in
+  the app immediately by default, without requiring a return to GitHub, and the
+  retry should get a fresh quiz.
 - Exhaust all attempts. The check should stay failed for manual maintainer
   review. Comment `/voucha retry` from a write-capable maintainer; VOUCHA
   should preserve the previous audit and start a fresh challenge on the same

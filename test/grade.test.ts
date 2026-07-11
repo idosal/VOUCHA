@@ -114,8 +114,14 @@ describe("canStartAttempt", () => {
 });
 
 describe("nextCooldown", () => {
-  it("returns ISO time cooldown_minutes after now", () => {
+  it("returns no cooldown when retries are immediate", () => {
     const now = new Date("2026-07-02T12:00:00.000Z");
-    expect(nextCooldown(DEFAULT_CONFIG, now)).toBe("2026-07-02T12:15:00.000Z");
+    expect(nextCooldown(DEFAULT_CONFIG, now)).toBeNull();
+  });
+
+  it("returns the configured cooldown time", () => {
+    const now = new Date("2026-07-02T12:00:00.000Z");
+    expect(nextCooldown({ ...DEFAULT_CONFIG, cooldown_minutes: 15 }, now))
+      .toBe("2026-07-02T12:15:00.000Z");
   });
 });

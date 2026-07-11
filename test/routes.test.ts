@@ -192,6 +192,55 @@ describe("GET /challenge/:id", () => {
     expect(html).not.toContain("Challenge no longer active");
   });
 
+  it("keeps configured-cooldown retries in the app", async () => {
+    const cooldownUntil = new Date(Date.now() + 15 * 60_000).toISOString();
+    await testEnv.DB.prepare(
+      `INSERT INTO challenges (id, installation_id, repo_full_name, pr_number, head_sha,
+        author_login, status, attempts_used, cooldown_until, config_json)
+       VALUES ('chCooldownRetry', 1, 'o/r', 10, 's10', 'alice', 'ready', 1, ?, ?)`
+    ).bind(cooldownUntil, JSON.stringify({ cooldown_minutes: 15 })).run();
+    await testEnv.DB.prepare(
+      `INSERT INTO quizzes (id, challenge_id, attempt_number, questions_json, answers_json, score, finished_at)
+       VALUES ('quizCooldownRetry', 'chCooldownRetry', 1, '{"questions":[]}', '[1,1,1,1]', 1, ?)`
+    ).bind(new Date().toISOString()).run();
+
+    const res = await worker.fetch(
+      new Request("https://x/challenge/chCooldownRetry"),
+      testEnv,
+      createExecutionContext()
+    );
+
+    expect(res.status).toBe(200);
+    const html = await res.text();
+    expect(html).toContain("Try again");
+    expect(html).toContain('href="/challenge/chCooldownRetry"');
+    expect(html).toContain("Stay in VOUCHA");
+    expect(html).toContain("requires a wait between attempts");
+    expect(html).not.toContain("Open the PR to ask a maintainer about retry");
+  });
+
+  it("renders the next immediate attempt in the same verified app session", async () => {
+    await testEnv.DB.prepare(
+      `INSERT INTO challenges (id, installation_id, repo_full_name, pr_number, head_sha,
+        author_login, status, attempts_used, config_json)
+       VALUES ('chImmediateRetry', 1, 'o/r', 11, 's11', 'alice', 'ready', 1, '{}')`
+    ).run();
+    await testEnv.DB.prepare(
+      "INSERT INTO sessions (id, challenge_id, gh_login) VALUES ('sessImmediateRetry', 'chImmediateRetry', 'alice')"
+    ).run();
+    const cookie = await signSessionCookie(testEnv.SESSION_SIGNING_KEY, "sessImmediateRetry");
+
+    const res = await worker.fetch(new Request("https://x/challenge/chImmediateRetry", {
+      headers: { cookie: `voucha_session=${cookie}` },
+    }), testEnv, createExecutionContext());
+
+    expect(res.status).toBe(200);
+    const html = await res.text();
+    expect(html).toContain("Attempt 2 of 3");
+    expect(html).toContain("Retries are available immediately with a fresh quiz.");
+    expect(html).not.toContain("Verify from the PR.");
+  });
+
   it("renders the latest maintainer retry cycle result", async () => {
     await testEnv.DB.prepare(
       `INSERT INTO challenges (id, installation_id, repo_full_name, pr_number, head_sha,

@@ -34,7 +34,7 @@ signals:
     report_only: true
 
 max_attempts: 3
-cooldown_minutes: 15
+cooldown_minutes: 0 # Immediate retries by default; set a positive wait if needed.
 draft_prs: ignore
 require_approval: first_time
 

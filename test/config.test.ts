@@ -37,7 +37,7 @@ describe("parseConfig", () => {
     expect(cfg.pass_threshold).toBe(4);
     expect(getMultipleChoiceGate(cfg)).toEqual({ type: "multiple_choice", questions: 4, pass_threshold: 4 });
     expect(cfg.max_attempts).toBe(5);
-    expect(cfg.cooldown_minutes).toBe(15); // default preserved
+    expect(cfg.cooldown_minutes).toBe(0); // default preserved
   });
 
   it("parses configurable gates", () => {

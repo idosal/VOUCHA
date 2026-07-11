@@ -64,6 +64,7 @@ automatically when GitHub confirms the author comment. The questions should be
 about ownership-level understanding, not trivia about line numbers or function
 names.
 
-A pass becomes a public attestation on the PR. A failure leads to a cooldown and
-fresh retry, up to the configured attempt limit. Attempts exhausted means the PR
-needs maintainer review instead of more automatic retries.
+A pass becomes a public attestation on the PR. A failure offers a fresh retry,
+immediately by default and optionally after a configured cooldown, up to the
+attempt limit. Attempts exhausted means the PR needs maintainer review instead
+of more automatic retries.

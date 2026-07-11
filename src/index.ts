@@ -137,6 +137,15 @@ function challengePageActions(challenge: Pick<Challenge, "id" | "repo_full_name"
   ];
 }
 
+function retryChallengeActions(
+  challenge: Pick<Challenge, "id" | "repo_full_name" | "pr_number">
+): PageAction[] {
+  return [
+    { label: "Try again", href: `/challenge/${challenge.id}`, primary: true },
+    { label: "Back to PR", href: githubPrUrl(challenge), external: true },
+  ];
+}
+
 function terminalChallengeActions(
   challenge: Pick<Challenge, "repo_full_name" | "pr_number">,
   passed: boolean
@@ -519,7 +528,13 @@ app.get("/challenge/:id", async (c) => {
       latest?.score ?? 0,
       latest?.total ?? gate.questions,
       cooldownMessage(challenge.cooldown_until),
-      challengePageActions(challenge)
+      retryChallengeActions(challenge),
+      {
+        prRef: `${challenge.repo_full_name}#${challenge.pr_number}`,
+        passThreshold: gate.pass_threshold,
+        recordedAt: latest?.finishedAt ?? undefined,
+        retryState: "cooldown",
+      }
     ));
   }
 
@@ -719,11 +734,20 @@ app.post("/challenge/:id/answer", async (c) => {
   if (!result.done) return c.redirect(`/challenge/${c.req.param("id")}/question`);
   const challenge = await getChallenge(c.env.DB, c.req.param("id"));
   const cfg = challenge ? resolveConfig(challenge.config_json) : null;
+  const retryable = Boolean(
+    challenge && cfg && !result.passed && !result.failureReason && challenge.status === "ready"
+  );
+  const retryState = retryable
+    ? challenge?.cooldown_until && new Date(challenge.cooldown_until).getTime() > Date.now()
+      ? "cooldown" as const
+      : "immediate" as const
+    : undefined;
   const resultOptions = challenge && cfg ? {
     prRef: `${challenge.repo_full_name}#${challenge.pr_number}`,
     passThreshold: getMultipleChoiceGate(cfg).pass_threshold,
     recordedAt: new Date().toISOString(),
     verificationFailure: !result.passed && Boolean(result.failureReason),
+    retryState,
   } : undefined;
   return c.html(resultPage(
     result.passed, result.score, result.total,
@@ -731,8 +755,16 @@ app.post("/challenge/:id/answer", async (c) => {
       ? "The check is now green and an attestation was posted to the PR."
       : result.failureReason
         ? `The challenge could not be verified: ${result.failureReason} Repository policy controls manual review or auto-close.`
-      : "Check the PR for retry availability (cooldown applies; retries get a fresh quiz).",
-    challenge ? terminalChallengeActions(challenge, result.passed) : challengePathActions(c.req.path),
+        : retryState === "immediate"
+          ? "You can retry immediately with a fresh quiz."
+          : retryState === "cooldown" && challenge?.cooldown_until
+            ? cooldownMessage(challenge.cooldown_until)
+            : "Your attempts are exhausted. A maintainer can review or reset the challenge from the PR.",
+    challenge
+      ? retryable
+        ? retryChallengeActions(challenge)
+        : terminalChallengeActions(challenge, result.passed)
+      : challengePathActions(c.req.path),
     resultOptions
   ));
 });

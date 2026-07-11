@@ -33,6 +33,7 @@ export interface ResultPageOptions {
   passThreshold?: number;
   recordedAt?: string;
   verificationFailure?: boolean;
+  retryState?: "immediate" | "cooldown";
 }
 
 const questionMeta: Record<ClientQuestion["type"], { label: string; hint: string }> = {
@@ -1292,15 +1293,23 @@ h1{
 .start-progress{
   width:100%;
   max-width:640px;
-  display:grid;
-  gap:12px;
-  padding:13px 14px;
-  border:1px solid var(--line);
-  border-radius:var(--radius-sm);
-  background:var(--panel);
+  display:flex;
+  align-items:flex-start;
+  gap:11px;
+  padding:8px 0;
   color:var(--ink-dim);
 }
 .start-progress[hidden]{display:none}
+.start-progress-indicator{
+  width:16px;
+  height:16px;
+  flex:0 0 auto;
+  margin-top:3px;
+  border:2px solid var(--line-strong);
+  border-top-color:var(--brand);
+  border-radius:999px;
+  animation:start-progress-spin .8s linear infinite;
+}
 .start-progress strong{
   display:block;
   color:var(--ink);
@@ -1310,46 +1319,6 @@ h1{
   margin:0;
   font-size:.92rem;
   line-height:1.42;
-}
-.start-progress ol{
-  display:grid;
-  gap:8px;
-  margin:0;
-  padding:0;
-  list-style:none;
-}
-.start-progress li{
-  display:flex;
-  align-items:center;
-  gap:9px;
-  min-width:0;
-  color:var(--ink-faint);
-  font-size:.9rem;
-}
-.start-progress li::before{
-  content:"";
-  width:10px;
-  height:10px;
-  flex:0 0 auto;
-  border:2px solid var(--line-strong);
-  border-radius:999px;
-  background:var(--canvas);
-}
-.start-progress li.active{
-  color:var(--ink);
-  font-weight:690;
-}
-.start-progress li.active::before{
-  border-color:var(--brand);
-  background:var(--brand);
-  box-shadow:0 0 0 4px color-mix(in oklch,var(--brand-soft) 85%,transparent);
-}
-.start-progress li.done{
-  color:var(--ink-dim);
-}
-.start-progress li.done::before{
-  border-color:var(--ok);
-  background:var(--ok);
 }
 .context-tabs{
   display:none;
@@ -1852,6 +1821,9 @@ body:not(.site-body) .start-actions .choice-status,
 body:not(.site-body) .start-actions .start-progress{
   grid-column:1 / -1;
 }
+body:not(.site-body) .start-actions #startButton[hidden]{
+  display:none;
+}
 body:not(.site-body) .terms-stack{
   max-width:640px;
   min-width:0;
@@ -1897,12 +1869,9 @@ body:not(.site-body) .data-line{
 }
 body:not(.site-body) .start-progress{
   max-width:640px;
-  padding:11px 12px;
-  border-radius:6px;
-  background:#f6f8fa;
+  padding:8px 0;
 }
-body:not(.site-body) .start-progress p,
-body:not(.site-body) .start-progress li{
+body:not(.site-body) .start-progress p{
   font-size:.88rem;
 }
 body:not(.site-body) .data-line a,
@@ -2262,6 +2231,7 @@ body:not(.site-body) .state-card p{
   body:not(.site-body) .status-strip.info{border-color:#388bfd; background:var(--info-soft)}
 }
 @keyframes settle{from{opacity:.001; transform:translateY(6px)} to{opacity:1; transform:none}}
+@keyframes start-progress-spin{to{transform:rotate(360deg)}}
 @keyframes choice-confirm{from{transform:scale(.88)} to{transform:scale(1)}}
 @keyframes result-ring{
   from{opacity:.5; transform:scale(.72)}
@@ -5015,11 +4985,11 @@ function contextPanel(
       note: "VOUCHA records timing summaries for maintainers.",
     },
     start: {
-      heading: "What to do",
+      heading: "How it works",
       items: [
-        ["PR", "From this PR", "Questions come from your actual diff."],
-        [timeLabel, "Per question", `A ${timeLabel} timer, then it advances.`],
-        ["✓", "On finish", "Your result posts to the PR as a check."],
+        ["1", "Start the challenge", "VOUCHA creates questions from this PR's diff."],
+        ["2", "Answer each question", `You have ${timeLabel} before it is skipped.`],
+        ["3", "Get your result", "VOUCHA posts a check to the PR when you finish."],
       ],
     },
     question: {
@@ -5353,7 +5323,7 @@ export function homePage(servedOrigin = "https://voucha.dev"): string {
     <div class="faq-list">
       <details class="faq-item">
         <summary>How does it actually work?</summary>
-        <p>A PR opens, the policy decides if a challenge is needed, and the author verifies they own the PR and answers a short quiz built from the diff. Pass posts a check and attestation; fail means a cooldown and a fresh quiz. <a class="inline-link" href="/docs/challenge-lifecycle/">See the challenge lifecycle</a>.</p>
+        <p>A PR opens, the policy decides if a challenge is needed, and the author verifies they own the PR and answers a short quiz built from the diff. Pass posts a check and attestation; fail offers a fresh retry, immediately by default. <a class="inline-link" href="/docs/challenge-lifecycle/">See the challenge lifecycle</a>.</p>
       </details>
       <details class="faq-item">
         <summary>How does this fit with code review, CI, and branch protection?</summary>
@@ -5394,9 +5364,9 @@ export function startPage(
     questions: 4,
     passThreshold: 3,
     secondsPerQuestion: 60,
-  maxAttempts: 3,
+    maxAttempts: 3,
     attemptsUsed: 0,
-    cooldownMinutes: 15,
+    cooldownMinutes: 0,
   }
 ): string {
   const attemptNumber = Math.min(contract.maxAttempts, contract.attemptsUsed + 1);
@@ -5419,7 +5389,11 @@ export function startPage(
           <span><b>${contract.passThreshold}/${contract.questions}</b> passes</span>
           <span><b>~${approximateMinutes} min</b> total</span>
         </div>
-        <p class="contract-note">Attempt ${attemptNumber} of ${contract.maxAttempts}. ${contract.maxAttempts > 1 ? `Retries use a fresh quiz after a ${contract.cooldownMinutes}-minute cooldown.` : "A maintainer can reset the challenge if review is needed."}</p>
+        <p class="contract-note">Attempt ${attemptNumber} of ${contract.maxAttempts}. ${contract.maxAttempts > 1
+          ? contract.cooldownMinutes > 0
+            ? `Retries use a fresh quiz after a ${contract.cooldownMinutes}-minute cooldown.`
+            : "Retries are available immediately with a fresh quiz."
+          : "A maintainer can reset the challenge if review is needed."}</p>
         <form class="start-actions" method="POST" action="/challenge/${esc(challengeId)}/start" id="startForm">
           ${honeypotField(honeypotEnabled)}
           ${startError ? `<p class="form-error" role="alert">${esc(startError)}</p>` : ""}
@@ -5434,12 +5408,8 @@ export function startPage(
           <div class="turnstile-mode"><div class="cf-turnstile" data-sitekey="${esc(turnstileSiteKey)}" data-appearance="interaction-only" data-callback="vouchaTurnstileReady" data-expired-callback="vouchaTurnstileExpired" data-error-callback="vouchaTurnstileExpired" data-timeout-callback="vouchaTurnstileExpired"></div></div>
           <button class="btn" type="submit" id="startButton" disabled>Verifying browser...</button>
           <div class="start-progress" id="startProgress" role="status" aria-live="polite" hidden>
-            <div><strong id="startProgressTitle">Preparing the quiz</strong><p id="startProgressMessage">This can take a moment while VOUCHA reads the PR and asks the model for questions.</p></div>
-            <ol aria-label="Start progress">
-              <li data-start-step="browser" class="active">Checking browser session</li>
-              <li data-start-step="pr">Reading the pull request</li>
-              <li data-start-step="quiz">Generating PR-specific questions</li>
-            </ol>
+            <span class="start-progress-indicator" aria-hidden="true"></span>
+            <div><strong id="startProgressTitle">Preparing your challenge</strong><p id="startProgressMessage">Creating questions from this PR. This usually takes less than a minute.</p></div>
           </div>
         </form>
       </div>
@@ -5474,21 +5444,10 @@ export function startPage(
   var progress = document.getElementById("startProgress");
   var title = document.getElementById("startProgressTitle");
   var message = document.getElementById("startProgressMessage");
-  var steps = progress ? Array.prototype.slice.call(progress.querySelectorAll("[data-start-step]")) : [];
   if (!form || !button) return;
-  function markStep(name) {
-    steps.forEach(function (step) {
-      var current = step.getAttribute("data-start-step") === name;
-      step.classList.toggle("active", current);
-      if (current) return;
-      var order = ["browser", "pr", "quiz"];
-      step.classList.toggle("done", order.indexOf(step.getAttribute("data-start-step")) < order.indexOf(name));
-    });
-  }
-  function setProgress(nextTitle, nextMessage, step) {
+  function setProgress(nextTitle, nextMessage) {
     if (title) title.textContent = nextTitle;
     if (message) message.textContent = nextMessage;
-    markStep(step);
   }
   form.addEventListener("submit", function (event) {
     if (!window.vouchaTurnstileVerified) {
@@ -5499,17 +5458,11 @@ export function startPage(
     }
     button.setAttribute("data-starting", "true");
     button.disabled = true;
-    button.textContent = "Starting challenge...";
+    button.hidden = true;
     if (progress) progress.hidden = false;
-    setProgress("Checking browser session", "Cloudflare is verifying this browser before the quiz starts.", "browser");
+    setProgress("Preparing your challenge", "Creating questions from this PR. This usually takes less than a minute.");
     window.setTimeout(function () {
-      setProgress("Reading the pull request", "VOUCHA is fetching the PR title, changed files, and diff from GitHub.", "pr");
-    }, 1200);
-    window.setTimeout(function () {
-      setProgress("Generating the quiz", "The model is writing questions from this PR. First runs and larger diffs can take a little longer.", "quiz");
-    }, 3200);
-    window.setTimeout(function () {
-      setProgress("Still generating", "Keep this tab open. If generation fails, the check will go neutral so the PR is not blocked.", "quiz");
+      setProgress("Taking a little longer than usual", "Keep this tab open. If VOUCHA can't create the quiz, your PR won't be blocked.");
     }, 10000);
   });
 })();
@@ -5698,6 +5651,7 @@ export function resultPage(
   options: ResultPageOptions = {}
 ): string {
   const tone = passed ? "ok" : options.verificationFailure ? "crit" : "warn";
+  const retryState = options.retryState;
   const title = passed
     ? "Attestation recorded"
     : tone === "crit"
@@ -5739,13 +5693,21 @@ export function resultPage(
         <h2>What happens next</h2>
         <p>${passed
           ? "The PR check is green and your attestation is ready for maintainers. The code still receives normal review."
-          : tone === "crit"
-            ? "The PR check stays failed with the specific verification reason. A maintainer can review or reset the challenge."
-            : "Retry timing is controlled by repository policy. A retry receives a fresh quiz when available."}</p>
+          : retryState === "immediate"
+            ? "Start a fresh quiz here when you're ready. You don't need to return to GitHub."
+            : retryState === "cooldown"
+              ? "This repository requires a wait between attempts. Return here to start a fresh quiz when the cooldown ends."
+              : tone === "crit"
+                ? "The PR check stays failed with the specific verification reason. A maintainer can review or reset the challenge."
+                : "Retry timing is controlled by repository policy. A retry receives a fresh quiz when available."}</p>
       </section>
       <div class="status-strip info">
         <span class="status-dot">${passed ? "↗" : "i"}</span>
-        <span class="status-copy"><b>${passed ? "Continue on GitHub" : "Need help?"}</b><span>${passed ? "Open the PR to see the green check and attestation." : "Open the PR to ask a maintainer about retry or manual review."}</span></span>
+        <span class="status-copy"><b>${passed ? "Continue on GitHub" : retryState ? "Stay in VOUCHA" : "Need help?"}</b><span>${passed
+          ? "Open the PR to see the green check and attestation."
+          : retryState
+            ? "Use the retry action on this page; VOUCHA keeps you on the same challenge."
+            : "Open the PR to ask a maintainer about retry or manual review."}</span></span>
       </div>
     </aside>
   </div>

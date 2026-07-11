@@ -156,9 +156,25 @@ describe("onChallengeResolved", () => {
     expect(patch.output.summary).toContain("Score 1/4");
     expect(patch.output.summary).not.toContain("Risk report");
     expect(patch.output.summary).not.toContain("under 10 seconds");
+    expect(patch.output.summary).toContain("Retry available immediately");
     expect(patch.details_url).toContain("/challenge/ch-1");
     expect(api.upsertPrComment).toHaveBeenCalledWith("o/r", 1, expect.stringContaining("VOUCHA — retry needed"));
     expect(api.upsertPrComment).toHaveBeenCalledWith("o/r", 1, expect.stringContaining("/challenge/ch-1"));
+    expect(api.upsertPrComment).toHaveBeenCalledWith("o/r", 1, expect.stringContaining("Retry immediately"));
+  });
+
+  it("reports a configured retry cooldown", async () => {
+    const api = stubApi();
+    await onChallengeResolved(testEnv, {
+      challenge: { ...passedChallenge(), status: "ready" }, outcome: "failed_retry",
+      score: 1, total: 4, telemetry: null, cfg: parseConfig("cooldown_minutes: 15\n"),
+    }, async () => api);
+
+    const [, , patch] = (api.updateCheckRun as ReturnType<typeof vi.fn>).mock.calls[0];
+    expect(patch.output.summary).toContain("after cooldown (15 min)");
+    expect(api.upsertPrComment).toHaveBeenCalledWith(
+      "o/r", 1, expect.stringContaining("after the 15 minute cooldown")
+    );
   });
 
   it("includes the full risk report on final failure", async () => {

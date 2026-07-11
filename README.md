@@ -48,7 +48,7 @@ Private repositories and teams that want full control can
    server-measured sub-two-second answers can fail the gate with a clear reason;
    merely fast answers, pointer/focus summaries, and honeypots stay report-only.
 4. Pass (3 of 4 by default) → green check + attestation comment. Fail →
-   15-minute cooldown, fresh quiz on retry, up to 3 attempts by default.
+   an in-app fresh-quiz retry, immediate by default, up to 3 attempts.
 5. The check run summary includes a risk report (timings, Turnstile verdict,
    automation fingerprints). VOUCHA never blocks merges on its own outages —
    failures report `neutral`.
@@ -124,7 +124,7 @@ signals:
     paths: ["src/**", "*.md"]
 
 max_attempts: 3
-cooldown_minutes: 15
+cooldown_minutes: 0
 draft_prs: ignore          # challenge | neutral | ignore
 require_approval: first_time  # first_time | always | never
 trust:
@@ -171,7 +171,7 @@ enforcement:
 | `signals` | `[{ type: "honeypot", report_only: true }]` | Passive risk signals that appear in the maintainer report. Today VOUCHA supports `honeypot`, an off-screen decoy form field that can flag broad automated form filling, and `code_honeypot`, maintainer-authored literal canary patterns scanned only in added diff lines. Set `signals: []` to disable passive honeypot collection. |
 | `pass_threshold` | `3` | Legacy shortcut for the default multiple-choice gate's threshold when `gates` is omitted. New configs should prefer `gates[0].pass_threshold`. |
 | `max_attempts` | `3` | Integer, 1–10. Total quiz attempts allowed per challenge before the check becomes `failed_final`; maintainers review manually unless `enforcement.auto_close` is enabled for that outcome. |
-| `cooldown_minutes` | `15` | Integer, ≥ 0. Minutes an author must wait after a failed (non-final) attempt before starting a retry. |
+| `cooldown_minutes` | `0` | Integer, ≥ 0. Minutes an author must wait after a failed (non-final) attempt before starting a retry. `0` makes retries immediate. |
 | `draft_prs` | `"ignore"` | Enum: `challenge` \| `neutral` \| `ignore`. Controls whether draft PRs get the normal challenge, a neutral check, or no check. The default keeps drafts quiet until `ready_for_review`. |
 | `require_approval` | `"first_time"` | Enum: `first_time` \| `always` \| `never`. `first_time` requires maintainer approval (`/voucha approve` PR comment) only when the author's GitHub `author_association` is `FIRST_TIME_CONTRIBUTOR`, `FIRST_TIMER`, or `NONE`; `always` requires approval for every PR; `never` skips the approval gate entirely. An invalid value falls back to `first_time`. |
 | `trust` | `{ default_author_associations: ["OWNER", "MEMBER", "COLLABORATOR"] }` | Built-in GitHub `author_association` classes that skip the challenge before other author, size, and path rules. Set `default_author_associations: []` when owners, members, and collaborators should take the challenge too. |
@@ -646,8 +646,8 @@ cannot run in CI. Walk each scenario and record the outcome:
 - [ ] Push only docs/Markdown after a pass → the new head carries the pass
       forward with an explicit check summary.
 - [ ] Open a docs-only PR → gets a success check with an "Exempt" summary.
-- [ ] Fail a quiz deliberately → red check, cooldown message shown; retrying
-      after the cooldown gets a freshly generated quiz.
+- [ ] Fail a quiz deliberately → red check and immediate retry available by
+      default; the retry gets a freshly generated quiz.
 - [ ] Exhaust attempts, then comment `/voucha retry` from a write-capable
       maintainer → a new queued check appears on the same commit, the existing
       challenge link becomes active, and the previous audit remains stored.

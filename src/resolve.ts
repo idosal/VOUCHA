@@ -106,6 +106,19 @@ function maintainerActionLine(result: AutoCloseResult): string {
   return "Maintainers: review this PR manually or comment `/voucha retry` to start a fresh challenge for this commit.";
 }
 
+function retryAvailability(cfg: VouchaConfig): { summary: string; instruction: string } {
+  if (cfg.cooldown_minutes === 0) {
+    return {
+      summary: "Retry available immediately with a freshly generated quiz.",
+      instruction: "Retry immediately with a freshly generated quiz",
+    };
+  }
+  return {
+    summary: `Retry available after cooldown (${cfg.cooldown_minutes} min) with a freshly generated quiz.`,
+    instruction: `Retry after the ${cfg.cooldown_minutes} minute cooldown with a freshly generated quiz`,
+  };
+}
+
 export async function apiForInstallation(env: Env, installationId: number): Promise<GitHubApi> {
   const token = await getInstallationToken(env.GITHUB_APP_ID, env.GITHUB_PRIVATE_KEY, installationId);
   return new GitHubApi(token);
@@ -183,12 +196,13 @@ export async function onChallengeResolved(
       // No risk report while attempts remain: per-attempt signal feedback is a
       // training signal for evasion (fail → read fired signals → adjust →
       // retry). The full behavioral report ships with the final verdict only.
+      const retry = retryAvailability(r.cfg);
       if (checkId) await api.updateCheckRun(repo, checkId, {
         status: "completed", conclusion: "failure",
         details_url: url,
         output: {
           title: `Failed (attempt ${r.challenge.attempts_used}/${r.cfg.max_attempts})`,
-          summary: `Score ${r.score}/${r.total}. Retry available after cooldown (${r.cfg.cooldown_minutes} min) with a freshly generated quiz. A behavioral report accompanies the final result.`,
+          summary: `Score ${r.score}/${r.total}. ${retry.summary} A behavioral report accompanies the final result.`,
         },
       });
       if (commentsEnabled) {
@@ -197,7 +211,7 @@ export async function onChallengeResolved(
           "",
           `@${r.challenge.author_login} did not pass attempt ${r.challenge.attempts_used}/${r.cfg.max_attempts} (score ${r.score}/${r.total}).`,
           "",
-          `Retry after the ${r.cfg.cooldown_minutes} minute cooldown with a freshly generated quiz: ${url}`,
+          `${retry.instruction}: ${url}`,
           "",
           "_Per-attempt behavioral details are withheld until the final verdict._",
         ].join("\n"));

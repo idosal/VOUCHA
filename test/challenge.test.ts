@@ -523,13 +523,26 @@ describe("submitAnswer", () => {
       .toBe("The browser identified itself as automated software.");
   });
 
-  it("fails below threshold, sets cooldown, increments attempts", async () => {
+  it("fails below threshold and allows an immediate retry by default", async () => {
     const { challengeId, quizId, d } = await startedQuiz();
     for (const [i, ans] of [[1], [0], [0], [0]].entries()) await answerQ(d, quizId, i, ans);
     const ch = await getChallenge(testEnv.DB, challengeId);
     expect(ch?.status).toBe("ready"); // retryable
     expect(ch?.attempts_used).toBe(1);
-    expect(ch?.cooldown_until).toBe("2026-07-02T12:15:00.000Z");
+    expect(ch?.cooldown_until).toBeNull();
+  });
+
+  it("sets a configured cooldown after a retryable failure", async () => {
+    const config = { ...DEFAULT_CONFIG, cooldown_minutes: 15 };
+    const challengeId = await makeChallenge("ready", config);
+    const d = deps();
+    const started = await startQuizAttempt(testEnv, d, challengeId, "alice", "tok");
+    if (!started.ok) throw new Error("setup failed");
+    for (const [i, ans] of [[1], [0], [0], [0]].entries()) {
+      await answerQ(d, started.quizId, i, ans);
+    }
+    expect((await getChallenge(testEnv.DB, challengeId))?.cooldown_until)
+      .toBe("2026-07-02T12:15:00.000Z");
   });
 
   it("marks failed_final when max attempts exhausted", async () => {

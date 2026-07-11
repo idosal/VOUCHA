@@ -338,7 +338,7 @@ const configSchema = z.object({
   draft_prs: z.enum(["challenge", "neutral", "ignore"]).catch(DEFAULT_DRAFT_PRS),
   bot_policy: botPolicySchema,
   max_attempts: z.number().int().min(1).max(10).catch(3),
-  cooldown_minutes: z.number().int().min(0).catch(15),
+  cooldown_minutes: z.number().int().min(0).catch(0),
   require_approval: z.enum(["first_time", "always", "never"]).catch("first_time"),
   rechallenge: rechallengeSchema,
   rechallenge_on_push: z.boolean().catch(false),

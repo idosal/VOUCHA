@@ -65,7 +65,7 @@ signals:
 
 require_approval: first_time
 max_attempts: 3
-cooldown_minutes: 15
+cooldown_minutes: 0
 draft_prs: ignore
 
 trust:
@@ -188,8 +188,9 @@ The glob implementation is intentionally small: `**` matches path segments and
 - `neutral`: drafts get a visible neutral check and no challenge.
 - `ignore`: drafts produce no VOUCHA check. This is the default.
 
-`max_attempts` accepts 1 through 10. `cooldown_minutes` accepts 0 or greater.
-A failed non-final attempt waits for cooldown and then receives a fresh quiz.
+`max_attempts` accepts 1 through 10. `cooldown_minutes` accepts 0 or greater
+and defaults to `0`, so retries are immediate unless a repository configures a
+wait. Every retry receives a fresh quiz.
 
 ## Author and bot trust
 
@@ -448,7 +449,7 @@ older truncation path.
 | `require_approval` | `first_time` |
 | `trust` | `{ default_author_associations: ["OWNER", "MEMBER", "COLLABORATOR"] }` |
 | `max_attempts` | `3` |
-| `cooldown_minutes` | `15` |
+| `cooldown_minutes` | `0` |
 | `draft_prs` | `ignore` |
 | `accountability` | `{ require_pr_acknowledgement: false, require_ai_disclosure: false }` |
 | `bot_policy` | `{ default: "skip", trusted_logins: [] }` |

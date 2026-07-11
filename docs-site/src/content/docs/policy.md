@@ -175,8 +175,9 @@ Maintainers approve with a PR comment:
 ```
 
 `max_attempts` and `cooldown_minutes` control retry behavior. A failed non-final
-attempt enters cooldown and generates a fresh quiz on retry. Once attempts are
-exhausted, the PR stays failed for maintainer review by default.
+attempt can retry immediately by default and gets a fresh quiz. Set
+`cooldown_minutes` to a positive value when a repository wants a wait. Once
+attempts are exhausted, the PR stays failed for maintainer review by default.
 
 A write-capable maintainer can restart a terminal failed or neutral challenge
 for the same commit without discarding the previous audit:

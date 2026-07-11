@@ -79,12 +79,15 @@ trivia.
 
 ## Retry behavior
 
-A failed non-final attempt enters cooldown. When the author retries after
-cooldown, VOUCHA generates a fresh quiz from the cached investigation.
+A failed non-final attempt can retry immediately by default. VOUCHA generates a
+fresh quiz from the cached investigation for every retry. Repositories can add
+a wait by setting a positive cooldown. The result page keeps the contributor in
+VOUCHA with a **Try again** action on the same challenge link; returning to the
+GitHub PR is optional.
 
 ```yaml
 max_attempts: 3
-cooldown_minutes: 15
+cooldown_minutes: 0
 ```
 
 Once attempts are exhausted, the check becomes failed and maintainers should

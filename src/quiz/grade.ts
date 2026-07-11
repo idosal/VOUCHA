@@ -49,7 +49,8 @@ export function canStartAttempt(
   return { allowed: true };
 }
 
-export function nextCooldown(cfg: VouchaConfig, now: Date): string {
+export function nextCooldown(cfg: VouchaConfig, now: Date): string | null {
+  if (cfg.cooldown_minutes === 0) return null;
   return new Date(now.getTime() + cfg.cooldown_minutes * 60_000).toISOString();
 }
 
