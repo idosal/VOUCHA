@@ -53,10 +53,12 @@ With this configuration:
    start the quiz.
 
 The `approved` label is only an example. Reuse the repository's existing
-maintainer-owned label or maintainer-authored issue workflow. A configured
-label counts only when it is currently present and GitHub's issue-event history
-shows that a user with `write`, `maintain`, or `admin` access applied it.
-Assignment alone is not maintainer approval.
+maintainer-owned label, maintainer-authored issue workflow, or contributor
+assignment workflow. A configured label counts only when it is currently
+present and GitHub's issue-event history shows that a user with `write`,
+`maintain`, or `admin` access applied it. A current assignment of the PR author
+also counts when the assignment event shows that such a maintainer performed
+it.
 
 Other exemptions still apply. If the repository literally wants every
 non-approved-issue PR to take the quiz, also review
@@ -65,10 +67,12 @@ non-approved-issue PR to take the quiz, also review
 
 ## Trusted issue signals
 
-An issue has maintainer approval evidence through either of these GitHub
+An issue has maintainer approval evidence through any of these GitHub
 signals:
 
 - maintainer or collaborator issue author;
+- the PR author is currently assigned to the issue, and the assignment event
+  shows a user with `write`, `maintain`, or `admin` access assigned them;
 - a configured `trusted_labels` value applied by a user whose current
   repository access is `write`, `maintain`, or `admin`.
 
@@ -82,9 +86,10 @@ exemptions:
     trusted_labels: [accepted]
 ```
 
-`require_trusted_signal: true` keeps a random issue link or contributor-applied
-label from becoming an automatic exemption. Set it to `false` only when issue
-references are already a trusted planning artifact in the repository.
+`require_trusted_signal: true` keeps a random issue link, contributor-applied
+label, or self-assignment from becoming an automatic exemption. Set it to
+`false` only when issue references are already a trusted planning artifact in
+the repository.
 
 ## Semantic match
 
@@ -102,7 +107,8 @@ have reviewed context.
 
 Use issue triage for work that maintainers have already shaped:
 
-1. A maintainer opens the issue, or applies an approval/planning label.
+1. A maintainer opens the issue, assigns the contributor, or applies an
+   approval/planning label.
 2. Contributor links the issue in the PR body with a normal closing reference.
 3. VOUCHA checks trust and semantic match.
 4. If both pass, the PR receives an exempt success check with the reason.

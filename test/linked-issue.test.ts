@@ -32,6 +32,7 @@ const issue: IssueFacts = {
 
 const pr = {
   repo: "o/r",
+  authorLogin: "contributor",
   title: "Implement dashboard dark mode",
   body: "Fixes #12",
   changedFiles: ["src/dashboard/theme.ts"],
@@ -169,14 +170,62 @@ describe("evaluateLinkedIssueExemption", () => {
     expect(provider.complete).not.toHaveBeenCalled();
   });
 
-  it("does not treat assignment as maintainer approval", async () => {
+  it("accepts the PR author's current assignment when a maintainer assigned them", async () => {
+    const result = await evaluateLinkedIssueExemption(pr, cfg, deps({
+      getIssue: vi.fn(async () => ({
+        ...issue,
+        authorAssociation: "NONE",
+        assignees: ["contributor"],
+      })),
+      getIssueEvents: vi.fn(async () => [{
+        event: "assigned",
+        label: null,
+        actorLogin: "maintainer",
+        assigneeLogin: "contributor",
+        assignerLogin: "maintainer",
+      }]),
+      getUserPermission: vi.fn(async () => "write"),
+    }));
+    expect(result.exempt).toBe(true);
+  });
+
+  it("rejects contributor self-assignment as maintainer approval", async () => {
     const provider = providerResult({ score: 0.95, rationale: "Same work." });
     const result = await evaluateLinkedIssueExemption(pr, cfg, deps({
       getIssue: vi.fn(async () => ({
         ...issue,
         authorAssociation: "NONE",
-        assignees: ["maintainer"],
+        assignees: ["contributor"],
       })),
+      getIssueEvents: vi.fn(async () => [{
+        event: "assigned",
+        label: null,
+        actorLogin: "contributor",
+        assigneeLogin: "contributor",
+        assignerLogin: "contributor",
+      }]),
+      getUserPermission: vi.fn(async () => "read"),
+      provider,
+    }));
+    expect(result).toEqual({ exempt: false });
+    expect(provider.complete).not.toHaveBeenCalled();
+  });
+
+  it("does not use an assignment that belongs to someone other than the PR author", async () => {
+    const provider = providerResult({ score: 0.95, rationale: "Same work." });
+    const result = await evaluateLinkedIssueExemption(pr, cfg, deps({
+      getIssue: vi.fn(async () => ({
+        ...issue,
+        authorAssociation: "NONE",
+        assignees: ["someone-else"],
+      })),
+      getIssueEvents: vi.fn(async () => [{
+        event: "assigned",
+        label: null,
+        actorLogin: "maintainer",
+        assigneeLogin: "someone-else",
+        assignerLogin: "maintainer",
+      }]),
       getUserPermission: vi.fn(async () => "write"),
       provider,
     }));

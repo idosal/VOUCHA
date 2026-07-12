@@ -154,10 +154,30 @@ describe("GitHubApi", () => {
       event: "labeled",
       label: "approved",
       actorLogin: "maintainer",
+      assigneeLogin: null,
+      assignerLogin: null,
     }]);
     expect(String(f.mock.calls[0][0])).toBe(
       "https://api.github.com/repos/o/r/issues/12/events?per_page=100&page=1"
     );
+  });
+
+  it("maps the assignee and assigner from issue assignment events", async () => {
+    const f = mockFetch(200, [{
+      event: "assigned",
+      actor: { login: "maintainer" },
+      assignee: { login: "contributor" },
+      assigner: { login: "maintainer" },
+    }]);
+    const api = new GitHubApi("tok", f as unknown as typeof fetch);
+
+    await expect(api.getIssueEvents("o/r", 12)).resolves.toEqual([{
+      event: "assigned",
+      label: null,
+      actorLogin: "maintainer",
+      assigneeLogin: "contributor",
+      assignerLogin: "maintainer",
+    }]);
   });
 
   it("fails closed when issue-event history exceeds the bounded lookup", async () => {

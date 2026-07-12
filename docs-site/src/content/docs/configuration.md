@@ -331,10 +331,12 @@ exemptions:
 VOUCHA discovers normal closing references such as `Fixes #123`, `Closes
 owner/repo#123`, and GitHub issue URLs. With the defaults, the issue must be in
 the same repository. A maintainer or collaborator author is approval evidence.
-For any other issue, a configured `trusted_labels` value counts only when the
-label is currently present and GitHub's issue-event history shows that a user
-with `write`, `maintain`, or `admin` access applied it. Assignment alone is not
-approval.
+For any other issue, approval evidence can be either a current assignment of
+the PR author or a configured `trusted_labels` value that is currently present.
+GitHub's issue-event history must show that a user with `write`, `maintain`, or
+`admin` access performed the assignment or applied the label. Assigning someone
+other than the PR author, self-assignment, and stale assignment events do not
+count.
 
 `min_match_score` is the 0–1 semantic score returned by the configured LLM;
 `0.7` requires a clear match without demanding identical wording. `max_issues`

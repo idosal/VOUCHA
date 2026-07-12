@@ -1,6 +1,7 @@
 import type { LinkedIssueMatchExemption } from "../config";
 import type { RepositoryAccess } from "../github/permissions";
 import { matchRepositoryAccess } from "../github/permissions";
+import { sameGitHubLogin } from "../github/login";
 import type { QuizProvider } from "../quiz/providers";
 
 const TRUSTED_ASSOCIATIONS = new Set(["OWNER", "MEMBER", "COLLABORATOR"]);
@@ -27,10 +28,13 @@ export interface IssueEventFacts {
   event: string;
   label: string | null;
   actorLogin: string | null;
+  assigneeLogin?: string | null;
+  assignerLogin?: string | null;
 }
 
 export interface LinkedIssuePrFacts {
   repo: string;
+  authorLogin: string;
   title: string;
   body: string | null;
   changedFiles: string[];
@@ -86,6 +90,7 @@ function normalizeLabel(label: string): string {
 
 async function hasMaintainerApproval(
   issue: IssueFacts,
+  pr: LinkedIssuePrFacts,
   cfg: LinkedIssueMatchExemption,
   deps: LinkedIssueDeps
 ): Promise<boolean> {
@@ -96,13 +101,34 @@ async function hasMaintainerApproval(
   const currentApprovalLabels = issue.labels
     .map(normalizeLabel)
     .filter((label) => approvalLabels.has(label));
-  if (currentApprovalLabels.length === 0) return false;
+  const prAuthorIsAssigned = issue.assignees.some((login) => sameGitHubLogin(login, pr.authorLogin));
+  if (currentApprovalLabels.length === 0 && !prAuthorIsAssigned) return false;
 
   let events: IssueEventFacts[];
   try {
     events = await deps.getIssueEvents(issue.repo, issue.number);
   } catch {
     return false;
+  }
+
+  if (prAuthorIsAssigned) {
+    for (let index = events.length - 1; index >= 0; index--) {
+      const event = events[index];
+      if (
+        event.event !== "assigned"
+        || !event.assigneeLogin
+        || !sameGitHubLogin(event.assigneeLogin, pr.authorLogin)
+      ) continue;
+      const assigner = event.assignerLogin ?? event.actorLogin;
+      if (!assigner) break;
+      try {
+        const permission = await deps.getUserPermission(issue.repo, assigner);
+        if (matchRepositoryAccess(permission, TRUSTED_PERMISSIONS)) return true;
+      } catch {
+        // An unverifiable assigner is not approval evidence.
+      }
+      break;
+    }
   }
 
   for (const label of currentApprovalLabels) {
@@ -205,7 +231,7 @@ export async function evaluateLinkedIssueExemption(
     }
     if (!issue || issue.isPullRequest) continue;
     if (cfg.require_same_repo && issue.repo.toLowerCase() !== pr.repo.toLowerCase()) continue;
-    if (!(await hasMaintainerApproval(issue, cfg, deps))) continue;
+    if (!(await hasMaintainerApproval(issue, pr, cfg, deps))) continue;
 
     let match: Awaited<ReturnType<typeof scoreLinkedIssueMatch>>;
     try {

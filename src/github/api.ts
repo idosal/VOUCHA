@@ -42,6 +42,8 @@ export interface IssueEventDetails {
   event: string;
   label: string | null;
   actorLogin: string | null;
+  assigneeLogin: string | null;
+  assignerLogin: string | null;
 }
 
 export interface TeamMembershipDetails {
@@ -264,11 +266,17 @@ export class GitHubApi {
         event: string;
         label?: { name?: string } | null;
         actor?: { login?: string } | null;
+        assignee?: { login?: string } | null;
+        assigner?: { login?: string } | null;
       }>;
       events.push(...batch.map((event) => ({
         event: event.event,
         label: event.label?.name ?? null,
         actorLogin: event.actor?.login ?? null,
+        assigneeLogin: event.assignee?.login ?? null,
+        assignerLogin: event.event === "assigned" || event.event === "unassigned"
+          ? event.assigner?.login ?? event.actor?.login ?? null
+          : null,
       })));
       if (batch.length < 100) return events;
       if (page === MAX_ISSUE_EVENT_PAGES) {

@@ -100,13 +100,15 @@ not count as introducing it.
 `linked_issue_match` is strongest when it reflects the repository's existing
 triage process:
 
-- trusted maintainers write the issue, or apply an existing planning label;
+- trusted maintainers write the issue, assign the contributor, or apply an
+  existing planning label;
 - the PR body links the issue with `Fixes #123`, `Closes #123`, or a GitHub URL;
 - the configured LLM finds that the PR title, body, and changed files match the
   requested outcome.
 
-VOUCHA verifies the actor in GitHub's label event before treating a configured
-label as approval. Assignment alone does not count as maintainer approval.
+VOUCHA verifies the actor in GitHub's label or assignment event before treating
+it as approval. An assignment counts only when the PR author is still assigned
+and a write-capable maintainer made the assignment.
 
 Keep `require_same_repo: true` unless cross-repo planning is a normal part of
 the project. Keep `require_trusted_signal: true` unless issue references alone

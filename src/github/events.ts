@@ -318,6 +318,7 @@ export async function handlePullRequestEvent(
       ? await evaluateLinkedIssueExemption(
         {
           repo,
+          authorLogin: pr.author_login,
           title: pr.title,
           body: pr.body,
           changedFiles,

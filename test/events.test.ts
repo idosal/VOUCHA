@@ -406,6 +406,60 @@ describe("handlePullRequestEvent", () => {
     expect(await getChallengeByPr(testEnv.DB, "o/r", n, "abc123")).toBeNull();
   });
 
+  it("exempts a contributor assigned to the matching issue by a maintainer", async () => {
+    const yaml = [
+      "trust:",
+      "  default_author_associations: []",
+      "require_approval: never",
+      "min_changed_lines: 0",
+      "exemptions:",
+      "  - type: linked_issue_match",
+      "    min_match_score: 0.7",
+      "",
+    ].join("\n");
+    const api = stubApi({
+      getFileContent: vi.fn(async () => yaml),
+      getPr: vi.fn(async () => ({
+        ...pr,
+        author_login: "contributor",
+        title: "Implement dashboard dark mode",
+        body: "Fixes #12",
+      })),
+      listPrFiles: vi.fn(async () => ["src/dashboard/theme.ts"]),
+      getIssue: vi.fn(async () => ({
+        repo: "o/r",
+        number: 12,
+        title: "Add dark mode to the dashboard",
+        body: "Users need the dashboard to switch to a dark theme.",
+        authorLogin: "contributor",
+        authorAssociation: "NONE",
+        assignees: ["contributor"],
+        labels: [],
+        isPullRequest: false,
+      })),
+      getIssueEvents: vi.fn(async () => [{
+        event: "assigned",
+        label: null,
+        actorLogin: "maintainer",
+        assigneeLogin: "contributor",
+        assignerLogin: "maintainer",
+      }]),
+      getUserPermission: vi.fn(async () => "maintain"),
+    });
+    const n = uniq + 31;
+
+    await handlePullRequestEvent(testEnv, api, payloadFor(n), {
+      linkedIssueProvider: providerResult({ score: 0.93, rationale: "The PR implements dark mode." }),
+    });
+
+    expect(api.createCheckRun).toHaveBeenCalledWith("o/r", expect.objectContaining({
+      status: "completed",
+      conclusion: "success",
+      output: expect.objectContaining({ title: "Exempt" }),
+    }));
+    expect(await getChallengeByPr(testEnv.DB, "o/r", n, "abc123")).toBeNull();
+  });
+
   it("exempts PR authors with a configured repository permission", async () => {
     const api = stubApi({
       getFileContent: vi.fn(async () => [

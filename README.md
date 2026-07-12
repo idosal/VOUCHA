@@ -341,22 +341,27 @@ PRs that reach review; GitHub-native controls should handle volume throttling.
 (`Fixes #123`, `Closes owner/repo#123`, or a GitHub issue URL), fetches the
 issue, and exempts the PR only when:
 
-- the issue was authored by a maintainer/collaborator, or it currently has one
-  of the configured `trusted_labels` and GitHub's issue-event history proves
-  that a user with `write`, `maintain`, or `admin` access applied that label;
+- the issue was authored by a maintainer/collaborator; the PR author is
+  currently assigned to it by a maintainer; or it currently has one of the
+  configured `trusted_labels` applied by a maintainer. For assignments and
+  labels, VOUCHA verifies the actor through GitHub's issue-event history and
+  requires current `write`, `maintain`, or `admin` access;
 - the configured LLM scores the semantic match between the issue's requested
   outcome and the PR title/body/files at or above `min_match_score`;
 - the issue is in the same repo, unless `require_same_repo: false` is set.
 
-Assignment alone is not approval. If the issue or approval evidence is missing,
-the model is unavailable, or the match is weak, VOUCHA falls back to the
-configured `gates`; it does not fail the PR for an uncertain exemption.
+An assignment counts only when the assignee is the PR author, the assignment is
+still current, and a write-capable maintainer performed it. If the issue or
+approval evidence is missing, the model is unavailable, or the match is weak,
+VOUCHA falls back to the configured `gates`; it does not fail the PR for an
+uncertain exemption.
 
 For the common governance model “approved issue implementations bypass;
 everyone else takes the quiz,” set `require_approval: never` alongside
 `linked_issue_match`. Use a maintainer-owned `trusted_labels` value such as
-`approved`, or rely on a maintainer-authored issue. The label only counts when
-its GitHub event shows that a maintainer applied it. See the
+`approved`, rely on a maintainer-authored issue, or assign the contributor to
+the issue. Labels and assignments count only when their GitHub events show that
+a maintainer performed them. See the
 [issue-backed triage guide](https://voucha.dev/docs/issue-triage/) for the full
 recipe and the other exemptions to review.
 

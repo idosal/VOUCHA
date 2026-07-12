@@ -131,7 +131,8 @@ exemptions:
     trusted_labels: [accepted, ready]
 ```
 
-Prefer labels your maintainers already use. VOUCHA verifies that the label was
-applied by a user with write-capable repository access; assignment alone is not
-approval. Avoid adding a VOUCHA-only label ceremony unless the repository truly
-wants that workflow.
+Prefer labels and contributor assignments your maintainers already use. VOUCHA
+verifies that a write-capable maintainer applied the label or assigned the PR
+author; self-assignment and assignments to someone else do not count. Avoid
+adding a VOUCHA-only label ceremony unless the repository truly wants that
+workflow.
