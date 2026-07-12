@@ -25,6 +25,43 @@ references are ignored unless `require_same_repo: false` is configured.
 Missing, untrusted, cross-repo, or weakly related issues fall through to the
 configured gate. They do not create a failure state.
 
+## Approved-issue bypass policy
+
+Use this policy when maintainers want to accept implementations of work they
+already approved in GitHub Issues, while asking every other contributor to
+complete the VOUCHA quiz:
+
+```yaml
+require_approval: never
+
+exemptions:
+  - type: linked_issue_match
+    require_same_repo: true
+    require_trusted_signal: true
+    min_match_score: 0.7
+    max_issues: 5
+    trusted_labels: [approved]
+```
+
+With this configuration:
+
+1. A PR that closes a trusted, semantically matching issue receives an
+   explanatory success check without a quiz.
+2. A PR with no issue reference, an unapproved issue, or a weak issue match
+   proceeds directly to the configured VOUCHA gate.
+3. No additional `/voucha approve` step is required before the contributor can
+   start the quiz.
+
+The `approved` label is only an example. Reuse the repository's existing
+maintainer-owned label, assignment, or maintainer-authored issue workflow.
+Maintainer and collaborator issue authors are already trusted signals, as are
+issues assigned to a maintainer or collaborator.
+
+Other exemptions still apply. If the repository literally wants every
+non-approved-issue PR to take the quiz, also review
+`trust.default_author_associations`, `bot_policy`, `min_changed_lines`, and
+`skip_paths` so those policies do not independently exempt the author or diff.
+
 ## Trusted issue signals
 
 An issue can become trusted through existing GitHub signals:

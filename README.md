@@ -350,6 +350,13 @@ issue, and exempts the PR only when:
 If the issue is missing, untrusted, or only weakly related, VOUCHA falls back
 to the configured `gates`; it does not fail the PR for an uncertain exemption.
 
+For the common governance model “approved issue implementations bypass;
+everyone else takes the quiz,” set `require_approval: never` alongside
+`linked_issue_match`. Use a maintainer-owned `trusted_labels` value such as
+`approved`, or rely on a maintainer-authored/assigned issue. See the
+[issue-backed triage guide](https://voucha.dev/docs/issue-triage/) for the full
+recipe and the other exemptions to review.
+
 ### PR investigation
 
 Quiz generation is intentionally two-step by default. On the first quiz start
