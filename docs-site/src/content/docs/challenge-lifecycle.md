@@ -1,12 +1,14 @@
 ---
 title: Challenge lifecycle
-description: How VOUCHA creates, serves, scores, and reports author comprehension challenges.
+description: How VOUCHA creates, serves, scores, and reports PR intent and accountability challenges.
 ---
 
-When no exemption applies, VOUCHA creates a challenge for the pull request
-author. The challenge is a short comprehension check about the actual PR.
+When no exemption applies, VOUCHA creates a short, diff-specific challenge for
+the pull request. It gives the author a concrete way to attest to the PR's
+intent and take responsibility for the change.
 
-It is not a humanity test. It is an author-ownership attestation.
+It is not a humanity test or a test of the author. It records that the PR was
+intentional and that its author stands behind it.
 
 ## Approval gate
 
@@ -73,9 +75,8 @@ gates:
     pass_threshold: 3
 ```
 
-Questions should test ownership-level understanding: intent, behavior changes,
-affected surfaces, compatibility, and blast radius. They should not test code
-trivia.
+Questions should focus on the PR's intent, behavior changes, affected surfaces,
+compatibility, and blast radius. They should not test code trivia.
 
 ## Retry behavior
 

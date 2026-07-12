@@ -101,7 +101,7 @@ describe("onChallengeResolved", () => {
     expect(api.addLabels).toHaveBeenCalledWith("o/r", 1, ["VOUCHA:flagged"]);
 
     const [, , patch] = (api.updateCheckRun as ReturnType<typeof vi.fn>).mock.calls[0];
-    expect(patch.output.title).toBe("Passed — strong automation evidence requires review");
+    expect(patch.output.title).toBe("Passed: strong automation evidence requires review");
 
     const [, , comment] = (api.upsertPrComment as ReturnType<typeof vi.fn>).mock.calls[0];
     expect(comment).toContain("strong automation evidence");
@@ -183,7 +183,7 @@ describe("onChallengeResolved", () => {
     expect(api.removeLabel).toHaveBeenCalledWith("o/r", 1, "VOUCHA:flagged");
     expect(api.removeLabel).toHaveBeenCalledWith("o/r", 1, "pr-comprehension:flagged");
     const [, , patch] = (api.updateCheckRun as ReturnType<typeof vi.fn>).mock.calls[0];
-    expect(patch.output.title).toBe("Passed — strong automation evidence requires review");
+    expect(patch.output.title).toBe("Passed: strong automation evidence requires review");
   });
 
   it("withholds the risk report on a retryable failure (no mid-challenge signal feedback)", async () => {
@@ -199,7 +199,7 @@ describe("onChallengeResolved", () => {
     expect(patch.output.summary).not.toContain("under 10 seconds");
     expect(patch.output.summary).toContain("Retry available immediately");
     expect(patch.details_url).toContain("/challenge/ch-1");
-    expect(api.upsertPrComment).toHaveBeenCalledWith("o/r", 1, expect.stringContaining("VOUCHA — retry needed"));
+    expect(api.upsertPrComment).toHaveBeenCalledWith("o/r", 1, expect.stringContaining("VOUCHA: retry needed"));
     expect(api.upsertPrComment).toHaveBeenCalledWith("o/r", 1, expect.stringContaining("/challenge/ch-1"));
     expect(api.upsertPrComment).toHaveBeenCalledWith("o/r", 1, expect.stringContaining("Retry immediately"));
     expect(api.ensureLabel).toHaveBeenCalledWith(

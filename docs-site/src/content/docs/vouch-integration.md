@@ -8,7 +8,7 @@ questions:
 
 - **Vouch:** has this project community explicitly trusted this contributor to
   participate?
-- **VOUCHA:** does this author understand this particular pull request?
+- **VOUCHA:** was this pull request intentional, and does its author stand behind it?
 
 The integration makes Vouch an upstream trust source without turning a VOUCHA
 quiz result into durable contributor reputation.

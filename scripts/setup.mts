@@ -54,7 +54,7 @@ let whoami = "";
 try {
   whoami = wrangler(["whoami"], { quiet: true });
 } catch {
-  die("Not logged in to Cloudflare. Run: npx wrangler login  — then re-run npm run setup");
+  die("Not logged in to Cloudflare. Run `npx wrangler login`, then re-run `npm run setup`.");
 }
 // If whoami lists multiple accounts, first match silently picks the first —
 // acceptable for a wizard: deploy uses wrangler's own account resolution, and
@@ -63,7 +63,7 @@ const accountId = (whoami.match(/([0-9a-f]{32})/) ?? [])[1];
 // wrangler whoami exits 0 even when unauthenticated, so the try/catch above
 // only catches hard failures — detect the logged-out case by the missing id.
 if (!accountId) {
-  die("Not logged in to Cloudflare (wrangler whoami shows no account). Run: npx wrangler login  — then re-run npm run setup");
+  die("Not logged in to Cloudflare (wrangler whoami shows no account). Run `npx wrangler login`, then re-run `npm run setup`.");
 }
 console.log(`✓ Cloudflare auth OK (account ${accountId.slice(0, 8)}…)`);
 
@@ -77,7 +77,7 @@ try {
   alreadySetUp = wrangler(["secret", "list", "--format", "json"], { quiet: true }).includes("GITHUB_APP_ID");
 } catch { /* never deployed (or transient failure) — fresh setup */ }
 if (alreadySetUp) {
-  console.log(`\n⚠ This Worker already has GITHUB_APP_ID set — it looks like setup already ran.
+  console.log(`\n⚠ This Worker already has GITHUB_APP_ID set. It looks like setup already ran.
 Continuing will register a NEW GitHub App and replace ALL secrets; the existing app will be orphaned (delete it at github.com/settings/apps).`);
   const answer = await ask("Type 'replace' to continue, anything else to abort");
   if (answer !== "replace") {
@@ -97,7 +97,7 @@ try {
   die("Deploy failed. Fix the error above, or follow the Manual setup section in README.md, then re-run.");
 }
 let baseUrl = parseDeployedUrl(deployOut) ?? "";
-if (!baseUrl) baseUrl = await ask("Could not detect the Worker URL — paste your Worker's public origin (e.g. https://voucha.<your-subdomain>.workers.dev or your custom domain)");
+if (!baseUrl) baseUrl = await ask("Could not detect the Worker URL. Paste your Worker's public origin (e.g. https://voucha.<your-subdomain>.workers.dev or your custom domain)");
 baseUrl = baseUrl.replace(/\/+$/, "");
 console.log(`✓ Worker at ${baseUrl}`);
 
@@ -125,7 +125,7 @@ const appConfig = await new Promise<AppConfig>((resolve, reject) => {
   // Dead-ends must not hang the wizard: bad state, missing code, and a
   // never-arriving callback all reject (after responding to the browser).
   const timeout = setTimeout(() => {
-    fail(new Error("no callback received from GitHub — re-run npm run setup, or create the app manually (README step 2)"));
+    fail(new Error("no callback received from GitHub. Re-run npm run setup, or create the app manually (README step 2)"));
   }, 10 * 60 * 1000);
   const fail = (e: unknown) => { clearTimeout(timeout); server.close(); reject(e); };
   const done = (cfg: AppConfig) => { clearTimeout(timeout); server.close(); resolve(cfg); };
@@ -139,7 +139,7 @@ const appConfig = await new Promise<AppConfig>((resolve, reject) => {
     }
     if (url.pathname === "/callback") {
       if (url.searchParams.get("state") !== state) {
-        res.writeHead(400).end("state mismatch — re-run npm run setup");
+        res.writeHead(400).end("state mismatch. Re-run npm run setup");
         fail(new Error("state mismatch in GitHub callback"));
         return;
       }
@@ -160,7 +160,7 @@ const appConfig = await new Promise<AppConfig>((resolve, reject) => {
           .end("<h2>✓ VOUCHA PR check app created.</h2>You can close this tab and return to the terminal.");
         done(cfg);
       } catch (e) {
-        res.writeHead(500).end("exchange failed — see terminal");
+        res.writeHead(500).end("exchange failed. See terminal");
         fail(e);
       }
       return;
@@ -241,7 +241,7 @@ try {
   } catch {
     // Names only — secret values must never reach logs.
     const remaining = entries.slice(written).map(([name]) => name).join(", ");
-    die(`${written}/${entries.length} secrets written — set the remaining ones with: wrangler secret put <NAME> (remaining: ${remaining})`);
+    die(`${written}/${entries.length} secrets written. Set the remaining ones with: wrangler secret put <NAME> (remaining: ${remaining})`);
   }
 }
 console.log(`✓ ${Object.keys(secrets).length} secrets written`);

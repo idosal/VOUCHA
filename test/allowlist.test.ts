@@ -53,10 +53,10 @@ describe("isRepoAllowed", () => {
   });
 });
 
-// The gate lives in the /webhook handler and must short-circuit *before*
-// apiForInstallation runs. In the test env GITHUB_PRIVATE_KEY is empty, so
-// reaching apiForInstallation throws and logs "webhook handling failed" — a
-// reliable observable for whether the handler proceeded past the gate.
+// The gate lives in the /webhook handler. In the test env GITHUB_PRIVATE_KEY is
+// empty, so reaching apiForInstallation throws and logs "webhook handling
+// failed" — a reliable observable for whether the handler attempted GitHub API
+// work or returned early.
 describe("POST /webhook allowlist gate", () => {
   function prBody(repoFullName: string): string {
     return JSON.stringify({
@@ -83,13 +83,13 @@ describe("POST /webhook allowlist gate", () => {
     return res;
   }
 
-  it("skips a repo outside the allowlist (never reaches installation auth)", async () => {
+  it("attempts an early-access notice for a PR outside the allowlist", async () => {
     const errorSpy = vi.spyOn(console, "error").mockImplementation(() => {});
     try {
       const gatedEnv = { ...testEnv, REPO_ALLOWLIST: "idosal/voucha" } as unknown as Env;
       const res = await post(prBody("someone/other"), gatedEnv);
       expect(res.status).toBe(200);
-      expect(errorSpy).not.toHaveBeenCalledWith("webhook handling failed", expect.anything(), expect.anything());
+      expect(errorSpy).toHaveBeenCalledWith("webhook handling failed", "pull_request", expect.anything());
     } finally {
       errorSpy.mockRestore();
     }

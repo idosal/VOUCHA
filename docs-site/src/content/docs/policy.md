@@ -25,14 +25,14 @@ down the check or silently erase the rest of the repository policy.
 8. Apply GitHub team, repository permission, and prior merged PR exemptions.
 9. Evaluate issue-backed context when `linked_issue_match` is configured.
 10. Reuse or invalidate a prior pass according to `rechallenge`.
-11. Create an author-facing challenge only if no exemption applies.
+11. Create a PR attestation challenge only if no exemption applies.
 
 Form honeypot signals are collected during challenge submission. Code honeypot
 signals are available earlier because they come from the pull request diff.
 
 ## Gates
 
-`gates` define what proof is required when a PR reaches the author-facing step.
+`gates` define the attestation process when a PR reaches the contributor step.
 The current production gate is `multiple_choice`, configured by question count
 and pass threshold.
 

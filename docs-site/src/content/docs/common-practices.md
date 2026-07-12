@@ -1,11 +1,179 @@
 ---
 title: Common practices
-description: Operational patterns for accountability, GitHub PR limits, trust tiers, honeypots, issue triage, path-specific gates, drafts, retries, and output volume.
+description: Copy-pasteable maintenance recipes plus operational patterns for trust, accountability, path-specific gates, retries, and output volume.
 ---
 
 VOUCHA works best as a maintainer-facing policy system. The strongest
 rollouts are explicit about what is trusted, what is merely suspicious, and
 what should still go to human review.
+
+## Recipes: turn an allowlist into a quiz fallback
+
+Many repositories start with a hard rule such as "only existing contributors"
+or "only vouched authors." VOUCHA can keep that trusted path while giving
+other contributors a way to confirm that a PR was intentional and that they
+stand behind the specific change.
+
+The recipes below are starter `.github/voucha.yml` policies. They deliberately
+set `min_changed_lines: 0`, `skip_paths: []`, and `require_approval: never` so a
+ready-for-review human PR that does not match the named trust rule reaches the
+quiz immediately. Drafts and bots still follow their separate defaults. If you
+combine a recipe with an existing policy, remember that exemptions are ORed:
+remove any exemption that should no longer bypass the quiz.
+
+### Existing contributors skip; newcomers take the quiz
+
+This is the quiz-backed version of "contributions from known contributors
+only." Owners, members, collaborators, and authors GitHub identifies as prior
+contributors skip. Other human authors get a four-question challenge instead
+of an automatic rejection.
+
+```yaml
+gates:
+  - type: multiple_choice
+    questions: 4
+    pass_threshold: 3
+
+trust:
+  default_author_associations: [OWNER, MEMBER, COLLABORATOR]
+
+exemptions:
+  - type: author_association
+    associations: [CONTRIBUTOR]
+
+require_approval: never
+min_changed_lines: 0
+skip_paths: []
+```
+
+When "established contributor" means a repository-specific amount of merged
+work, replace the `author_association` exemption with:
+
+```yaml
+exemptions:
+  - type: prior_merged_prs
+    min_count: 3
+```
+
+### Vouched authors skip; everyone else takes the quiz
+
+Use Vouch as the only durable author-trust list. Vouched authors skip,
+unknown authors take the quiz, and denounced authors receive a failed check.
+This strict version also quizzes owners and maintainers unless they are in the
+Vouch file; restore the default author associations if that is not desired.
+
+```yaml
+gates:
+  - type: multiple_choice
+    questions: 4
+    pass_threshold: 3
+
+trust:
+  default_author_associations: []
+  vouch:
+    enabled: true
+    file: .github/VOUCHED.td
+
+exemptions: []
+require_approval: never
+min_changed_lines: 0
+skip_paths: []
+```
+
+### A trusted team skips; everyone else takes the quiz
+
+Use this instead of restricting contributions to an organization team. Active
+members of the configured team skip; everyone else has the quiz path. GitHub
+team checks require Members read permission on the GitHub App.
+
+```yaml
+gates:
+  - type: multiple_choice
+    questions: 4
+    pass_threshold: 3
+
+trust:
+  default_author_associations: []
+
+exemptions:
+  - type: github_team
+    teams: [maintainers]
+    roles: [member, maintainer]
+
+require_approval: never
+min_changed_lines: 0
+skip_paths: []
+```
+
+### Approved issue work skips; unsolicited work takes the quiz
+
+This keeps an ordinary issue-triage fast path. A PR can skip when it matches a
+linked issue that carries verified maintainer approval through authorship, a
+trusted label, or assignment of the PR author. A missing, weak, or unapproved
+issue match falls through to the quiz.
+
+```yaml
+gates:
+  - type: multiple_choice
+    questions: 4
+    pass_threshold: 3
+
+exemptions:
+  - type: linked_issue_match
+    require_same_repo: true
+    require_trusted_signal: true
+    min_match_score: 0.7
+    trusted_labels: [accepted, ready]
+
+require_approval: never
+min_changed_lines: 0
+skip_paths: []
+```
+
+This recipe needs the configured LLM for semantic issue-to-PR matching. If the
+signal cannot be verified, VOUCHA fails closed to the quiz rather than granting
+the exemption.
+
+### Everyone takes a quiz; sensitive files demand stronger proof
+
+Use a normal quiz across the repository, then require a perfect longer quiz,
+maintainer approval, and fewer attempts for auth, deployment, migrations, or
+other high-risk paths. The first matching path rule wins.
+
+```yaml
+gates:
+  - type: multiple_choice
+    questions: 4
+    pass_threshold: 3
+
+path_rules:
+  - paths:
+      - "src/auth/**"
+      - "migrations/**"
+      - ".github/workflows/**"
+    gates:
+      - type: multiple_choice
+        questions: 6
+        pass_threshold: 6
+    require_approval: always
+    max_attempts: 2
+    cooldown_minutes: 30
+    min_changed_lines: 0
+    skip_paths: []
+
+trust:
+  default_author_associations: []
+
+exemptions: []
+require_approval: never
+min_changed_lines: 0
+skip_paths: []
+```
+
+Path rules change the policy for authors who reach the gate; they do not undo
+global trust exemptions. The strict recipe therefore removes author
+exemptions. If maintainers or teams are added back as exemptions, they will
+skip both the normal and sensitive-path quizzes.
 
 ## Document accountability, not AI purity
 

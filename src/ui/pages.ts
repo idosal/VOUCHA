@@ -4924,7 +4924,7 @@ ${social}
 <link rel="icon" type="image/png" sizes="32x32" href="/favicon-dark-32x32.png" media="(prefers-color-scheme: dark)">
 <link rel="apple-touch-icon" href="/apple-touch-icon.png">
 <link rel="apple-touch-icon" href="/apple-touch-icon-dark.png" media="(prefers-color-scheme: dark)">
-<title>${esc(title)} — VOUCHA</title>
+<title>${esc(title)} | VOUCHA</title>
 <style>${STYLE}</style></head>
 <body${bodyClass}><main class="${mainClass}">${body}</main></body></html>`;
 }
@@ -4948,7 +4948,7 @@ function progressRail(index: number, total: number): string {
   const pct = total <= 1 ? 100 : Math.max(0, Math.min(100, (index / (total - 1)) * 100));
   const items = Array.from({ length: total }, (_, i) => {
     const state = i < index ? "done" : i === index ? "active" : "";
-    const mark = i < index ? "—" : String(i + 1);
+    const mark = i < index ? "✓" : String(i + 1);
     const label = i < index ? `Question ${i + 1} complete` : i === index ? "Current" : `Question ${i + 1}`;
     return `<li class="${state}"${i === index ? ' aria-current="step"' : ""}><b>${mark}</b><span>${label}</span></li>`;
   }).join("");
@@ -4986,8 +4986,8 @@ function contextPanel(
     verify: {
       heading: "What to do",
       items: [
-        ["1", "Post the verification comment in the GitHub PR", "As the author, in the PR thread."],
-        ["2", "GitHub confirms it's you", "Authorship is checked from the comment."],
+        ["1", "Post the verification comment in the GitHub PR", "Use the PR author's account in the PR thread."],
+        ["2", "GitHub confirms PR ownership", "The signed webhook identifies who posted the comment."],
         ["3", "Then answer", "This tab continues on its own."],
       ],
       note: "VOUCHA records timing summaries for maintainers.",
@@ -5080,14 +5080,14 @@ export function verificationPage(
   const authorJson = JSON.stringify(authorLogin);
   const statusUrlJson = JSON.stringify(`/challenge/${challengeId}/verify/status`);
   const challengeUrlJson = JSON.stringify(`/challenge/${challengeId}`);
-  return layout("Verify author", `
+  return layout("Verify PR ownership", `
 <div class="app">
-  ${commandBar("PR author check", prRef)}
+  ${commandBar("PR ownership", prRef)}
   <div class="console">
     <section class="workspace" aria-labelledby="verify-title">
       ${stageRail("verify")}
       <div class="prelude">
-        <p class="kicker-row"><span class="pill">Author verification</span><span class="ref">@${esc(authorLogin)}</span></p>
+        <p class="kicker-row"><span class="pill">PR ownership</span><span class="ref">@${esc(authorLogin)}</span></p>
         <h1 id="verify-title">Verify from the PR.</h1>
         <p class="lead">Post the one-time command as @${esc(authorLogin)}. GitHub verifies authorship; this tab continues when the PR comment arrives.</p>
         <div class="inline-note">
@@ -5189,7 +5189,7 @@ export function verificationPage(
     button.disabled = true;
     setStatus("Copying the command...");
     copyCommand().then(function () {
-      button.textContent = options.open ? "Copied ✓ — opening PR" : "Copied ✓";
+      button.textContent = options.open ? "Copied ✓, opening PR" : "Copied ✓";
       button.classList.add("is-success");
       if (options.open) {
         var opened = openPr();
@@ -5259,7 +5259,7 @@ export function homePage(servedOrigin = "https://voucha.dev"): string {
     }
   })();
   const socialDescription =
-    "VOUCHA is free open-source GitHub PR governance for asking authors to prove they understand the change.";
+    "VOUCHA is free open-source GitHub PR governance for confirming that PRs are intentional and their authors stand behind them.";
   return layout("A policy layer for GitHub pull requests", `
 <div class="voucha-shell">
   <nav class="voucha-top" aria-label="Primary">
@@ -5275,7 +5275,7 @@ export function homePage(servedOrigin = "https://voucha.dev"): string {
     <div class="voucha-copy">
       <p class="voucha-kicker">A policy layer for GitHub pull requests.</p>
       <h1 id="home-title">Say yes to <br>contributions.</h1>
-      <p class="voucha-lead">You decide who's trusted and which changes need a closer look. VOUCHA allows contributors to prove their understanding and intent in an interactive app.</p>
+      <p class="voucha-lead">You decide who's trusted and which changes need a closer look. VOUCHA gives contributors a concrete way to confirm that a PR was intentional and that they stand behind it.</p>
       <div class="voucha-actions">
         <a class="voucha-button primary" href="${INSTALL_URL}" target="_blank" rel="noopener noreferrer">Install the app</a>
         <a class="voucha-button" href="#install">Self-host it</a>
@@ -5287,7 +5287,7 @@ export function homePage(servedOrigin = "https://voucha.dev"): string {
     <aside class="policy-receipt" aria-label="GitHub Actions policy report example">
       <div class="receipt-head"><span class="receipt-dot" aria-hidden="true">!</span><div><strong>VOUCHA check</strong><span>pull_request #482</span></div></div>
       <h2 class="receipt-title">Challenge required</h2>
-      <p class="receipt-subtitle">The author explains the change before review.</p>
+      <p class="receipt-subtitle">The author confirms intent and ownership before review.</p>
       <div class="receipt-lines">
         <div class="receipt-line"><b>!</b><span><strong>Reason</strong><small>new contributor, sensitive files changed</small></span></div>
         <div class="receipt-line"><b>→</b><span><strong>Challenge</strong><small>explain the change's intent and effects</small></span></div>
@@ -5299,7 +5299,7 @@ export function homePage(servedOrigin = "https://voucha.dev"): string {
 
   <section class="policy-strip" id="workflow" aria-label="VOUCHA workflow">
     <div class="policy-chip"><b>Screen the PR</b><span>file-path level trust, exemptions, sensitive paths, honeypots, quiet signals</span></div>
-    <div class="policy-chip"><b>Challenge the unknowns</b><span>short configurable tests scoped to the diff</span></div>
+    <div class="policy-chip"><b>Challenge the unknowns</b><span>short configurable questions scoped to the diff</span></div>
     <div class="policy-chip"><b>Review the record</b><span>a reasoned check and risk report for maintainers</span></div>
   </section>
 
@@ -5331,32 +5331,32 @@ export function homePage(servedOrigin = "https://voucha.dev"): string {
     <div class="faq-list">
       <details class="faq-item">
         <summary>How does it actually work?</summary>
-        <p>A PR opens, the policy decides if a challenge is needed, and the author verifies they own the PR and answers a short quiz built from the diff. Pass posts a check and attestation; fail offers a fresh retry, immediately by default. <a class="inline-link" href="/docs/challenge-lifecycle/">See the challenge lifecycle</a>.</p>
+        <p>A PR opens, the policy decides if a challenge is needed, and the author confirms that the PR is theirs and intentional before answering a short quiz built from the diff. Pass posts a check and attestation; fail offers a fresh retry, immediately by default. <a class="inline-link" href="/docs/challenge-lifecycle/">See the challenge lifecycle</a>.</p>
       </details>
       <details class="faq-item">
         <summary>How does this fit with code review, CI, and branch protection?</summary>
-        <p>Those check the <em>code</em> or route the PR; VOUCHA checks the <em>author</em>. CI asks whether it works, review whether it's good, VOUCHA whether the person submitting understands it. It runs before review, not instead of it.</p>
+        <p>Those check the <em>code</em> or route the PR; VOUCHA records intent and accountability for the <em>PR</em>. CI asks whether it works, review whether it's good, and VOUCHA whether the submission was intentional and the person submitting stands behind it. It runs before review, not instead of it.</p>
       </details>
       <details class="faq-item">
         <summary>Is this a quiz, or a governance layer?</summary>
-        <p>A governance layer — one place to decide how much scrutiny a PR needs. Trust, exemptions, routing, and passive signals settle the coarse cases; the interactive challenge is the fine-grained last mile for the changes those can't.</p>
+        <p>A governance layer is one place to decide how much scrutiny a PR needs. Trust, exemptions, routing, and passive signals settle the coarse cases; the interactive challenge is the fine-grained last mile for the changes those can't.</p>
       </details>
       <details class="faq-item">
         <summary>Does it block merges?</summary>
-        <p>Not by default — it posts a check and reports <code>neutral</code> on any failure, timeout, or outage, leaving enforcement to your branch-protection rules. Maintainers can optionally enable auto-close to close a PR that fails the challenge.</p>
+        <p>Not by default. It posts a check and reports <code>neutral</code> on any failure, timeout, or outage, leaving enforcement to your branch-protection rules. Maintainers can optionally enable auto-close to close a PR that fails the challenge.</p>
       </details>
       <details class="faq-item">
         <summary>Isn't this gatekeeping contributors?</summary>
-        <p>On the contrary. VOUCHA gives maintainers the confidence to say yes to contributions. AI-written code may be welcome by maintainers, but it allows them to ask that whoever submits can stand behind it.</p>
+        <p>On the contrary. VOUCHA gives maintainers the confidence to say yes to contributions. AI-written code may be welcome, and VOUCHA lets maintainers ask that whoever submits it stands behind it.</p>
       </details>
     </div>
   </section>
 </div>`, {
     bodyClass: "site-body",
     mainClass: "site-page",
-    description: "VOUCHA is free open-source GitHub PR governance that complements code review, CI, tests, and branch protection with comprehension checks and trust exemptions.",
+    description: "VOUCHA is free open-source GitHub PR governance that complements code review, CI, tests, and branch protection with intent checks and trust exemptions.",
     social: {
-      title: "VOUCHA — A policy layer for GitHub pull requests",
+      title: "VOUCHA | A policy layer for GitHub pull requests",
       description: socialDescription,
       url: origin,
       imageUrl: `${origin}/voucha-social-card.png`,
@@ -5383,14 +5383,14 @@ export function startPage(
   ));
   return layout("Challenge", `
 <div class="app">
-  ${commandBar("PR author check", prRef)}
+  ${commandBar("PR attestation", prRef)}
   <div class="console">
     <section class="workspace" aria-labelledby="challenge-title">
       ${stageRail("answer")}
       <div class="prelude">
         <p class="kicker-row"><span class="pill">PR challenge</span><span class="ref">${esc(prRef)}</span></p>
         <h1 id="challenge-title">Stand behind this PR.</h1>
-        <p class="lead">Answer PR-specific questions about <b>intent, behavior, and affected surfaces</b>. Passing records that you understand the change.</p>
+        <p class="lead">Answer PR-specific questions about <b>intent, behavior, and affected surfaces</b>. Passing records that the PR was intentional and that you stand behind it.</p>
         <div class="challenge-contract" aria-label="Challenge format">
           <span><b>${contract.questions}</b> questions</span>
           <span><b>${contract.secondsPerQuestion}s</b> each</span>
@@ -5502,7 +5502,7 @@ export function questionPage(
     : "";
   return layout(`Question ${index + 1}`, `
 <div class="app">
-  ${commandBar("PR author check", `Question ${index + 1} of ${total}`, timer)}
+  ${commandBar("PR attestation", `Question ${index + 1} of ${total}`, timer)}
   <div class="console">
     <section class="workspace" aria-labelledby="question-title">
       ${progressRail(index, total)}

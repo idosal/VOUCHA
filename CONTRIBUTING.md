@@ -16,7 +16,7 @@ accepted issue, or difficult to review because the author cannot explain or
 iterate on the change.
 
 Some PRs may be asked to pass VOUCHA before merge. Passing is a public
-attestation that you personally understand, tested, and can support the change.
+attestation that the PR was intentional and that you stand behind the change.
 AI assistance in authoring a PR is allowed; AI or agent assistance answering a
 VOUCHA challenge is not.
 

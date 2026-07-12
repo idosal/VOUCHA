@@ -1,7 +1,7 @@
 {
   "name": "voucha",
   "version": "1.0.0",
-  "description": "GitHub PR comprehension checks for maintainers.",
+  "description": "GitHub PR intent and accountability checks for maintainers.",
   "license": "MIT",
   "private": true,
   "homepage": "https://voucha.dev",

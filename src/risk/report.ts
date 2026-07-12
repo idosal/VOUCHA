@@ -71,10 +71,10 @@ export function renderRiskReportMarkdown(report: RiskReport, t: Telemetry | null
   const lines: string[] = ["### Risk report", ""];
   lines.push(
     report.automationLikely
-      ? "**Strong automation evidence** — this quiz looks like it may have been completed by a script. The challenge result should not be treated as author attestation without review."
+      ? "**Strong automation evidence:** this quiz looks like it may have been completed by a script. The challenge result should not be treated as author attestation without review."
       : report.signals.length > 0
-        ? "**Mixed signals** — nothing conclusive on its own; details below."
-        : "**Nothing unusual** — the quiz was completed the way a person typically would."
+        ? "**Mixed signals:** nothing conclusive on its own; details below."
+        : "**Nothing unusual:** the quiz was completed the way a person typically would."
   );
   lines.push("");
   if (t) {

@@ -1,16 +1,17 @@
 ---
 title: Why use VOUCHA
-description: When a repository should ask pull request authors for proof of understanding, and what VOUCHA deliberately does not claim to solve.
+description: When a repository should ask for explicit pull request intent and accountability, and what VOUCHA deliberately does not claim to solve.
 ---
 
-VOUCHA is a free open-source project for to help maintainers accept contributions without being overwhelmed by the wave of cheap pull requests that don't signal intent. The product gives maintainers a policy layer between "trust every
+VOUCHA is a free open-source project that helps maintainers accept contributions without being overwhelmed by the wave of cheap pull requests that don't signal intent. The product gives maintainers a policy layer between "trust every
 contributor" and "close every unknown PR".
 
-It does not try to prove that a human wrote the code. It asks the PR author to
-make an on-record claim that they understand the change, while giving
-maintainers a risk report about the way that claim was made. It is designed to
-complement code review, CI, tests, branch protection, and existing maintainer
-workflows, not replace them.
+It does not try to prove that a human wrote the code or test the person who
+submitted it. It gives the PR author a way to state on the record that the PR
+was intentional and that they stand behind it, while giving maintainers a risk
+report about how that attestation was made. It is designed to complement code
+review, CI, tests, branch protection, and existing maintainer workflows, not
+replace them.
 
 ## Use it when
 
@@ -48,7 +49,7 @@ VOUCHA moves common review questions earlier:
   member, repo role holder, or contributor with enough prior merged PRs?
 - Did the PR body include the repository's required accountability fields?
 - Did the PR only touch paths the repository has chosen to skip?
-- Did the author pass a challenge about the change itself?
+- Did the PR receive a passing intent and accountability attestation?
 - Did challenge-taking signals suggest automation or outside assistance?
 
 The result is a check run with a reasoned outcome: exempt, awaiting approval,
@@ -61,8 +62,8 @@ For PRs that reach a challenge, the author verifies from GitHub with a one-time
 PR comment and answers a short multiple-choice quiz generated from PR evidence.
 The challenge page copies the verification command, opens the PR, and advances
 automatically when GitHub confirms the author comment. The questions should be
-about ownership-level understanding, not trivia about line numbers or function
-names.
+about the PR's intent, effects, and ownership, not trivia about line numbers or
+function names.
 
 A pass becomes a public attestation on the PR. A failure offers a fresh retry,
 immediately by default and optionally after a configured cooldown, up to the

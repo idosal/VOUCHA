@@ -3,9 +3,9 @@
 A repo governance layer for GitHub PRs: maintainers choose which contributions
 need an accountability check before merge, from diff-specific questions to
 issue-backed exemptions and report-only honeypots. AI-written code is fine;
-submitting changes without understanding them is not. Challenge answers must
-come from the PR author's own understanding. Passing posts a public
-attestation; maintainers get a behavioral risk report.
+VOUCHA records that a PR was intentional and that its author stands behind it.
+Challenge answers must come from the PR author's own understanding. Passing
+posts a public attestation; maintainers get a behavioral risk report.
 
 **[Install VOUCHA on GitHub](https://github.com/apps/voucha-checks/installations/new)**
 · **[See the live demo](https://github.com/idosal/voucha-owner-check-e2e/pull/11)**
@@ -26,9 +26,11 @@ Private repositories and teams that want full control can
    adds a comprehension check only when the repository policy calls for one.
 3. Keep the defaults, or copy [`templates/voucha.yml`](templates/voucha.yml) to
    `.github/voucha.yml` on the merge target branch and adapt it to your review
-   risks.
+   risks. The [common-practice recipes](https://voucha.dev/docs/common-practices/#recipes-turn-an-allowlist-into-a-quiz-fallback)
+   show how known contributors, vouched authors, trusted teams, or approved
+   issue work can skip while other authors take a quiz.
 4. Walk through [the public demo PR](https://github.com/idosal/voucha-owner-check-e2e/pull/11)
-   to see the GitHub check, author verification, diff-specific challenge, and
+   to see the GitHub check, PR ownership verification, diff-specific challenge, and
    resulting attestation in context.
 
 ## How it works
@@ -50,8 +52,8 @@ Private repositories and teams that want full control can
 4. Pass (3 of 4 by default) → green check + attestation comment. Fail →
    an in-app fresh-quiz retry, immediate by default, up to 3 attempts.
 5. The check run summary includes a risk report (timings, Turnstile verdict,
-   automation fingerprints). VOUCHA never blocks merges on its own outages —
-   failures report `neutral`.
+   automation fingerprints). VOUCHA never blocks merges on its own outages.
+   Failures report `neutral`.
 
 ## Configure per repo: `.github/voucha.yml`
 
@@ -198,8 +200,8 @@ the challenge too.
 ### Vouch integration
 
 [Vouch](https://github.com/mitchellh/vouch) manages who a project community
-trusts to participate; VOUCHA checks whether an author understands a specific
-change. Repositories using both can make Vouch an upstream trust source:
+trusts to participate; VOUCHA records intent and accountability for a specific
+PR. Repositories using both can make Vouch an upstream trust source:
 
 ```yaml
 trust:
@@ -305,8 +307,8 @@ unavailable, the exemption does not match.
 ### Contributor accountability policy
 
 VOUCHA is not an AI detector. It is an accountability gate: the author may
-use AI, but passing records that they personally understand, tested, and can
-support the PR. Repositories dealing with low-effort or unsupported PRs should
+use AI, and passing records that the PR was intentional and that they stand
+behind it. Repositories dealing with low-effort or unsupported PRs should
 also document that policy for humans, not only enforce it in YAML.
 
 Start from [templates/contributing-policy.md](templates/contributing-policy.md)
@@ -452,14 +454,14 @@ files, path scope does not exempt the PR.
 ### Glob semantics (`skip_paths` and `include_paths`)
 
 Implemented in `src/policy/exemptions.ts` (`matchesGlob`), evaluated per path
-segment (split on `/`) — no regex, so it can't backtrack pathologically:
+segment (split on `/`). It uses no regex, so it can't backtrack pathologically:
 
 - `**` spans path segments and matches **zero or more** whole segments (so
   `docs/**` matches both `docs/a.md` and `docs/a/b/c.md`, and also `docs`
   itself if it appeared as a bare changed-file path).
 - `*` matches within a single path segment only (so `*.md` matches
   `README.md` but not `docs/README.md`).
-- Every other character — including `?`, `.`, `(` — is matched **literally**,
+- Every other character, including `?`, `.`, and `(`, is matched **literally**,
   not as a special glob/regex character.
 
 ## Install or self-host
@@ -485,9 +487,9 @@ Self-host when you need private-repository support, your own Cloudflare and
 model-provider boundary, or full control over retention and operations. The
 setup wizard deploys the Worker and creates a GitHub App in your own account.
 
-Two self-deploy paths — both end with the same wizard:
+Two self-deploy paths, both ending with the same wizard:
 
-- **Deploy button (no local tooling to start):** click the button — Cloudflare
+- **Deploy button (no local tooling to start):** click the button. Cloudflare
   forks the repo and provisions the Worker, D1 database, and Workers AI
   binding. Then clone **your fork** and run the wizard for the GitHub-side
   setup (its deploy step reruns harmlessly against the already-provisioned
@@ -500,12 +502,12 @@ Two self-deploy paths — both end with the same wizard:
   npx wrangler login && npm run setup
   ```
   The wizard's first deploy auto-provisions D1 and applies migrations; it then
-  creates the GitHub App in one click (manifest flow — app ID, webhook secret,
+  creates the GitHub App in one click (manifest flow: app ID, webhook secret,
   and private key come back from a single exchange, and the key is converted
   to PKCS#8 for you), sets up Turnstile (automatic if
   `CLOUDFLARE_API_TOKEN` with **Turnstile Sites Write** is set; guided
   copy-paste otherwise), generates the session signing key, and writes all 6
-  secrets in one bulk call — they never touch disk or argv. The wizard keeps
+  secrets in one bulk call; they never touch disk or argv. The wizard keeps
   the default Workers AI provider (no API key needed, billed to your
   Cloudflare account, Kimi K2.7 Code by default); to use Anthropic or an
   OpenAI-compatible endpoint instead, see **Configure the LLM provider** in
@@ -523,7 +525,7 @@ If you prefer doing it by hand, or a wizard phase fails and points you here:
    npm run deploy            # deploys and applies migrations/ to the remote D1
    npm run db:migrate:local  # optional, for local `npm run dev`
    ```
-   The D1 binding in `wrangler.jsonc` has no `database_id` — Wrangler creates
+   The D1 binding in `wrangler.jsonc` has no `database_id`. Wrangler creates
    the database on first deploy.
 
 2. **Create a GitHub App** (github.com → Settings → Developer settings → GitHub Apps):
@@ -553,18 +555,18 @@ If you prefer doing it by hand, or a wizard phase fails and points you here:
 4. **Configure public settings** (`vars` in `wrangler.jsonc`) and **set the
    secrets** (`wrangler secret put <NAME>`), matching `Env` in `src/types.ts`:
 
-   Most self-hosters should keep the default `workers-ai` — it needs no
+   Most self-hosters should keep the default `workers-ai`; it needs no
    external API key and bills to your Cloudflare account. Choose `anthropic`
    or `openai-compat` only if you want a specific model or provider.
 
    Providers (`LLM_PROVIDER`):
-   - `workers-ai` (default) — runs on your Cloudflare account's Workers AI.
+   - `workers-ai` (default): runs on your Cloudflare account's Workers AI.
      No LLM secret needed. `LLM_MODEL` defaults to Kimi K2.7 Code
      (`@cf/moonshotai/kimi-k2.7-code`). Optionally set `AI_GATEWAY_ID` to an
      AI Gateway for spend caps and analytics.
-   - `anthropic` — direct Anthropic API. Set `LLM_MODEL` (e.g.
+   - `anthropic`: direct Anthropic API. Set `LLM_MODEL` (e.g.
      `claude-sonnet-5`) and secret `LLM_API_KEY`.
-   - `openai-compat` — any `/chat/completions` endpoint (OpenAI, Groq, local
+   - `openai-compat`: any `/chat/completions` endpoint (OpenAI, Groq, local
      vLLM). Set `LLM_BASE_URL` (e.g. `https://api.openai.com/v1`),
      `LLM_MODEL`, and secret `LLM_API_KEY` if the endpoint needs one.
 
@@ -580,7 +582,7 @@ If you prefer doing it by hand, or a wizard phase fails and points you here:
    - `GITHUB_PRIVATE_KEY` (PKCS#8 PEM from step 2)
    - `GITHUB_WEBHOOK_SECRET`
    - `TURNSTILE_SECRET_KEY`
-   - `SESSION_SIGNING_KEY` (random 32+ bytes, hex — signs the session cookie)
+   - `SESSION_SIGNING_KEY` (random 32+ bytes, hex; signs the session cookie)
    - `LLM_API_KEY` (only for `anthropic` / keyed `openai-compat`)
 
    Also confirm `APP_BASE_URL` in `wrangler.jsonc` matches your Worker's URL.
@@ -603,7 +605,7 @@ If you prefer doing it by hand, or a wizard phase fails and points you here:
    A cron trigger (`*/15 * * * *`, already in `wrangler.jsonc`) runs
    `sweepStaleChallenges` to purge old rate-limit events and sessions and to
    neutralize challenges that have gone stale (no quiz attempt in 24h) or
-   whose terminal check-run update failed to land. No extra setup — the deploy
+   whose terminal check-run update failed to land. No extra setup is needed. The deploy
    in step 1 registers the cron.
 
 ## Data custody & security
@@ -630,7 +632,7 @@ If you prefer doing it by hand, or a wizard phase fails and points you here:
   as CI checks, branch-protection gates, review comments, and the contribution
   itself. Detailed answer selections and summary telemetry remain audit data
   for maintainers rather than a separate public profile.
-- Telemetry captured during the quiz is **summary statistics only** —
+- Telemetry captured during the quiz is **summary statistics only**:
   per-question timings, answer-change counts, aggregate pointer-movement
   distance/sample counts, focus-loss counts, whether the report-only honeypot
   was submitted, whether configured code canaries appeared in added diff lines,
@@ -647,7 +649,7 @@ If you prefer doing it by hand, or a wizard phase fails and points you here:
 
 - **Not an unbeatable gate.** A contributor whose coding agent has computer
   use (e.g. an agent that can drive a browser) can have that agent take the
-  quiz itself. VOUCHA does not claim to prevent this — the product is
+  quiz itself. VOUCHA does not claim to prevent this; the product is
   attestation (making a pass a deliberate, on-the-record claim of
   understanding) plus a behavioral risk report for maintainers, not a proof
   of humanness.
@@ -655,12 +657,12 @@ If you prefer doing it by hand, or a wizard phase fails and points you here:
   description flow directly into the LLM generation prompt, so a hostile
   author can try to steer the model toward an easier quiz. This is bounded:
   correct answers never reach the client, so an attacker can't verify an
-  injection worked — worst case is a somewhat easier quiz, not a reliable
+  injection worked. The worst case is a somewhat easier quiz, not a reliable
   bypass.
 - **Webhook processing is async, fire-and-forget.** `POST /webhook` verifies
   the signature synchronously, returns `200 ok` immediately, and does the
   actual GitHub API work inside `c.executionCtx.waitUntil(...)`. If that
-  background work throws, the error is only logged — there's no delivery
+  background work throws, the error is only logged; there's no delivery
   ledger or retry from the Worker's side. Recovery today relies on GitHub's
   own webhook redelivery (the PR-event handler is idempotent per
   `(repo, pr_number, head_sha)`) and on the 15-minute cron sweep, which

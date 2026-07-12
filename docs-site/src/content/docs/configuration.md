@@ -123,7 +123,7 @@ enforcement:
 
 | Area | Fields | What it controls |
 | --- | --- | --- |
-| Author-facing proof | `gates` | The challenge type, question count, and passing threshold. |
+| PR attestation | `gates` | The challenge type, question count, and passing threshold. |
 | Scope | `skip_paths`, `include_paths`, `min_changed_lines`, `path_rules` | Which PRs should skip, enter, or receive stricter policy. |
 | Trust | `trust`, `exemptions`, `bot_policy` | Which default author associations, Vouch statuses, authors, teams, repository roles, contributor history, bots, and planned issues can avoid a challenge or be rejected. |
 | Approval and retry | `require_approval`, `accountability`, `max_attempts`, `cooldown_minutes`, `draft_prs`, `rechallenge` | Human approval, required PR-body accountability fields, drafts, retry limits, cooldown, and new-commit behavior. |

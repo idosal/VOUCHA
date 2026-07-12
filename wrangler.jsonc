@@ -45,7 +45,7 @@
     // redeploy, or override in the Cloudflare dashboard (Workers > clawptcha >
     // Settings > Variables) for a code-free change — note a later `npm run
     // deploy` re-applies this value, so remove it here for pure dashboard control.
-    "REPO_ALLOWLIST": "idosal/voucha,idosal/voucha-owner-check-e2e"
+    "REPO_ALLOWLIST": "idosal/voucha,idosal/voucha-owner-check-e2e,pbakaus/impeccable"
   }
   // Secrets (set via `wrangler secret put`):
   //   GITHUB_APP_ID, GITHUB_PRIVATE_KEY (PKCS#8 PEM), GITHUB_WEBHOOK_SECRET,

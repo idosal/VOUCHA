@@ -117,7 +117,7 @@ function commentBody(
         ? `Once approved, the author takes a short follow-up quiz about changes since ${shortDeltaBase}: ${url}`
         : `Once approved, the author takes a short quiz about this change: ${url}`,
       "",
-      "_AI assistance in authoring is allowed. Challenge answers must come from the author's own understanding. Passing posts a public attestation that the author personally understands, tested, and can support this change._",
+      "_AI assistance in authoring is allowed. Challenge answers must come from the author's own understanding. Passing posts a public attestation that the PR was intentional and that the author stands behind the change._",
     ].join("\n");
   }
   return [
@@ -131,7 +131,7 @@ function commentBody(
     "",
     shortDeltaBase
       ? "_AI assistance in authoring is allowed. Challenge answers must come from your own understanding. This follow-up quiz is generated only from the commits after your previous pass; answers are graded automatically._"
-      : "_AI assistance in authoring is allowed. Challenge answers must come from your own understanding. Passing posts a public attestation that you personally understand, tested, and can support this change. The quiz is generated from the diff; answers are graded automatically._",
+      : "_AI assistance in authoring is allowed. Challenge answers must come from your own understanding. Passing posts a public attestation that the PR was intentional and that you stand behind the change. The quiz is generated from the diff; answers are graded automatically._",
   ].join("\n");
 }
 

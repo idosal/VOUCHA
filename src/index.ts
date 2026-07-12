@@ -3,6 +3,7 @@ import { getCookie, setCookie } from "hono/cookie";
 import type { Env, Challenge } from "./types";
 import { verifyWebhookSignature } from "./github/webhook";
 import { isRepoAllowed } from "./github/allowlist";
+import { notifyEarlyAccess, shouldNotifyEarlyAccess } from "./github/early-access";
 import { handlePullRequestEvent, handleIssueCommentEvent } from "./github/events";
 import { apiForInstallation, onChallengeResolved, sweepStaleChallenges } from "./resolve";
 import {
@@ -68,7 +69,7 @@ app.onError((err, c) => {
   return c.html(
     errorPage(
       "Something went wrong",
-      "Temporary problem on our side — please try again in a minute. Your PR is not blocked by this error.",
+      "Temporary problem on our side. Please try again in a minute. Your PR is not blocked by this error.",
       challengePathActions(c.req.path)
     ),
     500
@@ -222,11 +223,18 @@ app.post("/webhook", async (c) => {
           .bind(payload.installation.id, payload.installation.account.login).run();
         return;
       }
-      // Temporary access gate: skip work for repos outside the allowlist.
-      // The installation.created record above is left intact so the app can act
-      // immediately if the repo is later allowlisted.
+      // Temporary access gate. The installation.created record above is left
+      // intact so the app can act immediately if the repo is later allowlisted.
+      // For PR activity, leave one managed comment explaining the early-access
+      // state instead of failing silently. Other event types remain no-ops.
       const repoFullName = payload.repository?.full_name as string | undefined;
-      if (repoFullName && !isRepoAllowed(c.env.REPO_ALLOWLIST, repoFullName)) return;
+      if (repoFullName && !isRepoAllowed(c.env.REPO_ALLOWLIST, repoFullName)) {
+        if (event === "pull_request" && shouldNotifyEarlyAccess(payload)) {
+          const api = await apiForInstallation(c.env, payload.installation.id);
+          await notifyEarlyAccess(api, payload);
+        }
+        return;
+      }
 
       const api = await apiForInstallation(c.env, payload.installation.id);
       if (event === "pull_request") await handlePullRequestEvent(c.env, api, payload);
@@ -490,7 +498,7 @@ app.get("/challenge/:id", async (c) => {
   }
   if (challenge.status === "superseded") {
     return c.html(errorPage("Challenge no longer active",
-      "This challenge is no longer active — a newer commit or outcome has replaced it. Check the PR for the current status.",
+      "This challenge is no longer active. A newer commit or outcome has replaced it. Check the PR for the current status.",
       challengePageActions(challenge)));
   }
   if (challenge.status === "passed") {
@@ -572,7 +580,7 @@ app.get("/challenge/:id", async (c) => {
   // Turnstile only to be rejected at submit time.
   if (challenge.status !== "ready") {
     return c.html(errorPage("Challenge no longer active",
-      "This challenge is no longer active — a newer commit or outcome has replaced it. Check the PR for the current status.",
+      "This challenge is no longer active. A newer commit or outcome has replaced it. Check the PR for the current status.",
       challengePageActions(challenge)));
   }
   return renderStartPage(c, challenge, cfg);
@@ -635,7 +643,7 @@ app.post("/challenge/:id/start", async (c) => {
     if (result.error === "bot_detected") return c.redirect(`/challenge/${c.req.param("id")}`);
     const messages: Record<string, string> = {
       not_ready: "This challenge isn't ready (awaiting approval or already resolved).",
-      cooldown: "Cooldown in effect — try again in a few minutes. You'll get a fresh quiz.",
+      cooldown: "Cooldown in effect. Try again in a few minutes. You'll get a fresh quiz.",
       attempts_exhausted: "No attempts remain. The PR check is failed; repository policy controls manual review or auto-close.",
       rate_limited: "Rate limit reached. Try again later.",
       generation_failed: "We couldn't generate the quiz from this PR right now. This is a VOUCHA-side generation problem, so the check has been marked neutral and you're not blocked.",

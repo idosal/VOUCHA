@@ -1,9 +1,9 @@
 ---
 title: VOUCHA operating model
-description: How VOUCHA decides when to trust context, record signals, or ask a pull request author for proof.
+description: How VOUCHA decides when to trust context, record signals, or ask for an explicit pull request attestation.
 hero:
   title: Maintainer operating model
-  tagline: VOUCHA is free open-source repository policy for pull requests. It resolves trust first, records passive evidence, and asks for author proof only when policy still needs it.
+  tagline: VOUCHA is free open-source repository policy for pull requests. It resolves trust first, records passive evidence, and asks for explicit PR intent and accountability only when policy still needs it.
   actions:
     - text: Get started
       link: /docs/getting-started/
@@ -15,9 +15,9 @@ hero:
 VOUCHA is a free open-source project that sits in the pull request review
 path as a fail-open governance layer. It complements code review, CI, tests,
 branch protection, and existing maintainer workflows. It does not decide
-whether a change is good. It decides whether the author has already supplied
-enough trusted context, or whether the repository should ask for a short
-comprehension challenge before maintainer review.
+whether a change is good. It decides whether a PR already has enough trusted
+context, or whether the repository should ask for a short challenge that
+records its intent and ownership before maintainer review.
 
 ## Decision order
 
@@ -29,7 +29,7 @@ comprehension challenge before maintainer review.
 | Vouch trust | optional merge-target `VOUCHED.td` lookup | Vouched authors skip the challenge, unknown authors continue, and denounced authors receive a failed check. |
 | Exemptions | configurable default author trust, author rules, teams, repository roles, prior merged PRs, paths, size, issue context | Trusted or out-of-scope work gets an explanatory success check. |
 | Bot verification and signals | Turnstile, browser automation flags, hidden form fields, code canaries, timing, pointer summaries | Turnstile, browser automation, and repeated server-measured sub-two-second answers can stop the gate; inconclusive signals are report-only. |
-| Challenge | generated questions about intent, behavior, affected surfaces, and blast radius | A passing author attests that they understand the change. |
+| Challenge | generated questions about intent, behavior, affected surfaces, and blast radius | A pass records that the PR was intentional and its author stands behind it. |
 
 ## What maintainers get
 
@@ -58,7 +58,7 @@ comprehension challenge before maintainer review.
 | [Getting started](/docs/getting-started/) | Add the first policy file and verify the first scenarios. |
 | [Deployment](/docs/deployment/) | Install the hosted app or self-host the Worker, GitHub App, Turnstile, model provider, and Flue. |
 | [Vouch integration](/docs/vouch-integration/) | Compose durable community trust with per-PR comprehension evidence. |
-| [Common practices](/docs/common-practices/) | Roll out accountability, GitHub PR limits, trust tiers, honeypots, path rules, drafts, retries, and output volume. |
+| [Common practices](/docs/common-practices/) | Start from quiz-backed contributor, Vouch, team, issue-triage, or sensitive-path recipes, then tune operations. |
 | [Verification checklist](/docs/verification/) | Smoke-test a real repository, drill failure modes, and record rollout evidence. |
 | [Privacy and data](/docs/privacy-data/) | Explain hosted and self-hosted data boundaries and contributor challenge acceptance. |
 | [Configuration](/docs/configuration/) | Check the full current policy surface and defaults. |

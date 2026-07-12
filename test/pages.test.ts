@@ -22,7 +22,7 @@ describe("challenge pages", () => {
 
     expect(html).toContain("<h1 id=\"home-title\">Say yes to <br>contributions.</h1>");
     expect(html).toContain("A policy layer for GitHub pull requests.");
-    expect(html).toContain("VOUCHA allows contributors to prove their understanding and intent in an interactive app.");
+    expect(html).toContain("VOUCHA gives contributors a concrete way to confirm that a PR was intentional and that they stand behind it.");
     expect(html).toContain("complements code review, CI, tests, and branch protection");
     expect(html).toContain('<link rel="canonical" href="https://voucha.example.com">');
     expect(html).toContain('<meta property="og:image" content="https://voucha.example.com/voucha-social-card.png">');
@@ -48,7 +48,7 @@ describe("challenge pages", () => {
     expect(html).toContain('href="https://github.com/apps/voucha-checks/installations/new"');
     expect(html).not.toContain("Open the Starlight docs");
     expect(html).not.toContain("VOUCHAA");
-    expect(html).toContain("short configurable tests scoped to the diff");
+    expect(html).toContain("short configurable questions scoped to the diff");
     expect(html).not.toContain("Team exemptions require GitHub Members read permission");
     expect(html).not.toContain("contributor-accepted answers");
     expect(html).not.toContain("npx wrangler login &amp;&amp; npm run setup");

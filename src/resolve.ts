@@ -214,7 +214,7 @@ export async function onChallengeResolved(
         status: "completed", conclusion: "success",
         details_url: url,
         output: {
-          title: report.automationLikely ? "Passed — strong automation evidence requires review" : "Passed",
+          title: report.automationLikely ? "Passed: strong automation evidence requires review" : "Passed",
           summary: `Score ${r.score}/${r.total}.\n\n${riskMd}`,
         },
       });
@@ -232,12 +232,12 @@ export async function onChallengeResolved(
       } else await clearLabel(api, repo, pr, FLAGGED_LABEL);
       if (commentsEnabled) {
         await api.upsertPrComment(repo, pr, [
-          "## VOUCHA — passed",
+          "## VOUCHA: passed",
           "",
-          `@${r.challenge.author_login} certified under challenge that they personally understand this change (score ${r.score}/${r.total}).`,
+          `@${r.challenge.author_login} attested that this PR was intentional and that they stand behind the change (score ${r.score}/${r.total}).`,
           "",
           report.automationLikely
-            ? `> ⚠️ **Review before merging:** strong automation evidence was recorded — ${report.signals.join("; ")}.`
+            ? `> ⚠️ **Review before merging:** strong automation evidence was recorded: ${report.signals.join("; ")}.`
             : "_Behavioral risk report attached to the check run for maintainers._",
           ...(detailedComments ? ["", riskMd] : []),
         ].join("\n"));
@@ -260,7 +260,7 @@ export async function onChallengeResolved(
       await reconcileFailureLabels(api, repo, pr, r.cfg.output.labels.failed);
       if (commentsEnabled) {
         await api.upsertPrComment(repo, pr, [
-          "## VOUCHA — retry needed",
+          "## VOUCHA: retry needed",
           "",
           `@${r.challenge.author_login} did not pass attempt ${r.challenge.attempts_used}/${r.cfg.max_attempts} (score ${r.score}/${r.total}).`,
           "",
@@ -278,7 +278,7 @@ export async function onChallengeResolved(
         status: "completed", conclusion: "failure",
         details_url: url,
         output: {
-          title: "Failed — challenge assistance detected",
+          title: "Failed: challenge assistance detected",
           summary: `${withAutoCloseCheckLine(
             `${reasonLine}Score ${r.score}/${r.total}. This challenge must be answered from the author's own understanding.`,
             autoClose
@@ -288,7 +288,7 @@ export async function onChallengeResolved(
       await reconcileFailureLabels(api, repo, pr, r.cfg.output.labels.failed);
       if (commentsEnabled) {
         await api.upsertPrComment(repo, pr, [
-          "## VOUCHA — challenge failed",
+          "## VOUCHA: challenge failed",
           "",
           `@${r.challenge.author_login} answered the challenge in a way that showed automation or outside assistance.`,
           ...(r.failureReason ? ["", `Reason: ${r.failureReason}`] : []),
@@ -300,7 +300,7 @@ export async function onChallengeResolved(
       break;
     }
     case "failed_final": {
-      const title = r.failureReason ? "Failed — bot verification" : "Failed — attempts exhausted";
+      const title = r.failureReason ? "Failed: bot verification" : "Failed: attempts exhausted";
       const reasonLine = r.failureReason ? `Reason: ${r.failureReason}\n\n` : "";
       const autoClose = await maybeAutoClosePr(env, api, r.challenge, r.cfg, r.outcome);
       await updateTerminalCheckRun(env, api, r.challenge, {
@@ -317,7 +317,7 @@ export async function onChallengeResolved(
       await reconcileFailureLabels(api, repo, pr, r.cfg.output.labels.failed);
       if (commentsEnabled) {
         await api.upsertPrComment(repo, pr, [
-          "## VOUCHA — challenge failed",
+          "## VOUCHA: challenge failed",
           "",
           r.failureReason
             ? `@${r.challenge.author_login} did not pass bot verification for this challenge.`
@@ -336,12 +336,12 @@ export async function onChallengeResolved(
         details_url: url,
         output: {
           title: "VOUCHA unavailable",
-          summary: "Quiz generation failed (LLM/service issue). Not blocking the merge — this is a VOUCHA-side problem, not a verdict on the PR.",
+          summary: "Quiz generation failed (LLM/service issue). The merge is not blocked. This is a VOUCHA-side problem, not a verdict on the PR.",
         },
       });
       if (commentsEnabled) {
         await api.upsertPrComment(repo, pr, [
-          "## VOUCHA — unavailable",
+          "## VOUCHA: unavailable",
           "",
           "VOUCHA could not complete this challenge because of a service-side problem. The check is neutral and does not block the PR.",
           "",
@@ -466,8 +466,8 @@ export async function sweepStaleChallenges(
         status: "completed", conclusion,
         output: {
           title: conclusion === "success" ? "Passed"
-            : ch.status === "failed_assisted" ? "Failed — challenge assistance detected"
-            : conclusion === "failure" ? "Failed — attempts exhausted"
+            : ch.status === "failed_assisted" ? "Failed: challenge assistance detected"
+            : conclusion === "failure" ? "Failed: attempts exhausted"
             : "VOUCHA unavailable",
           summary: withAutoCloseCheckLine(
             `Reconciled by scheduled sweep: challenge resolved as '${ch.status}'.${scoreLine}`,
