@@ -108,8 +108,8 @@ exemptions:
   - type: prior_merged_prs
     min_count: 3
 
-  # Optional. Reuses ordinary GitHub issue workflow; no VOUCHA-specific
-  # label is required when the linked issue already has a trusted signal.
+  # Optional. Reuses ordinary GitHub issue workflow. A maintainer-authored
+  # issue needs no label; other issues need a configured label applied by a maintainer.
   - type: linked_issue_match
     min_match_score: 0.7
 
@@ -341,19 +341,22 @@ PRs that reach review; GitHub-native controls should handle volume throttling.
 (`Fixes #123`, `Closes owner/repo#123`, or a GitHub issue URL), fetches the
 issue, and exempts the PR only when:
 
-- the issue has a trusted signal: maintainer/collaborator author, assigned
-  maintainer/collaborator, or one of the optional `trusted_labels`;
-- the PR title/body/files match the issue's requested outcome at or above
-  `min_match_score`;
+- the issue was authored by a maintainer/collaborator, or it currently has one
+  of the configured `trusted_labels` and GitHub's issue-event history proves
+  that a user with `write`, `maintain`, or `admin` access applied that label;
+- the configured LLM scores the semantic match between the issue's requested
+  outcome and the PR title/body/files at or above `min_match_score`;
 - the issue is in the same repo, unless `require_same_repo: false` is set.
 
-If the issue is missing, untrusted, or only weakly related, VOUCHA falls back
-to the configured `gates`; it does not fail the PR for an uncertain exemption.
+Assignment alone is not approval. If the issue or approval evidence is missing,
+the model is unavailable, or the match is weak, VOUCHA falls back to the
+configured `gates`; it does not fail the PR for an uncertain exemption.
 
 For the common governance model “approved issue implementations bypass;
 everyone else takes the quiz,” set `require_approval: never` alongside
 `linked_issue_match`. Use a maintainer-owned `trusted_labels` value such as
-`approved`, or rely on a maintainer-authored/assigned issue. See the
+`approved`, or rely on a maintainer-authored issue. The label only counts when
+its GitHub event shows that a maintainer applied it. See the
 [issue-backed triage guide](https://voucha.dev/docs/issue-triage/) for the full
 recipe and the other exemptions to review.
 

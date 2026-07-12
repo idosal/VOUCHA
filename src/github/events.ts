@@ -20,6 +20,7 @@ import {
 } from "../policy/exemptions";
 import { evaluateLinkedIssueExemption } from "../policy/linked-issue";
 import { evaluateVouchTrust } from "../policy/vouch";
+import { providerFromEnv, type QuizProvider } from "../quiz/providers";
 import {
   getChallengeByPr, getLatestChallengeForPr, getLatestPassedChallenge,
   insertChallenge, restartChallengeForRetry, setChallengeStatus, supersedeOldChallenges,
@@ -135,7 +136,10 @@ function commentBody(
 }
 
 export async function handlePullRequestEvent(
-  env: Env, api: GitHubApi, payload: any
+  env: Env,
+  api: GitHubApi,
+  payload: any,
+  options: { linkedIssueProvider?: QuizProvider } = {}
 ): Promise<void> {
   const action = payload.action as string;
   if (!["opened", "synchronize", "reopened", "ready_for_review", "converted_to_draft"].includes(action)) return;
@@ -307,19 +311,26 @@ export async function handlePullRequestEvent(
 
   const linkedIssueCfg = getLinkedIssueMatchExemption(cfg);
   if (linkedIssueCfg) {
-    const linkedIssueExemption = await evaluateLinkedIssueExemption(
-      {
-        repo,
-        title: pr.title,
-        body: pr.body,
-        changedFiles,
-      },
-      linkedIssueCfg,
-      {
-        getIssue: (issueRepo, issueNumber) => api.getIssue(issueRepo, issueNumber),
-        getUserPermission: (issueRepo, username) => api.getUserPermission(issueRepo, username),
-      }
-    );
+    const selectedProvider = options.linkedIssueProvider
+      ? { ok: true as const, provider: options.linkedIssueProvider }
+      : providerFromEnv(env);
+    const linkedIssueExemption = selectedProvider.ok
+      ? await evaluateLinkedIssueExemption(
+        {
+          repo,
+          title: pr.title,
+          body: pr.body,
+          changedFiles,
+        },
+        linkedIssueCfg,
+        {
+          getIssue: (issueRepo, issueNumber) => api.getIssue(issueRepo, issueNumber),
+          getIssueEvents: (issueRepo, issueNumber) => api.getIssueEvents(issueRepo, issueNumber),
+          getUserPermission: (issueRepo, username) => api.getUserPermission(issueRepo, username),
+          provider: selectedProvider.provider,
+        }
+      )
+      : { exempt: false as const };
     if (linkedIssueExemption.exempt) {
       await api.createCheckRun(repo, {
         name: CHECK_NAME, head_sha: headSha, status: "completed", conclusion: "success",

@@ -142,6 +142,43 @@ describe("GitHubApi", () => {
     expect(await api.getFileContent("o/r", ".github/voucha.yml", "main")).toBeNull();
   });
 
+  it("lists issue label events with their actors", async () => {
+    const f = mockFetch(200, [{
+      event: "labeled",
+      label: { name: "approved" },
+      actor: { login: "maintainer" },
+    }]);
+    const api = new GitHubApi("tok", f as unknown as typeof fetch);
+
+    await expect(api.getIssueEvents("o/r", 12)).resolves.toEqual([{
+      event: "labeled",
+      label: "approved",
+      actorLogin: "maintainer",
+    }]);
+    expect(String(f.mock.calls[0][0])).toBe(
+      "https://api.github.com/repos/o/r/issues/12/events?per_page=100&page=1"
+    );
+  });
+
+  it("fails closed when issue-event history exceeds the bounded lookup", async () => {
+    const fullPage = Array.from({ length: 100 }, (_, id) => ({
+      id,
+      event: "commented",
+      actor: { login: "user" },
+    }));
+    const f = vi.fn(async (url: RequestInfo | URL) => {
+      const page = Number(new URL(String(url)).searchParams.get("page"));
+      return new Response(JSON.stringify(page <= 10 ? fullPage : fullPage.slice(0, 1)), {
+        status: 200,
+        headers: { "content-type": "application/json" },
+      });
+    });
+    const api = new GitHubApi("tok", f as unknown as typeof fetch);
+
+    await expect(api.getIssueEvents("o/r", 12)).rejects.toThrow("event history exceeds 1000 events");
+    expect(f).toHaveBeenCalledTimes(10);
+  });
+
   it("decodes base64 file content", async () => {
     const f = mockFetch(200, { content: btoa("pass_threshold: 4\n"), encoding: "base64" });
     const api = new GitHubApi("tok", f as unknown as typeof fetch);

@@ -1,9 +1,8 @@
 import type { Env } from "../types";
 
-// Provider-neutral LLM access for quiz generation. Every provider maps ALL
-// failure modes (non-2xx, missing content, network, thrown) to { ok: false }
-// — a provider error must degrade to a failed generation attempt, which the
-// caller resolves as a `neutral` check (fail-open), never a crash.
+// Provider-neutral LLM access. Every provider maps all failure modes (non-2xx,
+// missing content, network, thrown) to { ok: false } so each caller can apply
+// its own conservative fallback instead of crashing the webhook or request.
 
 export interface CompletionParams {
   system: string;
@@ -129,8 +128,9 @@ export function workersAiProvider(ai: Ai, model: string, gatewayId?: string): Qu
 
 export type ProviderSelection = { ok: true; provider: QuizProvider } | { ok: false; error: string };
 
-// Selected per-request, validated lazily: a misconfigured provider yields a
-// failed generation (-> neutral check), because a Worker cannot fail startup.
+// Selected per-request and validated lazily because a Worker cannot fail
+// startup. Callers decide whether a missing provider means a neutral check or
+// simply that an optional exemption is unavailable.
 export function providerFromEnv(env: Env): ProviderSelection {
   switch (env.LLM_PROVIDER) {
     case "workers-ai":

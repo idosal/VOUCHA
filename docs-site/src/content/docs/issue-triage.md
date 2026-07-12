@@ -4,8 +4,8 @@ description: How linked issues can exempt planned work without requiring a new m
 ---
 
 `linked_issue_match` lets maintainers reuse normal GitHub issue workflow. A PR
-can be exempted when it links to trusted planned work and the implementation
-matches that issue closely enough.
+can be exempted when it links to maintainer-approved planned work and the
+configured LLM scores the PR as a strong semantic match.
 
 The intent is conservative: VOUCHA should recognize a PR that implements a
 trusted issue, but it should not turn a weak issue reference into a blanket
@@ -53,9 +53,10 @@ With this configuration:
    start the quiz.
 
 The `approved` label is only an example. Reuse the repository's existing
-maintainer-owned label, assignment, or maintainer-authored issue workflow.
-Maintainer and collaborator issue authors are already trusted signals, as are
-issues assigned to a maintainer or collaborator.
+maintainer-owned label or maintainer-authored issue workflow. A configured
+label counts only when it is currently present and GitHub's issue-event history
+shows that a user with `write`, `maintain`, or `admin` access applied it.
+Assignment alone is not maintainer approval.
 
 Other exemptions still apply. If the repository literally wants every
 non-approved-issue PR to take the quiz, also review
@@ -64,11 +65,12 @@ non-approved-issue PR to take the quiz, also review
 
 ## Trusted issue signals
 
-An issue can become trusted through existing GitHub signals:
+An issue has maintainer approval evidence through either of these GitHub
+signals:
 
 - maintainer or collaborator issue author;
-- maintainer or collaborator assignee;
-- configured `trusted_labels`.
+- a configured `trusted_labels` value applied by a user whose current
+  repository access is `write`, `maintain`, or `admin`.
 
 ```yaml
 exemptions:
@@ -80,15 +82,17 @@ exemptions:
     trusted_labels: [accepted]
 ```
 
-`require_trusted_signal: true` keeps a random issue link from becoming an
-automatic exemption. Set it to `false` only when issue references are already a
-trusted planning artifact in the repository.
+`require_trusted_signal: true` keeps a random issue link or contributor-applied
+label from becoming an automatic exemption. Set it to `false` only when issue
+references are already a trusted planning artifact in the repository.
 
 ## Semantic match
 
-The PR title, body, and file list are compared against the requested outcome in
-the linked issue. The exemption applies only when the match score meets
-`min_match_score`.
+The configured LLM compares the PR title, body, and file list against the
+requested outcome in the linked issue. It returns a score from 0 to 1, and the
+exemption applies only when that score meets `min_match_score`. If the provider
+fails or returns invalid output, VOUCHA does not grant the exemption and the PR
+continues to the normal quiz.
 
 This keeps the workflow practical: maintainers can keep using issues for
 planning, and VOUCHA can avoid challenging implementation PRs that already
@@ -98,7 +102,7 @@ have reviewed context.
 
 Use issue triage for work that maintainers have already shaped:
 
-1. Maintainer opens, labels, or assigns the issue.
+1. A maintainer opens the issue, or applies an approval/planning label.
 2. Contributor links the issue in the PR body with a normal closing reference.
 3. VOUCHA checks trust and semantic match.
 4. If both pass, the PR receives an exempt success check with the reason.
@@ -110,12 +114,16 @@ maintainers already understand.
 ## Tuning advice
 
 Keep `min_match_score` conservative. `0.7` is a reasonable default for planned
-work: the PR should clearly implement the issue without requiring exact wording.
+work: the LLM should find that the PR clearly implements the requested outcome
+without requiring exact wording. This is a semantic threshold, not lexical
+token overlap.
 
 Use `trusted_labels` for labels that already mean accepted or ready to
-implement. Do not add a label that means only "skip VOUCHA" unless the
-repository explicitly wants that process.
+implement. VOUCHA validates who applied the label; a contributor cannot approve
+their own issue by adding the label. Do not add a label that means only "skip
+VOUCHA" unless the repository explicitly wants that process.
 
 Keep `max_issues` small. A PR that links many issues can become ambiguous; it
-is usually better for VOUCHA to challenge the author than to infer ownership
-from a broad issue list.
+is the maximum number of closing references evaluated, in PR-body order
+(default 5, maximum 10). It is usually better for VOUCHA to challenge the
+author than to infer scope from a broad issue list.

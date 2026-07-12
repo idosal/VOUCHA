@@ -4,8 +4,15 @@ import { handlePullRequestEvent, handleIssueCommentEvent } from "../src/github/e
 import { getChallengeByPr } from "../src/store";
 import type { Env } from "../src/types";
 import type { GitHubApi, PrDetails } from "../src/github/api";
+import type { QuizProvider } from "../src/quiz/providers";
 
 const testEnv = env as unknown as Env;
+
+function providerResult(result: unknown): QuizProvider {
+  return {
+    complete: vi.fn(async () => ({ ok: true as const, text: JSON.stringify(result) })),
+  };
+}
 
 function stubApi(overrides: Partial<Record<keyof GitHubApi, any>> = {}): GitHubApi {
   return {
@@ -29,6 +36,7 @@ function stubApi(overrides: Partial<Record<keyof GitHubApi, any>> = {}): GitHubA
     getPr: vi.fn(async (): Promise<PrDetails> => pr),
     listPrFiles: vi.fn(async () => ["src/app.ts"]),
     getIssue: vi.fn(async () => null),
+    getIssueEvents: vi.fn(async () => []),
     getFileContent: vi.fn(async () => null), // no voucha.yml → defaults
     upsertPrComment: vi.fn(async () => {}),
     getUserPermission: vi.fn(async () => "none"),
@@ -384,7 +392,9 @@ describe("handlePullRequestEvent", () => {
       })),
     });
     const n = uniq + 11;
-    await handlePullRequestEvent(testEnv, api, payloadFor(n));
+    await handlePullRequestEvent(testEnv, api, payloadFor(n), {
+      linkedIssueProvider: providerResult({ score: 0.91, rationale: "The PR implements dark mode." }),
+    });
     expect(api.getIssue).toHaveBeenCalledWith("o/r", 12);
     expect(api.createCheckRun).toHaveBeenCalledWith("o/r", expect.objectContaining({
       status: "completed", conclusion: "success",

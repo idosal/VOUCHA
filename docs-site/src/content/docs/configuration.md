@@ -314,8 +314,9 @@ before they open the PR.
 
 ## Linked issue exemptions
 
-`linked_issue_match` exempts planned work only when the linked issue is trusted
-and the PR semantically matches it.
+`linked_issue_match` exempts planned work only when the linked issue has
+maintainer approval evidence and the configured LLM says the PR semantically
+matches it.
 
 ```yaml
 exemptions:
@@ -329,11 +330,19 @@ exemptions:
 
 VOUCHA discovers normal closing references such as `Fixes #123`, `Closes
 owner/repo#123`, and GitHub issue URLs. With the defaults, the issue must be in
-the same repository and must have a trusted signal: maintainer or collaborator
-author, trusted assignee, or configured trusted label.
+the same repository. A maintainer or collaborator author is approval evidence.
+For any other issue, a configured `trusted_labels` value counts only when the
+label is currently present and GitHub's issue-event history shows that a user
+with `write`, `maintain`, or `admin` access applied it. Assignment alone is not
+approval.
 
-If the issue is missing, untrusted, cross-repo, or weakly related, the PR falls
-through to the normal gate instead of failing.
+`min_match_score` is the 0–1 semantic score returned by the configured LLM;
+`0.7` requires a clear match without demanding identical wording. `max_issues`
+caps how many closing references VOUCHA evaluates, in PR-body order (default 5,
+maximum 10).
+
+If the issue, approval evidence, or model result is unavailable, cross-repo, or
+weakly related, the PR falls through to the normal gate instead of failing.
 
 ## Passive signals
 

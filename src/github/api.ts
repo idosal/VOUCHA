@@ -2,6 +2,7 @@ import type { RepositoryAccessDetails } from "./permissions";
 
 const API = "https://api.github.com";
 const COMMENT_MARKER = "<!-- voucha -->";
+const MAX_ISSUE_EVENT_PAGES = 10;
 
 export interface CheckRunCreate {
   name: string;
@@ -35,6 +36,12 @@ export interface IssueDetails {
   assignees: string[];
   labels: string[];
   isPullRequest: boolean;
+}
+
+export interface IssueEventDetails {
+  event: string;
+  label: string | null;
+  actorLogin: string | null;
 }
 
 export interface TeamMembershipDetails {
@@ -244,6 +251,30 @@ export class GitHubApi {
       ),
       isPullRequest: Boolean(issue.pull_request),
     };
+  }
+
+  async getIssueEvents(repo: string, issueNumber: number): Promise<IssueEventDetails[]> {
+    const events: IssueEventDetails[] = [];
+    for (let page = 1; ; page++) {
+      const res = await this.req(
+        `/repos/${this.repoPath(repo)}/issues/${issueNumber}/events?per_page=100&page=${page}`
+      );
+      if (!res.ok) throw new Error(`getIssueEvents ${res.status}`);
+      const batch = (await res.json()) as Array<{
+        event: string;
+        label?: { name?: string } | null;
+        actor?: { login?: string } | null;
+      }>;
+      events.push(...batch.map((event) => ({
+        event: event.event,
+        label: event.label?.name ?? null,
+        actorLogin: event.actor?.login ?? null,
+      })));
+      if (batch.length < 100) return events;
+      if (page === MAX_ISSUE_EVENT_PAGES) {
+        throw new Error(`getIssueEvents: event history exceeds ${MAX_ISSUE_EVENT_PAGES * 100} events`);
+      }
+    }
   }
 
   async getFileContent(repo: string, path: string, ref: string): Promise<string | null> {
