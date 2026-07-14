@@ -200,6 +200,36 @@ accountability:
 
 That check is deliberately about responsibility, not authorship detection.
 
+## Choose passkeys or maintainer-only confirmation
+
+Passkeys are an optional confirmation path, not a requirement for completing a
+challenge. With the default policy, VOUCHA offers enrollment only after a clean
+pass and accepts only an already-established credential when a later correct
+result needs additional confirmation:
+
+```yaml
+confirmation:
+  webauthn: true
+```
+
+Contributors can decline enrollment, use a browser without WebAuthn, or lose
+access to a credential. In every case, a write-capable maintainer other than the
+PR author can comment `/voucha confirm`.
+
+Repositories that do not want VOUCHA to store credential public keys can use
+the maintainer path exclusively:
+
+```yaml
+confirmation:
+  webauthn: false
+```
+
+This hides enrollment, removes passkey actions from pending confirmation, and
+rejects the registration and authentication endpoints for challenges created
+under that policy. It does not delete credentials that already exist. The
+setting is repository-wide and comes from the merge-target policy snapshot; it
+is not a `path_rules` override.
+
 ## Pair with GitHub-native volume controls
 
 For high-volume repositories, use GitHub's PR creation limits, trusted bypass

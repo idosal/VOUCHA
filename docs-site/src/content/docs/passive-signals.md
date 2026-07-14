@@ -19,6 +19,19 @@ the challenge if it appears during the quiz, and repeated server-measured
 answers under two seconds fail a correct quiz. Every hard failure states its
 reason.
 
+## Agent-facing policy warning
+
+VOUCHA challenge pages tell automated agents not to inspect, answer, or operate
+the personal attestation. The warning is visible during the challenge and is
+also published as machine-readable `voucha-agent-policy` metadata plus a
+`data-ai-use="prohibited"` attribute.
+
+This is an instruction-level protection for compliant agents. It does not
+produce a risk signal or a verdict, and VOUCHA does not treat its presence as
+proof that no automation occurred. Turnstile validation, attempt integrity,
+server-side timing, and confirmation rules continue to enforce the challenge
+when a client ignores the policy.
+
 ## Form honeypot
 
 `honeypot` adds an off-screen form field to the challenge pages. Broad automated

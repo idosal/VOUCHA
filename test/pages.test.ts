@@ -67,12 +67,32 @@ describe("challenge pages", () => {
     expect(html).toContain('href="/docs/challenge-lifecycle/"');
     expect(html).toContain('href="/docs/"');
     expect(html).toContain('href="https://github.com/apps/voucha-checks/installations/new"');
+    expect(html).toContain('class="voucha-button voucha-github-button"');
+    expect(html).toContain('href="https://github.com/idosal/VOUCHA"');
+    expect(html).toContain(">GitHub</span></a>");
     expect(html).not.toContain("Open the Starlight docs");
     expect(html).not.toContain("VOUCHAA");
     expect(html).toContain("short configurable questions scoped to the diff");
     expect(html).not.toContain("Team exemptions require GitHub Members read permission");
     expect(html).not.toContain("contributor-accepted answers");
     expect(html).not.toContain("npx wrangler login &amp;&amp; npm run setup");
+  });
+
+  it("links every challenge surface to the VOUCHA GitHub repository", () => {
+    const pages = [
+      verificationPage("o/r#1", "alice", "challenge-id", "abc123", "https://github.com/o/r/pull/1"),
+      startPage("o/r#1", "site-key", "challenge-id"),
+      questionPage("challenge-id", 0, 4, question, 42_000),
+      resultPage(true, 4, 4, "Done."),
+      errorPage("Challenge unavailable", "Check the PR."),
+    ];
+
+    for (const html of pages) {
+      expect(html).toContain('class="command-github"');
+      expect(html).toContain('href="https://github.com/idosal/VOUCHA"');
+      expect(html).toContain('aria-label="Open the VOUCHA repository on GitHub"');
+      expect(html).toContain(">GitHub</span></a>");
+    }
   });
 
   it("renders the honeypot field when the signal is enabled", () => {

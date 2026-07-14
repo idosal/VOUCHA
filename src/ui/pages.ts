@@ -60,6 +60,7 @@ const questionMeta: Record<ClientQuestion["type"], { label: string; hint: string
 };
 
 const choiceLabels = ["A", "B", "C", "D"] as const;
+const VOUCHA_REPOSITORY_URL = "https://github.com/idosal/VOUCHA";
 
 const STYLE = `
 :root{
@@ -4882,6 +4883,59 @@ body:not(.site-body) .brand-mark{
   .faq-item summary::after{color:#ff7a59}
   .faq-item p{color:#bfd0c6}
 }
+.github-button-icon{
+  width:16px;
+  height:16px;
+  flex:none;
+  display:block;
+  fill:currentColor;
+}
+.voucha-links .voucha-github-button{
+  min-height:38px;
+  gap:8px;
+  padding:0 12px;
+  box-shadow:2px 2px 0 #d8f35f;
+}
+.voucha-links .voucha-github-button:hover{
+  text-decoration:none;
+}
+body:not(.site-body) .brand-lockup{
+  flex:none;
+}
+body:not(.site-body) .command-github{
+  min-height:28px;
+  display:inline-flex;
+  align-items:center;
+  gap:6px;
+  margin-left:3px;
+  padding:0 9px;
+  border:1px solid var(--line);
+  border-radius:6px;
+  background:var(--canvas);
+  color:var(--ink-dim);
+  font-size:.84rem;
+  font-weight:600;
+  line-height:1;
+  text-decoration:none;
+  white-space:nowrap;
+}
+body:not(.site-body) .command-github:hover{
+  border-color:var(--line-strong);
+  background:var(--panel-2);
+  color:var(--ink);
+}
+body:not(.site-body) .command-github:focus-visible{
+  outline:2px solid var(--focus);
+  outline-offset:2px;
+}
+@media (max-width:560px){
+  .voucha-links{
+    display:flex;
+  }
+  .voucha-links > a:not(.voucha-github-button){
+    display:none;
+  }
+}
 `;
 
 interface SocialMeta {
@@ -4902,6 +4956,10 @@ interface LayoutOptions {
 
 function brandLogo(): string {
   return `<picture><source media="(prefers-color-scheme: dark)" srcset="/voucha-logo-dark.svg"><img src="/voucha-logo.svg" alt=""></picture>`;
+}
+
+function githubRepositoryLink(className: string): string {
+  return `<a class="${esc(className)}" href="${VOUCHA_REPOSITORY_URL}" target="_blank" rel="noopener noreferrer" aria-label="Open the VOUCHA repository on GitHub" title="Open VOUCHA on GitHub"><svg class="github-button-icon" viewBox="0 0 16 16" aria-hidden="true"><path d="M8 0C3.58 0 0 3.58 0 8c0 3.54 2.29 6.53 5.47 7.59.4.07.55-.17.55-.38 0-.19-.01-.82-.01-1.49-2.01.37-2.53-.49-2.69-.94-.09-.23-.48-.94-.82-1.13-.28-.15-.68-.52-.01-.53.63-.01 1.08.58 1.23.82.72 1.21 1.87.87 2.33.66.07-.52.28-.87.51-1.07-1.78-.2-3.64-.89-3.64-3.95 0-.87.31-1.59.82-2.15-.08-.2-.36-1.02.08-2.12 0 0 .67-.21 2.2.82.64-.18 1.32-.27 2-.27.68 0 1.36.09 2 .27 1.53-1.04 2.2-.82 2.2-.82.44 1.1.16 1.92.08 2.12.51.56.82 1.27.82 2.15 0 3.07-1.87 3.75-3.65 3.95.29.25.54.73.54 1.48 0 1.07-.01 1.93-.01 2.2 0 .21.15.46.55.38A8.013 8.013 0 0016 8c0-4.42-3.58-8-8-8z"/></svg><span>GitHub</span></a>`;
 }
 
 function layout(
@@ -4957,7 +5015,7 @@ ${social}
 
 function commandBar(tag: string, prRef?: string, timerHtml = ""): string {
   return `<header class="commandbar">
-  <div class="brand-lockup"><span class="mark brand-mark" aria-hidden="true">${brandLogo()}</span><span class="brand-name">VOUCHA</span></div>
+  <div class="brand-lockup"><span class="mark brand-mark" aria-hidden="true">${brandLogo()}</span><span class="brand-name">VOUCHA</span>${githubRepositoryLink("command-github")}</div>
   <div class="command-context">
     <span class="command-sep" aria-hidden="true"></span>
     <span class="command-title">${esc(tag)}</span>
@@ -5303,7 +5361,7 @@ export function homePage(servedOrigin = "https://voucha.dev"): string {
     <div class="voucha-links">
       <a href="#install">Install</a>
       <a href="/docs/">Docs</a>
-      <a class="gh" href="https://github.com/idosal/VOUCHA" target="_blank" rel="noopener noreferrer" aria-label="VOUCHA on GitHub" title="VOUCHA on GitHub"><svg viewBox="0 0 16 16" aria-hidden="true"><path d="M8 0C3.58 0 0 3.58 0 8c0 3.54 2.29 6.53 5.47 7.59.4.07.55-.17.55-.38 0-.19-.01-.82-.01-1.49-2.01.37-2.53-.49-2.69-.94-.09-.23-.48-.94-.82-1.13-.28-.15-.68-.52-.01-.53.63-.01 1.08.58 1.23.82.72 1.21 1.87.87 2.33.66.07-.52.28-.87.51-1.07-1.78-.2-3.64-.89-3.64-3.95 0-.87.31-1.59.82-2.15-.08-.2-.36-1.02.08-2.12 0 0 .67-.21 2.2.82.64-.18 1.32-.27 2-.27.68 0 1.36.09 2 .27 1.53-1.04 2.2-.82 2.2-.82.44 1.1.16 1.92.08 2.12.51.56.82 1.27.82 2.15 0 3.07-1.87 3.75-3.65 3.95.29.25.54.73.54 1.48 0 1.07-.01 1.93-.01 2.2 0 .21.15.46.55.38A8.013 8.013 0 0016 8c0-4.42-3.58-8-8-8z"/></svg></a>
+      ${githubRepositoryLink("voucha-button voucha-github-button")}
     </div>
   </nav>
 

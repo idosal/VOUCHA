@@ -336,7 +336,8 @@ who is not the PR author. The maintainer comments `/voucha confirm` on the PR.
 Existing credentials are not deleted. They remain usable in repositories that
 enable WebAuthn. Like the rest of the challenge policy, this value is loaded
 from the merge target and stored with the challenge, so a feature branch cannot
-enable its own passkey path.
+enable its own passkey path. `confirmation` is repository-wide and cannot be
+overridden inside `path_rules`.
 
 ## Linked issue exemptions
 

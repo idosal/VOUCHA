@@ -62,6 +62,13 @@ collect answer telemetry. The acknowledgement is intentionally small: it tells
 contributors that VOUCHA uses the public PR context to generate the quiz and
 stores their answer selections plus summary signals for maintainer review.
 
+Challenge pages also establish an explicit automated-agent boundary. The start
+and question pages show a visible warning that an agent must not complete the
+attestation for the author. Verification, start, question, and confirmation
+pages also expose the same no-use policy through `voucha-agent-policy` metadata
+and `data-agent-policy` attributes. This is a cooperative protection for agents
+that follow page instructions, not a replacement for server-side verification.
+
 Pressing **Begin challenge** executes Cloudflare Turnstile. VOUCHA binds the
 token to the challenge with an action and signed custom-data value, then checks
 the expected hostname and sends the request IP to Siteverify. The widget stays

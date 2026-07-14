@@ -46,6 +46,10 @@ Private repositories and teams that want full control can
    and completes the gate. Turnstile runs in Managed mode and its token is
    validated against VOUCHA's hostname, action, signed challenge data, and the
    request IP.
+   Challenge pages also publish a visible automated-agent warning and a
+   machine-readable no-use policy in page metadata. This is a cooperative
+   protection for moral agents that honor page instructions; server-side verification
+   does not depend on it.
    VOUCHA first builds a cached PR investigation from the file map and selected patch
    evidence, then generates the author-facing quiz from that artifact. Today
    the shipped gate is a multiple-choice quiz about intent, behavior, and

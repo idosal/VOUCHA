@@ -50,6 +50,9 @@ signals:
   - type: honeypot
     report_only: true
 
+confirmation:
+  webauthn: true
+
 skip_paths: ["docs/**", "*.md"]
 min_changed_lines: 10
 output:
@@ -66,6 +69,10 @@ output:
 This gives first-time contributors a maintainer checkpoint before the quiz,
 keeps draft PRs quiet until they are ready for review, skips docs-only work,
 and records the default form honeypot signal as review evidence.
+`confirmation.webauthn: true` allows optional passkey enrollment after a clean
+pass. An established passkey can later confirm an otherwise-correct result that
+was paused for additional confirmation. Set it to `false` when the repository
+wants independent maintainer `/voucha confirm` confirmation only.
 The label object keeps successful PRs quiet by default, makes failures visible
 from the PR list, and flags suspicious passes. Set `passed: true` when the
 repository also wants a durable success label.
@@ -89,6 +96,11 @@ Before tightening policy, open or replay a few predictable PRs:
   green attestation check; if `output.labels.passed` is enabled, it should also
   replace any stale failure label with `VOUCHA:passed`;
 - a failed quiz should offer an immediate fresh retry by default;
+- a clean pass should offer optional passkey enrollment when WebAuthn is
+  enabled; skipping or cancelling enrollment must not block the contributor;
+- a correct result paused for additional confirmation should accept an
+  established passkey or `/voucha confirm` from a write-capable maintainer who
+  is not the PR author;
 - a meaningful code commit after a pass should create a two-question follow-up
   quiz scoped to that delta; a docs/Markdown-only commit should carry the pass
   forward.

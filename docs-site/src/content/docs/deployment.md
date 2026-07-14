@@ -101,6 +101,33 @@ control every credential by hand.
    `LLM_API_KEY` is only needed for `anthropic` or keyed `openai-compat`
    providers.
 
+## WebAuthn and passkey deployment notes
+
+Passkeys do not require another paid service, API key, or biometric integration.
+The browser and credential provider perform user verification; VOUCHA stores
+the credential public key and signature counter in D1.
+
+`APP_BASE_URL` is also the WebAuthn origin contract. VOUCHA derives the relying
+party ID from its hostname and verifies authentication against the exact origin.
+Use the final public HTTPS URL before contributors enroll passkeys, and keep it
+stable. Moving the Worker to a different hostname or origin means credentials
+enrolled for the old relying party cannot authenticate on the new one.
+
+Migration `0009_challenge_hardening.sql` adds the credential, ceremony, and
+confirmation tables. `npm run deploy` applies remote D1 migrations as part of
+the normal deployment flow. Existing installations that deploy by hand must
+apply migrations before serving the updated Worker.
+
+Repository policy controls whether a challenge may use these endpoints:
+
+```yaml
+confirmation:
+  webauthn: true
+```
+
+Set `webauthn: false` for independent maintainer confirmation only. This does
+not delete credentials previously enrolled through the same VOUCHA deployment.
+
 ## Model providers
 
 Most self-deploys should start with `workers-ai`. It uses the Cloudflare AI

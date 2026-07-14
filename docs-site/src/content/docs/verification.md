@@ -36,6 +36,10 @@ Use a demo repository with the GitHub App installed.
   update with the challenge link.
 - Open the link as the PR author, accept the challenge terms, pass Turnstile,
   and answer the quiz.
+- Confirm the start and question pages show the automated-agent warning, and
+  that challenge HTML includes `voucha-agent-policy`, `data-agent-policy`, and
+  `data-ai-use="prohibited"` without relying on those declarations as the
+  server-side enforcement mechanism.
 - Confirm the page shows 30 seconds per question, refresh does not reset the
   timer, and no minimum wait prevents an immediate human answer.
 - Confirm the check turns green, the PR comment records the attestation, and

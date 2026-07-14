@@ -89,6 +89,11 @@ during a suspicious completion and treat it as prior identity evidence.
 Maintainers can disable WebAuthn with `confirmation.webauthn: false`; stored
 credentials are not deleted and cannot be used for challenges under that policy.
 
+Credential records persist independently of an individual session or challenge
+so an established passkey can be used later. Self-hosted operators control those
+records in D1. VOUCHA does not currently provide a contributor-facing passkey
+management or deletion screen.
+
 ## Retention posture
 
 Generated questions and correct answers are needed while a challenge is active.
