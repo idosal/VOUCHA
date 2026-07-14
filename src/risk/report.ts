@@ -17,6 +17,8 @@ export type Telemetry = z.infer<typeof telemetrySchema>;
 export interface RiskReport {
   automationLikely: boolean;
   strongTimingEvidence: boolean;
+  confirmationRecommended: boolean;
+  ambiguousSignalCount: number;
   signals: string[];
 }
 
@@ -24,6 +26,9 @@ export const STRONG_TIMING_THRESHOLD_MS = 2_000;
 export const STRONG_TIMING_MIN_QUESTIONS = 2;
 export const STRONG_TIMING_FAILURE_REASON =
   "Answers arrived too quickly across the quiz to verify a manual completion.";
+export const AMBIGUOUS_SIGNAL_THRESHOLD = 2;
+export const CONFIRMATION_REQUIRED_REASON =
+  "Several independent interaction signals need an explicit author or maintainer confirmation.";
 
 // Simple heuristics only in v1. Independent challenge-taking automation
 // signals can invalidate a correct quiz because the challenge must be answered
@@ -34,11 +39,17 @@ export function buildRiskReport(t: Telemetry | null): RiskReport {
     return {
       automationLikely: false,
       strongTimingEvidence: false,
+      confirmationRecommended: false,
+      ambiguousSignalCount: 0,
       signals: ["no interaction data was received"],
     };
   }
   const signals: string[] = [];
-  if (t.honeypotTriggered) signals.push("a hidden form field was submitted");
+  let ambiguousSignalCount = 0;
+  if (t.honeypotTriggered) {
+    signals.push("a hidden form field was submitted");
+    ambiguousSignalCount++;
+  }
   if (t.codeHoneypotTriggered) signals.push("the PR introduced a configured code honeypot marker");
   if (t.webdriver) {
     signals.push("the browser identified itself as automated software");
@@ -53,9 +64,14 @@ export function buildRiskReport(t: Telemetry | null): RiskReport {
     signals.push("every answer arrived in under 2 seconds");
   } else if (t.perQuestionMs.length > 0 && t.perQuestionMs.every((ms) => ms < 10_000)) {
     signals.push("every answer took under 10 seconds");
+    ambiguousSignalCount++;
   }
   if (t.pointerDistancePx < 200 || t.pointerSamples < 10) {
     signals.push("almost no mouse movement");
+  }
+  if (t.focusLossCount >= 3) {
+    signals.push("the challenge repeatedly lost browser focus");
+    ambiguousSignalCount++;
   }
   // Turnstile, webdriver, and repeated server-measured sub-two-second answers
   // are strong evidence. Speed under ten seconds, pointer absence, focus loss,
@@ -63,6 +79,8 @@ export function buildRiskReport(t: Telemetry | null): RiskReport {
   return {
     automationLikely: t.webdriver || !t.turnstileOk || strongTimingEvidence,
     strongTimingEvidence,
+    confirmationRecommended: ambiguousSignalCount >= AMBIGUOUS_SIGNAL_THRESHOLD,
+    ambiguousSignalCount,
     signals,
   };
 }
@@ -72,6 +90,8 @@ export function renderRiskReportMarkdown(report: RiskReport, t: Telemetry | null
   lines.push(
     report.automationLikely
       ? "**Strong automation evidence:** this quiz looks like it may have been completed by a script. The challenge result should not be treated as author attestation without review."
+      : report.confirmationRecommended
+        ? "**Additional confirmation required:** several independent but individually ambiguous signals appeared during the quiz."
       : report.signals.length > 0
         ? "**Mixed signals:** nothing conclusive on its own; details below."
         : "**Nothing unusual:** the quiz was completed the way a person typically would."

@@ -2,7 +2,9 @@ import { describe, it, expect, vi } from "vitest";
 import { env } from "cloudflare:test";
 import { signSessionCookie, verifySessionCookie } from "../src/ui/session";
 import {
-  prepareQuizForChallenge, startQuizAttempt, submitAnswer, type ChallengeDeps,
+  confirmPendingChallenge, expireAbandonedQuiz, prepareQuizForChallenge,
+  startQuizAttempt, submitAnswer,
+  type ChallengeDeps,
 } from "../src/challenge";
 import { getPreparedQuiz, insertChallenge, randomToken, getChallenge, upsertPreparedQuiz } from "../src/store";
 import { DEFAULT_CONFIG } from "../src/config";
@@ -76,6 +78,24 @@ describe("startQuizAttempt", () => {
     expect(row).toEqual({ question_served_at: null, time_limit_ms: QUESTION_TIME_LIMIT_MS });
   });
 
+  it("admits only one active quiz under concurrent starts", async () => {
+    const id = await makeChallenge();
+    const d = deps();
+    const [first, second] = await Promise.all([
+      startQuizAttempt(testEnv, d, id, "alice", "turnstile-token"),
+      startQuizAttempt(testEnv, d, id, "alice", "turnstile-token"),
+    ]);
+    const successful = [first, second].filter((result) => result.ok);
+    expect(successful.length).toBeGreaterThanOrEqual(1);
+    const rows = await testEnv.DB.prepare(
+      "SELECT id, finished_at FROM quizzes WHERE challenge_id=?"
+    ).bind(id).all<{ id: string; finished_at: string | null }>();
+    expect(rows.results).toHaveLength(1);
+    expect(rows.results[0].finished_at).toBeNull();
+    expect((await getChallenge(testEnv.DB, id))?.attempts_used).toBe(1);
+    expect(d.generateQuiz).toHaveBeenCalledTimes(1);
+  });
+
   it("uses a prepared quiz after Turnstile without generating during start", async () => {
     const id = await makeChallenge();
     await upsertPreparedQuiz(testEnv.DB, id, quiz);
@@ -124,6 +144,37 @@ describe("startQuizAttempt", () => {
     const id = await makeChallenge("awaiting_approval");
     const r = await startQuizAttempt(testEnv, deps(), id, "alice", "tok");
     expect(r).toEqual({ ok: false, error: "not_ready" });
+  });
+
+  it("never resumes an open quiz after its challenge closes", async () => {
+    const id = await makeChallenge("superseded");
+    await testEnv.DB.prepare(
+      `INSERT INTO quizzes (id, challenge_id, attempt_number, questions_json, state)
+       VALUES ('closed-open-quiz', ?, 1, ?, 'active')`
+    ).bind(id, JSON.stringify(quiz)).run();
+    const r = await startQuizAttempt(testEnv, deps(), id, "alice", "tok");
+    expect(r).toEqual({ ok: false, error: "not_ready" });
+  });
+
+  it("closes a generated lease when the challenge is superseded mid-generation", async () => {
+    const id = await makeChallenge();
+    const d = deps({
+      generateQuiz: vi.fn(async () => {
+        await testEnv.DB.prepare("UPDATE challenges SET status='superseded' WHERE id=?")
+          .bind(id).run();
+        return { ok: true as const, quiz };
+      }),
+    });
+
+    const r = await startQuizAttempt(testEnv, d, id, "alice", "tok");
+
+    expect(r).toEqual({ ok: false, error: "not_ready" });
+    const row = await testEnv.DB.prepare(
+      "SELECT state, finished_at, questions_json FROM quizzes WHERE challenge_id=?"
+    ).bind(id).first<{ state: string; finished_at: string | null; questions_json: string }>();
+    expect(row).toMatchObject({ state: "finished", questions_json: '{"questions":[]}' });
+    expect(row?.finished_at).not.toBeNull();
+    expect(d.onChallengeResolved).not.toHaveBeenCalled();
   });
 
   it("does not burn an attempt when the Turnstile token is missing", async () => {
@@ -404,21 +455,57 @@ describe("submitAnswer", () => {
     );
   });
 
-  it("keeps fast answers and pointer absence report-only", async () => {
+  it("keeps a single fast-answer signal and pointer absence report-only", async () => {
     const { quizId, d } = await startedQuiz();
     const noPointerTelemetry = JSON.stringify({
       elapsedMs: 1,
       answerChanges: 0,
       pointerDistancePx: 0,
       pointerSamples: 0,
-      focusLossCount: 1,
+      focusLossCount: 0,
       webdriver: false,
     });
     await answerWithServerElapsed(d, quizId, 0, [0], 5_000, noPointerTelemetry);
     await answerWithServerElapsed(d, quizId, 1, [1, 2], 5_000, noPointerTelemetry);
     await answerWithServerElapsed(d, quizId, 2, [3], 5_000, noPointerTelemetry);
-    const final = await answerWithServerElapsed(d, quizId, 3, [2], 5_000, noPointerTelemetry, true);
+    const final = await answerWithServerElapsed(d, quizId, 3, [2], 5_000, noPointerTelemetry);
     expect(final).toEqual({ done: true, passed: true, score: 4, total: 4 });
+  });
+
+  it("requires confirmation when two independent ambiguous signals agree", async () => {
+    const { challengeId, quizId, d } = await startedQuiz();
+    const noPointerTelemetry = JSON.stringify({
+      elapsedMs: 1,
+      answerChanges: 0,
+      pointerDistancePx: 0,
+      pointerSamples: 0,
+      focusLossCount: 0,
+      webdriver: false,
+    });
+    await answerWithServerElapsed(d, quizId, 0, [0], 5_000, noPointerTelemetry);
+    await answerWithServerElapsed(d, quizId, 1, [1, 2], 5_000, noPointerTelemetry);
+    await answerWithServerElapsed(d, quizId, 2, [3], 5_000, noPointerTelemetry);
+    const final = await answerWithServerElapsed(
+      d, quizId, 3, [2], 5_000, noPointerTelemetry, true
+    );
+
+    expect(final).toEqual({ done: true, confirmationRequired: true, score: 4, total: 4 });
+    expect((await getChallenge(testEnv.DB, challengeId))?.status).toBe("awaiting_confirmation");
+    expect(d.onChallengeResolved).toHaveBeenCalledWith(
+      expect.objectContaining({ outcome: "pending_confirmation" })
+    );
+
+    await expect(confirmPendingChallenge(testEnv, d, challengeId, {
+      method: "maintainer",
+      by: "octocat",
+    })).resolves.toBe(true);
+    expect((await getChallenge(testEnv.DB, challengeId))?.status).toBe("passed");
+    expect(d.onChallengeResolved).toHaveBeenLastCalledWith(
+      expect.objectContaining({
+        outcome: "passed",
+        confirmation: { method: "maintainer", by: "octocat" },
+      })
+    );
   });
 
   it("invalidates an otherwise correct quiz on repeated server-measured sub-two-second answers", async () => {
@@ -545,6 +632,36 @@ describe("submitAnswer", () => {
       .toBe("2026-07-02T12:15:00.000Z");
   });
 
+  it("consumes and closes an abandoned active attempt", async () => {
+    const config = { ...DEFAULT_CONFIG, cooldown_minutes: 15 };
+    const challengeId = await makeChallenge("ready", config);
+    const d = deps();
+    const started = await startQuizAttempt(testEnv, d, challengeId, "alice", "tok");
+    if (!started.ok) throw new Error("setup failed");
+    await testEnv.DB.prepare("UPDATE quizzes SET started_at=? WHERE id=?")
+      .bind("2026-07-02T12:00:00.000Z", started.quizId).run();
+
+    const resolved = await expireAbandonedQuiz(
+      testEnv,
+      started.quizId,
+      new Date("2026-07-02T13:00:00.000Z")
+    );
+
+    expect(resolved).toEqual(expect.objectContaining({ outcome: "failed_retry", score: 0 }));
+    const challenge = await getChallenge(testEnv.DB, challengeId);
+    expect(challenge?.attempts_used).toBe(1);
+    expect(challenge?.cooldown_until).toBe("2026-07-02T13:15:00.000Z");
+    const quizRow = await testEnv.DB.prepare(
+      "SELECT state, finished_at, questions_json FROM quizzes WHERE id=?"
+    ).bind(started.quizId).first<{
+      state: string;
+      finished_at: string | null;
+      questions_json: string;
+    }>();
+    expect(quizRow).toMatchObject({ state: "finished", questions_json: '{"questions":[]}' });
+    expect(quizRow?.finished_at).not.toBeNull();
+  });
+
   it("marks failed_final when max attempts exhausted", async () => {
     const id = await makeChallenge();
     await testEnv.DB.prepare("UPDATE challenges SET attempts_used=2 WHERE id=?").bind(id).run();
@@ -600,20 +717,28 @@ describe("submitAnswer", () => {
     expect(final).toEqual({ done: true, error: "challenge_closed" });
     expect((await getChallenge(testEnv.DB, challengeId))?.status).toBe("failed_final");
     expect(d.onChallengeResolved).not.toHaveBeenCalled();
+    const closedQuiz = await testEnv.DB.prepare(
+      "SELECT state, finished_at, questions_json FROM quizzes WHERE id=?"
+    ).bind(quizId).first<{ state: string; finished_at: string | null; questions_json: string }>();
+    expect(closedQuiz).toMatchObject({ state: "finished", questions_json: '{"questions":[]}' });
+    expect(closedQuiz?.finished_at).not.toBeNull();
   });
 
-  it("starting a new attempt voids the previous open quiz", async () => {
+  it("resumes the one active attempt instead of generating another quiz", async () => {
     const id = await makeChallenge();
     const d = deps();
     const a = await startQuizAttempt(testEnv, d, id, "alice", "tok");
     if (!a.ok) throw new Error("setup failed");
     const b = await startQuizAttempt(testEnv, d, id, "alice", "tok");
-    expect(b.ok).toBe(true);
+    expect(b).toEqual({ ok: true, quizId: a.quizId, resumed: true });
     const rowA = await testEnv.DB.prepare("SELECT finished_at FROM quizzes WHERE id=?")
       .bind(a.quizId).first<{ finished_at: string | null }>();
-    expect(rowA!.finished_at).not.toBeNull();
-    const r = await submitAnswer(testEnv, d, a.quizId, 0, [0], telemetry);
-    expect(r).toEqual({ done: true, error: "already_finished" });
+    expect(rowA!.finished_at).toBeNull();
+    const count = await testEnv.DB.prepare(
+      "SELECT COUNT(*) AS count FROM quizzes WHERE challenge_id=?"
+    ).bind(id).first<{ count: number }>();
+    expect(count?.count).toBe(1);
+    expect(d.generateQuiz).toHaveBeenCalledTimes(1);
   });
 
   it("a stale question index re-renders instead of consuming the next question", async () => {

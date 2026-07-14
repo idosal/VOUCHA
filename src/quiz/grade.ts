@@ -49,15 +49,20 @@ export function canStartAttempt(
   return { allowed: true };
 }
 
-export function nextCooldown(cfg: VouchaConfig, now: Date): string | null {
+export function nextCooldown(
+  cfg: VouchaConfig,
+  now: Date,
+  attemptsUsed = 1
+): string | null {
   if (cfg.cooldown_minutes === 0) return null;
-  return new Date(now.getTime() + cfg.cooldown_minutes * 60_000).toISOString();
+  const multiplier = Math.min(8, 2 ** Math.max(0, attemptsUsed - 1));
+  return new Date(now.getTime() + cfg.cooldown_minutes * multiplier * 60_000).toISOString();
 }
 
 // Server-side per-question time limit. The grace period absorbs network
 // latency; it is not displayed as extra answer time.
-export const QUESTION_TIME_LIMIT_MS = 60_000;
-const QUESTION_GRACE_MS = 15_000;
+export const QUESTION_TIME_LIMIT_MS = 30_000;
+export const QUESTION_GRACE_MS = 5_000;
 
 export function questionRemainingMs(servedAt: string, now: Date, timeLimitMs: number): number {
   const servedAtMs = new Date(servedAt).getTime();

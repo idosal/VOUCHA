@@ -34,15 +34,24 @@ VOUCHA stores:
   flags, and report-only honeypot or code-canary findings;
 - short-lived session, one-time verification code state, and rate-limit rows
   needed to serve the challenge safely.
+- for optional passkeys, the stable numeric GitHub user ID, credential public
+  key, signature counter, reported transports, and short-lived WebAuthn
+  ceremony challenge.
 
 ## What is not stored
 
 VOUCHA does not persist raw PR diffs, GitHub installation tokens, keystrokes,
-free-form answer text, browser recordings, or maintainer secrets.
+free-form answer text, browser recordings, passkey private keys, biometrics, or
+maintainer secrets.
 
 Raw diffs and GitHub API responses are read transiently to decide policy,
 generate questions, and build derived investigation summaries. Installation
 tokens are minted on demand and cached in memory only.
+
+Cloudflare processes its Turnstile token and the request IP when VOUCHA calls
+Siteverify. VOUCHA stores the validation outcome, not Cloudflare's proprietary
+browser-assessment inputs. VOUCHA does not add physiological, camera, motion,
+or raw pointer-path collection on top of Turnstile.
 
 ## Contributor acceptance
 
@@ -52,22 +61,40 @@ the repository and PR context to generate the quiz, post the outcome on the PR,
 and store their answer selections plus summary signals for the PR's
 maintainers.
 
-The same screen offers a 10x extended-timing mode with no explanation required.
-Question deadlines are measured and preserved by the server, so refreshing the
-page never grants or removes time. Failed browser verification and repeated
-server-measured sub-two-second answers can invalidate a passing score; merely
-fast answers, pointer absence, focus loss, and honeypot findings remain
-maintainer-facing report context only.
+Each question shows a 30-second deadline, with 5 seconds of server-only grace
+for network and submission latency. Question deadlines are preserved by the
+server, so refreshing the page never grants or removes time. There is no
+minimum dwell requirement. Failed browser verification and repeated
+server-measured sub-two-second answers can invalidate a passing score. One
+ambiguous signal remains maintainer-facing report context; two independent
+interaction clues pause a correct result for explicit confirmation.
 
 If the contributor does not accept, no quiz attempt is created and no answer or
 challenge telemetry is collected.
 
+## Passkey privacy and accessibility
+
+When repository policy enables WebAuthn, passkey enrollment is optional and
+appears only after a clean pass. Later, an established credential can confirm a
+correct quiz that VOUCHA paused because multiple ambiguous interaction clues
+agreed. User verification is required, but VOUCHA requests no attestation and
+receives no biometric data. Face, fingerprint, PIN, and private-key operations
+remain inside the device or credential provider.
+
+A contributor never needs a passkey to complete the governance flow. If their
+browser or device does not support WebAuthn, they cancelled enrollment, or user
+verification is inaccessible, an independent write-capable maintainer can
+confirm from the pull request. VOUCHA does not create a first-time credential
+during a suspicious completion and treat it as prior identity evidence.
+Maintainers can disable WebAuthn with `confirmation.webauthn: false`; stored
+credentials are not deleted and cannot be used for challenges under that policy.
+
 ## Retention posture
 
 Generated questions and correct answers are needed while a challenge is active.
-Once a challenge reaches a terminal result, stored question text is purged while
-score, answer selections, challenge status, and summary telemetry remain as the
-audit trail.
+Once a challenge reaches a terminal or confirmation-pending result, stored
+question text is purged while score, answer selections, challenge status, and
+summary telemetry remain as the audit trail.
 
 Scheduled sweeps remove expired sessions and old rate-limit rows. VOUCHA
 should be treated as review evidence, not as a permanent source repository or

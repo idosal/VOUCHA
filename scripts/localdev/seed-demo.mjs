@@ -31,8 +31,8 @@ const cookie = `${sid}.${crypto.createHmac("sha256", KEY).update(sid).digest("he
 
 // SQL to stdout (feed to `wrangler d1 execute --local --file`)
 process.stdout.write(
-  `INSERT INTO challenges (id,installation_id,repo_full_name,pr_number,head_sha,author_login,check_run_id,status,config_json) ` +
-  `VALUES ('${cid}',1,'octo/demo',42,'sha_demo','${author}',999,'ready','{}');\n` +
+  `INSERT INTO challenges (id,installation_id,repo_full_name,pr_number,head_sha,author_login,check_run_id,status,config_json,attempts_used) ` +
+  `VALUES ('${cid}',1,'octo/demo',42,'sha_demo','${author}',999,'ready','{}',1);\n` +
   `INSERT INTO sessions (id,challenge_id,gh_login,created_at) ` +
   `VALUES ('${sid}','${cid}','${author}',strftime('%Y-%m-%dT%H:%M:%fZ','now'));\n` +
   `INSERT INTO quizzes (id,challenge_id,attempt_number,questions_json,current_question) ` +

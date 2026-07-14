@@ -36,6 +36,8 @@ Use a demo repository with the GitHub App installed.
   update with the challenge link.
 - Open the link as the PR author, accept the challenge terms, pass Turnstile,
   and answer the quiz.
+- Confirm the page shows 30 seconds per question, refresh does not reset the
+  timer, and no minimum wait prevents an immediate human answer.
 - Confirm the check turns green, the PR comment records the attestation, and
   the check-run output includes the risk report.
 - On a clean pass with `output.labels.passed` enabled, confirm the PR receives
@@ -75,6 +77,26 @@ repository policy requirements.
   the app immediately by default, without requiring a return to GitHub, and the
   retry should get a fresh quiz. With `output.labels.failed` enabled, the PR
   should receive `VOUCHA:failed` and drop stale success labels.
+- Start a quiz and revisit its start URL in a second tab. Both tabs should lead
+  to the same active attempt, not generate another question set or consume a
+  second attempt.
+- Abandon an admitted quiz beyond its overall deadline. The sweep should close
+  and consume that attempt. With a positive `cooldown_minutes`, later attempts
+  should use increasing waits capped at eight times the base.
+- Verify a production Turnstile response is rejected when its hostname,
+  `action`, or signed `cData` does not match the current challenge. A rejected
+  token is a hard verification failure; a Siteverify outage is neutral.
+- Complete a correct quiz with two documented ambiguous interaction signals.
+  The check should wait for confirmation rather than pass or fail. An author
+  with an established passkey can confirm in the browser. Otherwise, a
+  write-capable maintainer other than the PR author can comment
+  `/voucha confirm`.
+- After a clean pass, test optional passkey enrollment. Confirm cancellation or
+  an unsupported browser leaves the contributor unblocked and the maintainer
+  confirmation path remains available.
+- Set `confirmation.webauthn: false`. Confirm the clean-pass page has no
+  enrollment control, all passkey endpoints return `403`, and a paused result
+  shows only the independent maintainer `/voucha confirm` path.
 - Exhaust all attempts. The check should stay failed for manual maintainer
   review. Comment `/voucha retry` from a write-capable maintainer; VOUCHA
   should preserve the previous audit and start a fresh challenge on the same

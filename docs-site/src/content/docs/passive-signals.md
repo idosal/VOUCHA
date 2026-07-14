@@ -9,12 +9,15 @@ signal silently block a contributor.
 
 VOUCHA keeps passive signals out of challenge scoring. They can appear in
 check-run summaries, risk reports, comments, and flagged labels, but they do
-not turn a correct quiz into a failure.
+not turn a correct quiz into a failure. One ambiguous clue remains report-only.
+Two independent interaction clues can pause a correct result for explicit
+confirmation, which is visible to the author and maintainers.
 
-Two bot-verification checks are stricter: Turnstile must validate the browser
-session before a quiz is generated, and a browser `webdriver` automation flag
-fails the challenge if it appears during the quiz. Both failures are shown with
-their reason.
+Three bot-verification checks are stricter: Turnstile must validate the browser
+session before a quiz is generated, a browser `webdriver` automation flag fails
+the challenge if it appears during the quiz, and repeated server-measured
+answers under two seconds fail a correct quiz. Every hard failure states its
+reason.
 
 ## Form honeypot
 
@@ -76,14 +79,27 @@ full data boundary.
 
 VOUCHA separates strong evidence from inconclusive context. Failed Turnstile,
 an explicit browser `webdriver` flag, or repeated server-measured answers under
-two seconds are strong challenge-taking evidence. Merely fast answers, pointer
-absence, focus loss, form honeypots, and code canaries remain report-only:
-keyboard navigation, touch input, browser extensions, network issues, and
+two seconds are strong challenge-taking evidence. Fast answers, pointer
+absence, focus loss, form honeypots, and code canaries are inconclusive on their
+own: keyboard navigation, touch input, browser extensions, network issues, and
 accessibility setups can all look unusual without implying bad faith.
 
 When strong evidence is present, the challenge is not accepted as author
-attestation and the result states the reason. Inconclusive signals stay in the
-maintainer-facing risk report without changing the score or result.
+attestation and the result states the reason. A single inconclusive signal stays
+in the maintainer-facing risk report without changing the score or result.
+
+VOUCHA requests additional confirmation only when at least two independent
+interaction clues agree:
+
+- the hidden start-form field was submitted;
+- every answer arrived in under ten seconds, but not under the hard two-second
+  threshold;
+- the challenge repeatedly lost browser focus.
+
+Pointer absence and code honeypots never count toward this threshold. The pause
+does not alter the score. When repository policy enables WebAuthn, the author
+uses a passkey enrolled after an earlier clean pass. Otherwise, an independent
+write-capable maintainer comments `/voucha confirm`.
 
 ## Why report-only
 
@@ -94,9 +110,10 @@ Passive signals can be noisy:
 - faster-than-average timing and pointer signals can reflect normal input;
 - most automation hints are useful for review but weak as standalone proof.
 
-For that reason, merely fast answers, pointer/focus summaries, form honeypots,
-and code honeypots are report-only. A config that sets `report_only: false` for
-honeypots is normalized back to report-only behavior.
+For that reason, each ambiguous signal is report-only by itself. The small,
+documented multi-signal threshold requests confirmation rather than producing a
+hidden failure. A config that sets `report_only: false` for honeypots is
+normalized back to this behavior.
 
 ## Practical canary design
 

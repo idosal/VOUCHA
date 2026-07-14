@@ -24,7 +24,7 @@
     "dev": "npm run docs:build && vite dev",
     "build": "npm run docs:build && vite build",
     "preview": "npm run build && vite preview",
-    "deploy": "npm run build && wrangler deploy && wrangler d1 migrations apply DB --remote",
+    "deploy": "npm run build && wrangler d1 migrations apply DB --remote && wrangler deploy",
     "docs:build": "astro build --config docs-site/astro.config.mjs",
     "docs:dev": "astro dev --config docs-site/astro.config.mjs",
     "flue:build": "npm --prefix flue-investigator run build",
@@ -37,6 +37,7 @@
     "db:migrate": "wrangler d1 migrations apply DB --remote"
   },
   "dependencies": {
+    "@simplewebauthn/server": "^13.3.2",
     "hono": "^4.6.0",
     "yaml": "^2.6.0",
     "zod": "^3.24.0"

@@ -31,6 +31,7 @@ describe("parseConfig", () => {
       failed: true,
       flagged: true,
     });
+    expect(DEFAULT_CONFIG.confirmation).toEqual({ webauthn: true });
   });
 
   it("keeps the default repository template in sync with DEFAULT_CONFIG", () => {
@@ -272,6 +273,15 @@ describe("parseConfig", () => {
     expect(cfg.accountability).toEqual({
       require_pr_acknowledgement: true,
       require_ai_disclosure: true,
+    });
+  });
+
+  it("lets maintainers disable WebAuthn confirmation", () => {
+    expect(parseConfig("confirmation:\n  webauthn: false\n").confirmation).toEqual({
+      webauthn: false,
+    });
+    expect(parseConfig("confirmation:\n  webauthn: invalid\n").confirmation).toEqual({
+      webauthn: true,
     });
   });
 

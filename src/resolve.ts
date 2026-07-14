@@ -1,5 +1,5 @@
 import type { Env, Challenge } from "./types";
-import type { ResolvedChallenge } from "./challenge";
+import { expireAbandonedQuiz, type ResolvedChallenge } from "./challenge";
 import { resolveConfig, shouldAutoClosePr, type VouchaConfig } from "./config";
 import { GitHubApi } from "./github/api";
 import { getInstallationToken } from "./github/auth";
@@ -117,16 +117,21 @@ function maintainerActionLine(result: AutoCloseResult): string {
   return "Maintainers: review this PR manually or comment `/voucha retry` to start a fresh challenge for this commit.";
 }
 
-function retryAvailability(cfg: VouchaConfig): { summary: string; instruction: string } {
+function retryAvailability(
+  cfg: VouchaConfig,
+  attemptsUsed: number
+): { summary: string; instruction: string } {
   if (cfg.cooldown_minutes === 0) {
     return {
       summary: "Retry available immediately with a freshly generated quiz.",
       instruction: "Retry immediately with a freshly generated quiz",
     };
   }
+  const multiplier = Math.min(8, 2 ** Math.max(0, attemptsUsed - 1));
+  const minutes = cfg.cooldown_minutes * multiplier;
   return {
-    summary: `Retry available after cooldown (${cfg.cooldown_minutes} min) with a freshly generated quiz.`,
-    instruction: `Retry after the ${cfg.cooldown_minutes} minute cooldown with a freshly generated quiz`,
+    summary: `Retry available after cooldown (${minutes} min) with a freshly generated quiz.`,
+    instruction: `Retry after the ${minutes} minute cooldown with a freshly generated quiz`,
   };
 }
 
@@ -210,12 +215,21 @@ export async function onChallengeResolved(
 
   switch (r.outcome) {
     case "passed": {
+      const confirmationLine = r.confirmation
+        ? r.confirmation.method === "maintainer"
+          ? `Independent confirmation recorded from maintainer @${r.confirmation.by}.`
+          : "The author confirmed presence with a previously enrolled passkey."
+        : null;
       await updateTerminalCheckRun(env, api, r.challenge, {
         status: "completed", conclusion: "success",
         details_url: url,
         output: {
-          title: report.automationLikely ? "Passed: strong automation evidence requires review" : "Passed",
-          summary: `Score ${r.score}/${r.total}.\n\n${riskMd}`,
+          title: r.confirmation
+            ? "Passed after confirmation"
+            : report.automationLikely
+              ? "Passed: strong automation evidence requires review"
+              : "Passed",
+          summary: `Score ${r.score}/${r.total}.${confirmationLine ? ` ${confirmationLine}` : ""}\n\n${riskMd}`,
         },
       });
       await clearLabel(api, repo, pr, FAILED_LABEL);
@@ -235,6 +249,7 @@ export async function onChallengeResolved(
           "## VOUCHA: passed",
           "",
           `@${r.challenge.author_login} attested that this PR was intentional and that they stand behind the change (score ${r.score}/${r.total}).`,
+          ...(confirmationLine ? ["", confirmationLine] : []),
           "",
           report.automationLikely
             ? `> ⚠️ **Review before merging:** strong automation evidence was recorded: ${report.signals.join("; ")}.`
@@ -244,11 +259,41 @@ export async function onChallengeResolved(
       }
       break;
     }
+    case "pending_confirmation": {
+      const confirmationMethod = r.cfg.confirmation.webauthn
+        ? "an established passkey or independent maintainer confirmation"
+        : "independent maintainer confirmation";
+      if (checkId) await api.updateCheckRun(repo, checkId, {
+        status: "in_progress",
+        details_url: url,
+        output: {
+          title: "Additional confirmation required",
+          summary: `Score ${r.score}/${r.total}. Several independent but individually ambiguous interaction signals require ${confirmationMethod}.`,
+        },
+      });
+      await clearLabel(api, repo, pr, PASSED_LABEL);
+      await clearLabel(api, repo, pr, FAILED_LABEL);
+      await clearLabel(api, repo, pr, FLAGGED_LABEL);
+      if (commentsEnabled) {
+        await api.upsertPrComment(repo, pr, [
+          "## VOUCHA: confirmation needed",
+          "",
+          `@${r.challenge.author_login} completed the quiz with score ${r.score}/${r.total}, but the attestation is paused for additional confirmation.`,
+          "",
+          r.cfg.confirmation.webauthn
+            ? `The author can use a previously enrolled passkey at ${url}. If none is available, a write-capable maintainer other than the PR author can comment \`/voucha confirm\`.`
+            : `This repository has disabled passkey confirmation. A write-capable maintainer other than the PR author can comment \`/voucha confirm\`.`,
+          "",
+          "_Individual behavioral details are withheld while confirmation is pending._",
+        ].join("\n"));
+      }
+      break;
+    }
     case "failed_retry": {
       // No risk report while attempts remain: per-attempt signal feedback is a
       // training signal for evasion (fail → read fired signals → adjust →
       // retry). The full behavioral report ships with the final verdict only.
-      const retry = retryAvailability(r.cfg);
+      const retry = retryAvailability(r.cfg, r.challenge.attempts_used);
       if (checkId) await api.updateCheckRun(repo, checkId, {
         status: "completed", conclusion: "failure",
         details_url: url,
@@ -387,9 +432,90 @@ export async function sweepStaleChallenges(
      WHERE created_at < ?
         OR challenge_id IN (
           SELECT id FROM challenges
-          WHERE status IN ('passed','failed_assisted','failed_final','neutral','superseded')
+          WHERE status IN ('awaiting_confirmation','passed','failed_assisted','failed_final','neutral','superseded')
         )`
   ).bind(new Date(now.getTime() - 24 * 60 * 60_000).toISOString()).run();
+
+  // Consume abandoned attempts even if the author never comes back. The helper
+  // derives the overall deadline from the stored question count and timer.
+  const openAttempts = await env.DB.prepare(
+    `SELECT q.id FROM quizzes q
+     JOIN challenges c ON c.id=q.challenge_id
+     WHERE q.finished_at IS NULL AND q.state='active' AND c.status='ready'
+     ORDER BY q.started_at ASC LIMIT 100`
+  ).all<{ id: string }>();
+  for (const row of openAttempts.results) {
+    try {
+      const resolved = await expireAbandonedQuiz(env, row.id, now);
+      if (resolved) await onChallengeResolved(env, resolved, apiFactory);
+    } catch { /* state is durable; retry or reconciliation handles the next tick */ }
+  }
+
+  // A Worker interruption while generating or finalizing is our failure, not
+  // the contributor's. Close the lease and neutralize after a short recovery window.
+  const stalledCutoff = new Date(now.getTime() - 2 * 60_000).toISOString();
+  const stalled = await env.DB.prepare(
+    `SELECT c.* FROM challenges c
+     JOIN quizzes q ON q.challenge_id=c.id
+     WHERE c.status='ready' AND q.finished_at IS NULL
+       AND q.state IN ('preparing','finalizing') AND q.started_at < ?
+     ORDER BY q.started_at ASC LIMIT 100`
+  ).bind(stalledCutoff).all<Challenge>();
+  for (const challenge of stalled.results) {
+    const updated = await env.DB.prepare(
+      "UPDATE challenges SET status='neutral' WHERE id=? AND status='ready'"
+    ).bind(challenge.id).run();
+    if (updated.meta.changes === 0) continue;
+    await env.DB.prepare(
+      `UPDATE quizzes SET finished_at=?, state='finished', questions_json='{"questions":[]}'
+       WHERE challenge_id=? AND finished_at IS NULL`
+    ).bind(now.toISOString(), challenge.id).run();
+    await onChallengeResolved(env, {
+      challenge: { ...challenge, status: "neutral" },
+      outcome: "neutral",
+      telemetry: null,
+      cfg: resolveConfig(challenge.config_json),
+    }, apiFactory);
+  }
+
+  await env.DB.prepare("DELETE FROM webauthn_challenges WHERE expires_at < ?")
+    .bind(now.toISOString()).run();
+
+  // Pending confirmations are recoverable for 48h. After that they fail closed;
+  // a maintainer can still use /voucha retry to start a new cycle.
+  const confirmationCutoff = new Date(now.getTime() - 48 * 60 * 60_000).toISOString();
+  const expiredConfirmations = await env.DB.prepare(
+    `SELECT c.*, cc.quiz_id FROM challenges c
+     JOIN challenge_confirmations cc ON cc.challenge_id=c.id
+     WHERE c.status='awaiting_confirmation' AND cc.confirmed_at IS NULL AND cc.created_at < ?
+     ORDER BY cc.created_at ASC LIMIT 100`
+  ).bind(confirmationCutoff).all<Challenge & { quiz_id: string }>();
+  for (const challenge of expiredConfirmations.results) {
+    const updated = await env.DB.prepare(
+      "UPDATE challenges SET status='failed_assisted' WHERE id=? AND status='awaiting_confirmation'"
+    ).bind(challenge.id).run();
+    if (updated.meta.changes === 0) continue;
+    const quiz = await env.DB.prepare("SELECT score, answers_json FROM quizzes WHERE id=?")
+      .bind(challenge.quiz_id).first<{ score: number; answers_json: string }>();
+    let total = resolveConfig(challenge.config_json).gates[0]?.type === "multiple_choice"
+      ? resolveConfig(challenge.config_json).gates[0].questions
+      : 4;
+    try {
+      const answers = JSON.parse(quiz?.answers_json ?? "[]") as unknown[];
+      if (answers.length > 0) total = answers.length;
+    } catch { /* use policy total */ }
+    await env.DB.prepare("DELETE FROM webauthn_challenges WHERE challenge_id=?")
+      .bind(challenge.id).run();
+    await onChallengeResolved(env, {
+      challenge: { ...challenge, status: "failed_assisted" },
+      outcome: "failed_assisted",
+      score: quiz?.score ?? 0,
+      total,
+      telemetry: null,
+      cfg: resolveConfig(challenge.config_json),
+      failureReason: "The additional confirmation window expired.",
+    }, apiFactory);
+  }
 
   // Neutralize dangling challenges: awaiting/ready with no quiz attempt after
   // 24h means the service failed mid-setup or the author never showed — mark
@@ -405,6 +531,12 @@ export async function sweepStaleChallenges(
   ).bind(cutoff).all<Challenge>();
 
   for (const ch of results) {
+    const neutralized = await env.DB.prepare(
+      `UPDATE challenges SET status='neutral'
+       WHERE id=? AND status IN ('awaiting_approval','ready')
+         AND NOT EXISTS (SELECT 1 FROM quizzes WHERE challenge_id=?)`
+    ).bind(ch.id, ch.id).run();
+    if (neutralized.meta.changes === 0) continue;
     try {
       const api = await apiFactory(env, ch.installation_id);
       await api.updateCheckRun(ch.repo_full_name, ch.check_run_id!, {
@@ -414,7 +546,6 @@ export async function sweepStaleChallenges(
           summary: "No quiz attempt within 24h. Not blocking the merge. Push a new commit to re-trigger.",
         },
       });
-      await env.DB.prepare("UPDATE challenges SET status='neutral' WHERE id=?").bind(ch.id).run();
     } catch { /* try again next cron tick */ }
   }
 
@@ -423,27 +554,21 @@ export async function sweepStaleChallenges(
   // repairs ONLY check runs left incomplete by a failed resolution callback —
   // it must never touch a check run that already completed, or it will
   // clobber the real risk report with this generic placeholder on every tick.
-  // Recency covers two resolution paths: a quiz that finished recently (a pass
-  // or failure can land well over 24h after the PR opened, via attempts +
-  // cooldowns — keying on challenge created_at alone would strand such a check
-  // forever), and a generation-failure `neutral` that has no quiz row at all
-  // (caught by the challenge's own created_at). Either recent signal qualifies.
-  const recentCutoff = new Date(now.getTime() - 24 * 60 * 60_000).toISOString();
+  // This intentionally has no recency restriction. A passkey or maintainer may
+  // confirm a challenge well after the original quiz, and the callback still
+  // needs repair if its check-run update failed.
   const terminal = await env.DB.prepare(
     `SELECT * FROM challenges c
      WHERE c.status IN ('passed','failed_assisted','failed_final','neutral')
        AND c.check_run_id IS NOT NULL
        AND c.terminal_reconciled_at IS NULL
-       AND (c.created_at >= ?
-            OR EXISTS (SELECT 1 FROM quizzes q WHERE q.challenge_id = c.id
-                       AND q.finished_at IS NOT NULL AND q.finished_at >= ?))
      ORDER BY COALESCE(
        (SELECT MAX(q.finished_at) FROM quizzes q
         WHERE q.challenge_id = c.id AND q.finished_at IS NOT NULL),
        c.created_at
      ) ASC, c.created_at ASC, c.id ASC
      LIMIT 100`
-  ).bind(recentCutoff, recentCutoff).all<Challenge>();
+  ).all<Challenge>();
 
   for (const ch of terminal.results) {
     const conclusion = conclusionForStatus(ch.status);

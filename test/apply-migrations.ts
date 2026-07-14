@@ -5,6 +5,9 @@ await applyD1Migrations(env.DB, env.TEST_MIGRATIONS);
 
 beforeEach(async () => {
   await env.DB.batch([
+    env.DB.prepare("DELETE FROM webauthn_challenges"),
+    env.DB.prepare("DELETE FROM challenge_confirmations"),
+    env.DB.prepare("DELETE FROM webauthn_credentials"),
     env.DB.prepare("DELETE FROM quizzes"),
     env.DB.prepare("DELETE FROM prepared_quizzes"),
     env.DB.prepare("DELETE FROM pr_investigations"),

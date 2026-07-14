@@ -799,15 +799,39 @@ describe("handlePullRequestEvent", () => {
   });
 
   it("supersedes an open challenge when a new sha arrives", async () => {
-    const api = stubApi();
+    const api = stubApi({
+      getPr: vi.fn(async () => ({ ...pr, author_association: "CONTRIBUTOR" })),
+    });
     const n = uniq + 9;
     await handlePullRequestEvent(testEnv, api, payloadFor(n, "sha1"));
+    const original = await getChallengeByPr(testEnv.DB, "o/r", n, "sha1");
+    expect(original?.status).toBe("ready");
+    await testEnv.DB.prepare(
+      `INSERT INTO quizzes (id, challenge_id, attempt_number, questions_json, state)
+       VALUES (?, ?, 1, '{"questions":[{"prompt":"secret answer key"}]}', 'active')`
+    ).bind(`quizSuperseded${n}`, original!.id).run();
+    await testEnv.DB.prepare(
+      `INSERT INTO prepared_quizzes (challenge_id, questions_json)
+       VALUES (?, '{"questions":[{"prompt":"prepared answer key"}]}')`
+    ).bind(original!.id).run();
     const p2 = payloadFor(n, "sha2");
     p2.action = "synchronize";
     const api2 = stubApi({ getPr: vi.fn(async () => ({ ...pr, number: n, head_sha: "sha2" })) });
     await handlePullRequestEvent(testEnv, api2, p2);
     const old = await getChallengeByPr(testEnv.DB, "o/r", n, "sha1");
     expect(old?.status).toBe("superseded");
+    const oldQuiz = await testEnv.DB.prepare(
+      "SELECT state, finished_at, questions_json FROM quizzes WHERE id=?"
+    ).bind(`quizSuperseded${n}`).first<{
+      state: string;
+      finished_at: string | null;
+      questions_json: string;
+    }>();
+    expect(oldQuiz).toMatchObject({ state: "finished", questions_json: '{"questions":[]}' });
+    expect(oldQuiz?.finished_at).not.toBeNull();
+    expect(await testEnv.DB.prepare(
+      "SELECT challenge_id FROM prepared_quizzes WHERE challenge_id=?"
+    ).bind(original!.id).first()).toBeNull();
     const fresh = await getChallengeByPr(testEnv.DB, "o/r", n, "sha2");
     expect(fresh?.status).toBe("awaiting_approval");
   });
@@ -853,12 +877,13 @@ describe("handleIssueCommentEvent", () => {
       installation: { id: 1 },
       repository: { full_name: "o/r" },
       issue: { number: n, pull_request: {} },
-      comment: { body: "/voucha verify ABC123", user: { login: "contributor" } },
+      comment: { body: "/voucha verify ABC123", user: { login: "contributor", id: 12345 } },
     });
 
-    const row = await testEnv.DB.prepare("SELECT gh_login, verify_code FROM sessions WHERE id='sessVerify'")
-      .first<{ gh_login: string | null; verify_code: string | null }>();
-    expect(row).toEqual({ gh_login: "contributor", verify_code: null });
+    const row = await testEnv.DB.prepare(
+      "SELECT gh_login, github_user_id, verify_code FROM sessions WHERE id='sessVerify'"
+    ).first<{ gh_login: string | null; github_user_id: number | null; verify_code: string | null }>();
+    expect(row).toEqual({ gh_login: "contributor", github_user_id: 12345, verify_code: null });
   });
 
   it("starts quiz preparation after a ready challenge verification comment binds", async () => {
@@ -1055,5 +1080,92 @@ describe("handleIssueCommentEvent", () => {
 
     expect(ownerApi.getUserPermission).not.toHaveBeenCalled();
     expect((await getChallengeByPr(testEnv.DB, "o/r", n, "abc123"))?.status).toBe("ready");
+  });
+
+  it("lets an independent write-capable maintainer confirm the pending result", async () => {
+    const api = stubApi({
+      getPr: vi.fn(async () => ({ ...pr, author_association: "CONTRIBUTOR" })),
+      getUserPermission: vi.fn(async () => ({ permission: "write", role_name: "maintain" })),
+    });
+    const n = uniq + 34;
+    const p = payloadFor(n);
+    p.pull_request.author_association = "CONTRIBUTOR";
+    await handlePullRequestEvent(testEnv, api, p);
+    const challenge = await getChallengeByPr(testEnv.DB, "o/r", n, "abc123");
+    await testEnv.DB.prepare("UPDATE challenges SET status='awaiting_confirmation' WHERE id=?")
+      .bind(challenge!.id).run();
+    const confirmChallenge = vi.fn(async () => true);
+
+    await handleIssueCommentEvent(testEnv, api, {
+      action: "created",
+      installation: { id: 1 },
+      repository: { full_name: "o/r" },
+      issue: { number: n, pull_request: {} },
+      comment: { body: "/voucha confirm", user: { login: "maintainer" } },
+    }, { confirmChallenge });
+
+    expect(confirmChallenge).toHaveBeenCalledWith(
+      expect.objectContaining({ id: challenge!.id }),
+      "maintainer"
+    );
+  });
+
+  it("requires confirmation from someone other than the PR author", async () => {
+    const api = stubApi({
+      getPr: vi.fn(async () => ({ ...pr, author_association: "CONTRIBUTOR" })),
+      getUserPermission: vi.fn(async () => ({ permission: "write", role_name: "write" })),
+    });
+    const n = uniq + 35;
+    const p = payloadFor(n);
+    p.pull_request.author_association = "CONTRIBUTOR";
+    await handlePullRequestEvent(testEnv, api, p);
+    const challenge = await getChallengeByPr(testEnv.DB, "o/r", n, "abc123");
+    await testEnv.DB.prepare("UPDATE challenges SET status='awaiting_confirmation' WHERE id=?")
+      .bind(challenge!.id).run();
+    const confirmChallenge = vi.fn(async () => true);
+
+    await handleIssueCommentEvent(testEnv, api, {
+      action: "created",
+      installation: { id: 1 },
+      repository: { full_name: "o/r" },
+      issue: { number: n, pull_request: {} },
+      comment: { body: "/voucha confirm", user: { login: "contributor" } },
+    }, { confirmChallenge });
+
+    expect(confirmChallenge).not.toHaveBeenCalled();
+    expect(api.upsertPrComment).toHaveBeenCalledWith(
+      "o/r",
+      n,
+      expect.stringContaining("cannot confirm their own flagged challenge")
+    );
+  });
+
+  it("does not suggest an author passkey when repository policy disables WebAuthn", async () => {
+    const api = stubApi({
+      getPr: vi.fn(async () => ({ ...pr, author_association: "CONTRIBUTOR" })),
+      getUserPermission: vi.fn(async () => ({ permission: "write", role_name: "write" })),
+    });
+    const n = uniq + 36;
+    const p = payloadFor(n);
+    p.pull_request.author_association = "CONTRIBUTOR";
+    await handlePullRequestEvent(testEnv, api, p);
+    const challenge = await getChallengeByPr(testEnv.DB, "o/r", n, "abc123");
+    await testEnv.DB.prepare(
+      `UPDATE challenges
+       SET status='awaiting_confirmation', config_json='{"confirmation":{"webauthn":false}}'
+       WHERE id=?`
+    ).bind(challenge!.id).run();
+
+    await handleIssueCommentEvent(testEnv, api, {
+      action: "created",
+      installation: { id: 1 },
+      repository: { full_name: "o/r" },
+      issue: { number: n, pull_request: {} },
+      comment: { body: "/voucha confirm", user: { login: "contributor" } },
+    });
+
+    const [, , comment] = (api.upsertPrComment as ReturnType<typeof vi.fn>).mock.calls.at(-1)!;
+    expect(comment).toContain("Another write-capable maintainer can comment");
+    expect(comment).not.toContain("passkey");
   });
 });

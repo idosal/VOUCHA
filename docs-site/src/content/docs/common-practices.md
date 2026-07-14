@@ -226,16 +226,21 @@ Team checks require Members read permission on the GitHub App. Merged-PR counts
 use GitHub search. If either signal is unavailable, VOUCHA falls back to the
 normal gate.
 
-## Keep passive signals report-only
+## Keep individual passive signals report-only
 
 Use passive signals to decide where maintainers should look harder, not to
 silently fail a PR. Form honeypots, code canaries, timings, and pointer
 summaries all have legitimate edge cases. Turnstile validation and browser
 automation flags are bot-verification gates and fail with an explicit reason.
+Repeated server-measured sub-two-second answers are also a hard failure.
 
 VOUCHA currently forces `honeypot` and `code_honeypot` signals to
 `report_only: true`. A matched signal can appear in check-run summaries, risk
 reports, and flagged-pass labels, but it does not change the quiz score.
+One ambiguous clue does not change the result. Two independent interaction
+clues can visibly pause a correct result for independent maintainer
+confirmation, with an established passkey also available when enabled. Pointer
+summaries and code canaries never count toward that confirmation threshold.
 
 ## Use code honeypots as canaries, not traps
 

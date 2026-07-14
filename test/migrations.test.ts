@@ -7,7 +7,11 @@ describe("D1 migrations", () => {
       "SELECT name FROM sqlite_master WHERE type='table' ORDER BY name"
     ).all<{ name: string }>();
     const names = results.map((r) => r.name);
-    for (const t of ["installations", "challenges", "quizzes", "sessions", "rate_events", "pr_investigations", "prepared_quizzes"]) {
+    for (const t of [
+      "installations", "challenges", "quizzes", "sessions", "rate_events",
+      "pr_investigations", "prepared_quizzes", "webauthn_credentials",
+      "webauthn_challenges", "challenge_confirmations",
+    ]) {
       expect(names).toContain(t);
     }
   });
@@ -28,5 +32,15 @@ describe("D1 migrations", () => {
     expect(columns).toContain("auto_closed_at");
     expect(columns).toContain("terminal_reconciled_at");
     expect(columns).toContain("delta_base_sha");
+  });
+
+  it("includes active-attempt and stable GitHub identity columns", async () => {
+    const quizzes = await env.DB.prepare("PRAGMA table_info(quizzes)")
+      .all<{ name: string }>();
+    expect(quizzes.results.map((column) => column.name)).toContain("state");
+
+    const sessions = await env.DB.prepare("PRAGMA table_info(sessions)")
+      .all<{ name: string }>();
+    expect(sessions.results.map((column) => column.name)).toContain("github_user_id");
   });
 });

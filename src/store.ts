@@ -1,4 +1,11 @@
-import type { Challenge, ChallengeStatus, PrInvestigation, PreparedQuiz } from "./types";
+import type {
+  Challenge,
+  ChallengeStatus,
+  PendingConfirmation,
+  PrInvestigation,
+  PreparedQuiz,
+  WebAuthnCredential,
+} from "./types";
 import type { Quiz } from "./quiz/schema";
 
 export function randomToken(bytes = 24): string {
@@ -76,10 +83,14 @@ export async function restartChallengeForRetry(
      SET status='ready', attempts_used=0, retry_cycle=retry_cycle+1,
          cooldown_until=NULL, approved_by=?, check_run_id=?,
          auto_closed_at=NULL, terminal_reconciled_at=NULL
-     WHERE id=? AND status IN ('failed_assisted','failed_final','neutral')`
+     WHERE id=? AND status IN ('awaiting_confirmation','failed_assisted','failed_final','neutral')`
   ).bind(approvedBy, checkRunId, id).run();
   if (updated.meta.changes === 0) return null;
-  await deletePreparedQuiz(db, id);
+  await db.batch([
+    db.prepare("DELETE FROM prepared_quizzes WHERE challenge_id=?").bind(id),
+    db.prepare("DELETE FROM webauthn_challenges WHERE challenge_id=?").bind(id),
+    db.prepare("DELETE FROM challenge_confirmations WHERE challenge_id=?").bind(id),
+  ]);
   return getChallenge(db, id);
 }
 
@@ -107,28 +118,43 @@ export async function updateChallengeCheckRun(
   ).bind(checkRunId, repo, prNumber, headSha).run();
 }
 
-export async function setChallengeStatus(
-  db: D1Database, id: string, status: ChallengeStatus, approvedBy?: string
-): Promise<void> {
-  if (approvedBy !== undefined) {
-    await db.prepare("UPDATE challenges SET status=?, approved_by=? WHERE id=?")
-      .bind(status, approvedBy, id).run();
-  } else {
-    await db.prepare("UPDATE challenges SET status=? WHERE id=?").bind(status, id).run();
-  }
+export async function transitionChallengeStatus(
+  db: D1Database,
+  id: string,
+  from: ChallengeStatus,
+  to: ChallengeStatus
+): Promise<boolean> {
+  const updated = await db.prepare("UPDATE challenges SET status=? WHERE id=? AND status=?")
+    .bind(to, id, from).run();
+  return updated.meta.changes > 0;
 }
 
 export async function supersedeOldChallenges(
   db: D1Database, repo: string, prNumber: number, keepHeadSha: string
 ): Promise<void> {
-  await db
-    .prepare(
+  await db.prepare(
       `UPDATE challenges SET status='superseded'
        WHERE repo_full_name=? AND pr_number=? AND head_sha != ?
-         AND status IN ('awaiting_approval','ready')`
-    )
-    .bind(repo, prNumber, keepHeadSha)
-    .run();
+         AND status IN ('awaiting_approval','awaiting_confirmation','ready')`
+    ).bind(repo, prNumber, keepHeadSha).run();
+  const oldChallenges = `SELECT id FROM challenges
+    WHERE repo_full_name=? AND pr_number=? AND head_sha != ? AND status='superseded'`;
+  await db.batch([
+    db.prepare(
+      `UPDATE quizzes SET finished_at=COALESCE(finished_at, strftime('%Y-%m-%dT%H:%M:%fZ','now')),
+         state='finished', questions_json='{"questions":[]}'
+       WHERE challenge_id IN (${oldChallenges})`
+    ).bind(repo, prNumber, keepHeadSha),
+    db.prepare(
+      `DELETE FROM prepared_quizzes WHERE challenge_id IN (${oldChallenges})`
+    ).bind(repo, prNumber, keepHeadSha),
+    db.prepare(
+      `DELETE FROM webauthn_challenges WHERE challenge_id IN (${oldChallenges})`
+    ).bind(repo, prNumber, keepHeadSha),
+    db.prepare(
+      `DELETE FROM challenge_confirmations WHERE challenge_id IN (${oldChallenges})`
+    ).bind(repo, prNumber, keepHeadSha),
+  ]);
 }
 
 export async function getInvestigationByPr(
@@ -206,13 +232,14 @@ export interface ChallengeSession {
   id: string;
   challenge_id: string;
   gh_login: string | null;
+  github_user_id: number | null;
   verify_code: string | null;
   created_at: string;
 }
 
 export async function getSession(db: D1Database, id: string): Promise<ChallengeSession | null> {
   return db.prepare(
-    "SELECT id, challenge_id, gh_login, verify_code, created_at FROM sessions WHERE id=?"
+    "SELECT id, challenge_id, gh_login, github_user_id, verify_code, created_at FROM sessions WHERE id=?"
   ).bind(id).first<ChallengeSession>();
 }
 
@@ -240,14 +267,126 @@ export async function verifySessionFromComment(
   db: D1Database,
   challengeId: string,
   verifyCode: string,
-  login: string
+  login: string,
+  githubUserId?: number | null
 ): Promise<boolean> {
   const session = await db.prepare(
     "SELECT id FROM sessions WHERE challenge_id=? AND verify_code=? AND gh_login IS NULL LIMIT 1"
   ).bind(challengeId, verifyCode).first<{ id: string }>();
   if (!session) return false;
+  const stableUserId = typeof githubUserId === "number" && Number.isSafeInteger(githubUserId) && githubUserId > 0
+    ? githubUserId
+    : null;
   const updated = await db.prepare(
-    "UPDATE sessions SET gh_login=?, verify_code=NULL WHERE id=? AND gh_login IS NULL"
-  ).bind(login, session.id).run();
+    "UPDATE sessions SET gh_login=?, github_user_id=?, verify_code=NULL WHERE id=? AND gh_login IS NULL"
+  ).bind(login, stableUserId, session.id).run();
   return updated.meta.changes > 0;
+}
+
+export async function getWebAuthnCredentials(
+  db: D1Database,
+  githubUserId: number
+): Promise<WebAuthnCredential[]> {
+  const { results } = await db.prepare(
+    `SELECT id, github_user_id, public_key, counter, transports_json, created_at, last_used_at
+     FROM webauthn_credentials WHERE github_user_id=? ORDER BY created_at ASC`
+  ).bind(githubUserId).all<WebAuthnCredential>();
+  return results;
+}
+
+export async function getWebAuthnCredential(
+  db: D1Database,
+  githubUserId: number,
+  credentialId: string
+): Promise<WebAuthnCredential | null> {
+  return db.prepare(
+    `SELECT id, github_user_id, public_key, counter, transports_json, created_at, last_used_at
+     FROM webauthn_credentials WHERE github_user_id=? AND id=?`
+  ).bind(githubUserId, credentialId).first<WebAuthnCredential>();
+}
+
+export async function saveWebAuthnCredential(
+  db: D1Database,
+  credential: Pick<WebAuthnCredential, "id" | "github_user_id" | "public_key" | "counter" | "transports_json">
+): Promise<void> {
+  await db.prepare(
+    `INSERT INTO webauthn_credentials (id, github_user_id, public_key, counter, transports_json)
+     VALUES (?, ?, ?, ?, ?)`
+  ).bind(
+    credential.id,
+    credential.github_user_id,
+    credential.public_key,
+    credential.counter,
+    credential.transports_json
+  ).run();
+}
+
+export async function updateWebAuthnCounter(
+  db: D1Database,
+  githubUserId: number,
+  credentialId: string,
+  counter: number
+): Promise<void> {
+  await db.prepare(
+    `UPDATE webauthn_credentials
+     SET counter=?, last_used_at=strftime('%Y-%m-%dT%H:%M:%fZ','now')
+     WHERE github_user_id=? AND id=?`
+  ).bind(counter, githubUserId, credentialId).run();
+}
+
+export type WebAuthnCeremony = "registration" | "authentication";
+
+export interface StoredWebAuthnChallenge {
+  session_id: string;
+  challenge_id: string;
+  ceremony: WebAuthnCeremony;
+  challenge: string;
+  expires_at: string;
+}
+
+export async function putWebAuthnChallenge(
+  db: D1Database,
+  value: StoredWebAuthnChallenge
+): Promise<void> {
+  await db.prepare(
+    `INSERT INTO webauthn_challenges (session_id, challenge_id, ceremony, challenge, expires_at)
+     VALUES (?, ?, ?, ?, ?)
+     ON CONFLICT(session_id, challenge_id, ceremony) DO UPDATE SET
+       challenge=excluded.challenge,
+       expires_at=excluded.expires_at,
+       created_at=strftime('%Y-%m-%dT%H:%M:%fZ','now')`
+  ).bind(value.session_id, value.challenge_id, value.ceremony, value.challenge, value.expires_at).run();
+}
+
+export async function getWebAuthnChallenge(
+  db: D1Database,
+  sessionId: string,
+  challengeId: string,
+  ceremony: WebAuthnCeremony
+): Promise<StoredWebAuthnChallenge | null> {
+  return db.prepare(
+    `SELECT session_id, challenge_id, ceremony, challenge, expires_at
+     FROM webauthn_challenges WHERE session_id=? AND challenge_id=? AND ceremony=?`
+  ).bind(sessionId, challengeId, ceremony).first<StoredWebAuthnChallenge>();
+}
+
+export async function consumeWebAuthnChallenge(
+  db: D1Database,
+  value: StoredWebAuthnChallenge
+): Promise<boolean> {
+  const deleted = await db.prepare(
+    `DELETE FROM webauthn_challenges
+     WHERE session_id=? AND challenge_id=? AND ceremony=? AND challenge=?`
+  ).bind(value.session_id, value.challenge_id, value.ceremony, value.challenge).run();
+  return deleted.meta.changes > 0;
+}
+
+export async function getPendingConfirmation(
+  db: D1Database,
+  challengeId: string
+): Promise<PendingConfirmation | null> {
+  return db.prepare(
+    `SELECT challenge_id, quiz_id, reason, created_at, confirmed_at, confirmed_by, confirmation_method
+     FROM challenge_confirmations WHERE challenge_id=?`
+  ).bind(challengeId).first<PendingConfirmation>();
 }

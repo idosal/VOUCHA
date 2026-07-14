@@ -54,11 +54,11 @@ describe("scoreQuiz", () => {
 });
 
 describe("question time limit", () => {
-  it("defaults to 60 seconds with server grace", () => {
-    expect(QUESTION_TIME_LIMIT_MS).toBe(60_000);
+  it("defaults to 30 seconds with five seconds of server grace", () => {
+    expect(QUESTION_TIME_LIMIT_MS).toBe(30_000);
     const servedAt = "2026-07-02T12:00:00.000Z";
-    expect(answerWithinTimeLimit(servedAt, new Date("2026-07-02T12:01:15.000Z"))).toBe(true);
-    expect(answerWithinTimeLimit(servedAt, new Date("2026-07-02T12:01:16.000Z"))).toBe(false);
+    expect(answerWithinTimeLimit(servedAt, new Date("2026-07-02T12:00:35.000Z"))).toBe(true);
+    expect(answerWithinTimeLimit(servedAt, new Date("2026-07-02T12:00:35.001Z"))).toBe(false);
   });
 
   it("keeps refreshes on the original server-authoritative deadline", () => {
@@ -123,5 +123,13 @@ describe("nextCooldown", () => {
     const now = new Date("2026-07-02T12:00:00.000Z");
     expect(nextCooldown({ ...DEFAULT_CONFIG, cooldown_minutes: 15 }, now))
       .toBe("2026-07-02T12:15:00.000Z");
+  });
+
+  it("increases repeated cooldowns and caps the multiplier", () => {
+    const now = new Date("2026-07-02T12:00:00.000Z");
+    const cfg = { ...DEFAULT_CONFIG, cooldown_minutes: 15 };
+    expect(nextCooldown(cfg, now, 2)).toBe("2026-07-02T12:30:00.000Z");
+    expect(nextCooldown(cfg, now, 4)).toBe("2026-07-02T14:00:00.000Z");
+    expect(nextCooldown(cfg, now, 10)).toBe("2026-07-02T14:00:00.000Z");
   });
 });

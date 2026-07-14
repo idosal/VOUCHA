@@ -72,8 +72,10 @@ control every credential by hand.
    openssl pkcs8 -topk8 -inform PEM -outform PEM -nocrypt -in app.pem -out app-pkcs8.pem
    ```
 
-4. Create a Cloudflare Turnstile widget for the Worker domain. Use a real
-   domain-bound widget in production, not Cloudflare's public testing keys.
+4. Create a Cloudflare Turnstile widget for the Worker domain in **Managed**
+   mode. Use a real domain-bound widget in production, not Cloudflare's public
+   testing keys. VOUCHA uses explicit execution and interaction-only
+   appearance; Cloudflare still decides whether a checkbox is necessary.
 
 5. Set public Worker vars.
 

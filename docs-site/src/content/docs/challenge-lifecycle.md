@@ -62,8 +62,25 @@ collect answer telemetry. The acknowledgement is intentionally small: it tells
 contributors that VOUCHA uses the public PR context to generate the quiz and
 stores their answer selections plus summary signals for maintainer review.
 
-Each question is served with a time window. Refreshing the page does not reset
-the question timer.
+Pressing **Begin challenge** executes Cloudflare Turnstile. VOUCHA binds the
+token to the challenge with an action and signed custom-data value, then checks
+the expected hostname and sends the request IP to Siteverify. The widget stays
+in Cloudflare's Managed mode, so Cloudflare decides whether an interaction is
+needed. A visible checkbox is not forced for every person.
+
+Admitting the quiz consumes the attempt. Only one unfinished quiz can exist for
+a challenge, and reopening or double-submitting the start page resumes that
+quiz instead of generating another one. Each retry gets fresh questions.
+
+Each question has 30 seconds. The server allows 5 additional seconds for
+network and submission latency, but does not display that grace as answer time.
+Refreshing the page does not reset the timer. There is no minimum dwell time,
+so a person who knows an answer can submit it immediately.
+
+An active attempt also has an overall server deadline derived from its question
+count and timer. Leaving it unfinished past that deadline consumes and closes
+the attempt, preventing free question harvesting by repeatedly abandoning
+quizzes.
 
 The shipped gate is `multiple_choice`. The repository controls question count
 and pass threshold:
@@ -82,9 +99,10 @@ compatibility, and blast radius. They should not test code trivia.
 
 A failed non-final attempt can retry immediately by default. VOUCHA generates a
 fresh quiz from the cached investigation for every retry. Repositories can add
-a wait by setting a positive cooldown. The result page keeps the contributor in
-VOUCHA with a **Try again** action on the same challenge link; returning to the
-GitHub PR is optional.
+a wait by setting a positive base cooldown. Repeated failed or abandoned
+attempts use 1x, 2x, 4x, then at most 8x that value. The result page keeps the
+contributor in VOUCHA with a **Try again** action on the same challenge link;
+returning to the GitHub PR is optional.
 
 ```yaml
 max_attempts: 3
@@ -101,12 +119,35 @@ with `enforcement.auto_close`.
 | --- | --- |
 | Passed | Green check with an attestation summary. |
 | Passed with inconclusive signals | Green check; signals remain report-only in the check details. |
+| Correct, confirmation required | Check stays in progress. An independent write-capable maintainer can confirm it; an established passkey is also available when repository policy enables WebAuthn. |
 | Failed attempt | Cooldown and retry policy apply; detailed signal feedback is withheld until final outcome. |
 | Challenge assistance detected | Failed check; optional PR auto-close when configured for `failed_assisted`; a maintainer can start a fresh cycle with `/voucha retry`. |
 | Attempts exhausted | Failed check; optional PR auto-close when configured for `failed_final`; a maintainer can start a fresh cycle with `/voucha retry`. |
 | Generation or service failure | Neutral check; the PR is not blocked, and a maintainer can retry after recovery. |
 | Superseded commit | Old challenge becomes inactive and the PR receives a current result. |
 | Expired setup | Scheduled sweep neutralizes stale awaiting or ready challenges. |
+
+## Additional confirmation
+
+A single ambiguous interaction clue never changes a correct result. If two
+independent clues agree, from a submitted form honeypot, every answer under ten
+seconds, or repeated focus loss, VOUCHA pauses instead of guessing. Pointer
+absence and code canaries never trigger this pause.
+
+When `confirmation.webauthn` is enabled, the author can confirm with a passkey
+that was enrolled after an earlier clean pass. VOUCHA does not accept a newly
+created credential at the suspicious moment as proof. If WebAuthn is disabled
+or there is no established passkey, a write-capable maintainer other than the
+PR author comments:
+
+```text
+/voucha confirm
+```
+
+Passkeys are optional. The maintainer path covers unsupported browsers,
+devices without user verification, contributors who declined enrollment, and
+accessibility or account-recovery cases. A pending confirmation expires after
+48 hours and can then be restarted with `/voucha retry`.
 
 The durable record is the check-run summary on the PR. It should show enough
 context for maintainers to understand what VOUCHA did without making them

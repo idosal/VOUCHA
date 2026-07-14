@@ -186,6 +186,26 @@ describe("onChallengeResolved", () => {
     expect(patch.output.title).toBe("Passed: strong automation evidence requires review");
   });
 
+  it("uses maintainer-only copy when WebAuthn confirmation is disabled", async () => {
+    const api = stubApi();
+    await onChallengeResolved(testEnv, {
+      challenge: { ...passedChallenge(), status: "awaiting_confirmation" },
+      outcome: "pending_confirmation",
+      score: 4,
+      total: 4,
+      telemetry: scriptedTelemetry,
+      cfg: parseConfig("confirmation:\n  webauthn: false\n"),
+    }, async () => api);
+
+    const [, , patch] = (api.updateCheckRun as ReturnType<typeof vi.fn>).mock.calls[0];
+    expect(patch.output.summary).toContain("require independent maintainer confirmation");
+    expect(patch.output.summary).not.toContain("passkey");
+    const [, , comment] = (api.upsertPrComment as ReturnType<typeof vi.fn>).mock.calls[0];
+    expect(comment).toContain("disabled passkey confirmation");
+    expect(comment).toContain("/voucha confirm");
+    expect(comment).not.toContain("previously enrolled passkey");
+  });
+
   it("withholds the risk report on a retryable failure (no mid-challenge signal feedback)", async () => {
     const api = stubApi();
     await onChallengeResolved(testEnv, {
@@ -535,10 +555,44 @@ describe("sweepStaleChallenges", () => {
     expect(api.closePullRequest).not.toHaveBeenCalled();
   });
 
-  it("reconciles a challenge created >24h ago whose quiz finished recently", async () => {
-    // Attempts + cooldowns can push resolution well past 24h from PR open.
-    // Recency must key on quiz finished_at, not challenge created_at, or this
-    // stuck check would never be repaired.
+  it("expires an unconfirmed result after 48 hours and records the hard failure", async () => {
+    await seedChallenge({
+      id: "ch-confirmation-expired",
+      status: "awaiting_confirmation",
+      createdAt: hoursAgo(50),
+      checkRunId: 704,
+    });
+    await testEnv.DB.prepare(
+      `INSERT INTO quizzes (id, challenge_id, attempt_number, questions_json, answers_json,
+        score, finished_at, state)
+       VALUES ('qz-confirmation-expired', 'ch-confirmation-expired', 1,
+        '{"questions":[]}', '[[0],[1],[2],[3]]', 4, ?, 'finished')`
+    ).bind(hoursAgo(49)).run();
+    await testEnv.DB.prepare(
+      `INSERT INTO challenge_confirmations (challenge_id, quiz_id, reason, created_at)
+       VALUES ('ch-confirmation-expired', 'qz-confirmation-expired', 'needs confirmation', ?)`
+    ).bind(hoursAgo(49)).run();
+    const api = stubApi();
+
+    await sweepStaleChallenges(testEnv, NOW, async () => api);
+
+    const challenge = await testEnv.DB.prepare(
+      "SELECT status, terminal_reconciled_at FROM challenges WHERE id='ch-confirmation-expired'"
+    ).first<{ status: string; terminal_reconciled_at: string | null }>();
+    expect(challenge?.status).toBe("failed_assisted");
+    expect(challenge?.terminal_reconciled_at).not.toBeNull();
+    expect(api.updateCheckRun).toHaveBeenCalledWith("o/r", 704, expect.objectContaining({
+      status: "completed",
+      conclusion: "failure",
+      output: expect.objectContaining({
+        summary: expect.stringContaining("additional confirmation window expired"),
+      }),
+    }));
+  });
+
+  it("reconciles a terminal challenge created more than 24 hours ago", async () => {
+    // Attempts, cooldowns, and confirmation can push resolution well past 24h.
+    // Terminal callback repair therefore has no recency cutoff.
     await seedChallenge({ id: "ch-slow", status: "passed", createdAt: hoursAgo(30), checkRunId: 601 });
     await testEnv.DB.prepare(
       `INSERT INTO quizzes (id, challenge_id, attempt_number, questions_json, score, finished_at)

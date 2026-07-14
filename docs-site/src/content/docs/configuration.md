@@ -78,6 +78,9 @@ accountability:
   require_pr_acknowledgement: false
   require_ai_disclosure: false
 
+confirmation:
+  webauthn: true
+
 bot_policy:
   default: skip
   trusted_logins: ["dependabot[bot]", "renovate[bot]"]
@@ -127,6 +130,7 @@ enforcement:
 | Scope | `skip_paths`, `include_paths`, `min_changed_lines`, `path_rules` | Which PRs should skip, enter, or receive stricter policy. |
 | Trust | `trust`, `exemptions`, `bot_policy` | Which default author associations, Vouch statuses, authors, teams, repository roles, contributor history, bots, and planned issues can avoid a challenge or be rejected. |
 | Approval and retry | `require_approval`, `accountability`, `max_attempts`, `cooldown_minutes`, `draft_prs`, `rechallenge` | Human approval, required PR-body accountability fields, drafts, retry limits, cooldown, and new-commit behavior. |
+| Confirmation | `confirmation.webauthn` | Whether contributors may enroll passkeys and use an established passkey when an otherwise-correct result needs confirmation. |
 | Passive evidence | `signals`, `output.labels` | Honeypot fields, code canaries, and flagged-pass labels. |
 | Investigation | `context`, `max_context_tokens` | How PR evidence is condensed before quiz generation. |
 | Reporting | `output.comments`, `output.contributor_message`, `output.labels` | PR comment volume, contributor-facing wording, and best-effort labels. |
@@ -196,7 +200,9 @@ The glob implementation is intentionally small: `**` matches path segments and
 
 `max_attempts` accepts 1 through 10. `cooldown_minutes` accepts 0 or greater
 and defaults to `0`, so retries are immediate unless a repository configures a
-wait. Every retry receives a fresh quiz.
+base wait. Repeated failed or abandoned attempts use 1x, 2x, 4x, then at most
+8x that value. Every retry receives a fresh quiz, while reopening an unfinished
+attempt resumes the existing quiz.
 
 ## Author and bot trust
 
@@ -311,6 +317,26 @@ AI assistance: yes
 Use `yes`, `no`, `n/a`, or `none` for the disclosure value. Start from
 `templates/pull_request_template.md` so contributors see the required fields
 before they open the PR.
+
+## Confirmation
+
+WebAuthn is enabled by default and remains optional for contributors:
+
+```yaml
+confirmation:
+  webauthn: true
+```
+
+Set `webauthn: false` when the repository wants independent maintainer
+confirmation only. VOUCHA then hides passkey enrollment and confirmation,
+rejects all passkey registration and authentication endpoints for challenges
+created under that policy, and directs the author to a write-capable maintainer
+who is not the PR author. The maintainer comments `/voucha confirm` on the PR.
+
+Existing credentials are not deleted. They remain usable in repositories that
+enable WebAuthn. Like the rest of the challenge policy, this value is loaded
+from the merge target and stored with the challenge, so a feature branch cannot
+enable its own passkey path.
 
 ## Linked issue exemptions
 
@@ -500,6 +526,7 @@ older truncation path.
 | `cooldown_minutes` | `0` |
 | `draft_prs` | `ignore` |
 | `accountability` | `{ require_pr_acknowledgement: false, require_ai_disclosure: false }` |
+| `confirmation` | `{ webauthn: true }` |
 | `bot_policy` | `{ default: "skip", trusted_logins: [] }` |
 | `rechallenge` | `{ on_push: "included_paths", ignore_paths: ["docs/**", "*.md"], questions: 2 }` |
 | `min_changed_lines` | `10` |

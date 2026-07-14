@@ -23,7 +23,7 @@ import { evaluateVouchTrust } from "../policy/vouch";
 import { providerFromEnv, type QuizProvider } from "../quiz/providers";
 import {
   getChallengeByPr, getLatestChallengeForPr, getLatestPassedChallenge,
-  insertChallenge, restartChallengeForRetry, setChallengeStatus, supersedeOldChallenges,
+  insertChallenge, restartChallengeForRetry, supersedeOldChallenges,
   updateChallengeCheckRun, randomToken, verifySessionFromComment,
 } from "../store";
 import { hasWriteRepositoryAccess } from "./permissions";
@@ -171,7 +171,25 @@ export async function handlePullRequestEvent(
 
   if (pr.draft && cfg.draft_prs !== "challenge") {
     if (existingChallenge && ["awaiting_approval", "ready"].includes(existingChallenge.status)) {
-      await setChallengeStatus(env.DB, existingChallenge.id, "superseded");
+      const retired = await env.DB.prepare(
+        "UPDATE challenges SET status='superseded' WHERE id=? AND status=?"
+      ).bind(existingChallenge.id, existingChallenge.status).run();
+      if (retired.meta.changes > 0) {
+        await env.DB.batch([
+          env.DB.prepare(
+            `UPDATE quizzes
+             SET finished_at=COALESCE(finished_at, strftime('%Y-%m-%dT%H:%M:%fZ','now')),
+                 state='finished', questions_json='{"questions":[]}'
+             WHERE challenge_id=?`
+          ).bind(existingChallenge.id),
+          env.DB.prepare("DELETE FROM prepared_quizzes WHERE challenge_id=?")
+            .bind(existingChallenge.id),
+          env.DB.prepare("DELETE FROM webauthn_challenges WHERE challenge_id=?")
+            .bind(existingChallenge.id),
+          env.DB.prepare("DELETE FROM challenge_confirmations WHERE challenge_id=?")
+            .bind(existingChallenge.id),
+        ]);
+      }
     }
     if (cfg.draft_prs === "neutral") {
       await api.createCheckRun(repo, {
@@ -462,7 +480,10 @@ export async function handleIssueCommentEvent(
   env: Env,
   api: GitHubApi,
   payload: any,
-  options: { prepareQuiz?: (challenge: Challenge) => Promise<void> } = {}
+  options: {
+    prepareQuiz?: (challenge: Challenge) => Promise<void>;
+    confirmChallenge?: (challenge: Challenge, confirmer: string) => Promise<boolean>;
+  } = {}
 ): Promise<void> {
   if (payload.action !== "created") return;
   if (!payload.issue?.pull_request) return; // not a PR comment
@@ -477,7 +498,13 @@ export async function handleIssueCommentEvent(
     const challenge = await getLatestChallengeForPr(env.DB, repo, prNumber);
     if (!challenge) return;
     if (!sameGitHubLogin(challenge.author_login, commenter)) return;
-    const verified = await verifySessionFromComment(env.DB, challenge.id, verification[1].toLowerCase(), commenter);
+    const verified = await verifySessionFromComment(
+      env.DB,
+      challenge.id,
+      verification[1].toLowerCase(),
+      commenter,
+      payload.comment.user.id
+    );
     if (verified && challenge.status === "ready") {
       try {
         await options.prepareQuiz?.(challenge);
@@ -488,11 +515,34 @@ export async function handleIssueCommentEvent(
     return;
   }
 
+  if (/^\/voucha\s+confirm\b/i.test(body)) {
+    if (!(await commentAuthorCanMaintain(api, repo, payload))) return;
+    const challenge = await getLatestChallengeForPr(env.DB, repo, prNumber);
+    if (!challenge || challenge.status !== "awaiting_confirmation") return;
+    const cfg = resolveConfig(challenge.config_json);
+    if (sameGitHubLogin(challenge.author_login, commenter)) {
+      if (commentsEnabled(cfg)) {
+        await api.upsertPrComment(repo, prNumber, [
+          "## VOUCHA: independent confirmation required",
+          "",
+          cfg.confirmation.webauthn
+            ? `@${commenter} cannot confirm their own flagged challenge. Another write-capable maintainer can comment \`/voucha confirm\`, or the author can use a previously enrolled passkey.`
+            : `@${commenter} cannot confirm their own flagged challenge. Another write-capable maintainer can comment \`/voucha confirm\`.`,
+        ].join("\n"));
+      }
+      return;
+    }
+    const pr = await api.getPr(repo, prNumber);
+    if (pr.head_sha !== challenge.head_sha) return;
+    await options.confirmChallenge?.(challenge, commenter);
+    return;
+  }
+
   if (/^\/voucha\s+(?:retry|retrigger)\b/i.test(body)) {
     if (!(await commentAuthorCanMaintain(api, repo, payload))) return;
 
     const challenge = await getLatestChallengeForPr(env.DB, repo, prNumber);
-    if (!challenge || !["failed_assisted", "failed_final", "neutral"].includes(challenge.status)) return;
+    if (!challenge || !["awaiting_confirmation", "failed_assisted", "failed_final", "neutral"].includes(challenge.status)) return;
     const pr = await api.getPr(repo, prNumber);
     if (pr.head_sha !== challenge.head_sha) return;
 
@@ -526,7 +576,11 @@ export async function handleIssueCommentEvent(
   const challenge = await getLatestChallengeForPr(env.DB, repo, prNumber);
   if (!challenge || challenge.status !== "awaiting_approval") return;
 
-  await setChallengeStatus(env.DB, challenge.id, "ready", commenter);
+  const approved = await env.DB.prepare(
+    `UPDATE challenges SET status='ready', approved_by=?
+     WHERE id=? AND status='awaiting_approval'`
+  ).bind(commenter, challenge.id).run();
+  if (approved.meta.changes === 0) return;
   const storedCfg = resolveConfig(challenge.config_json);
   if (challenge.check_run_id) {
     await api.updateCheckRun(repo, challenge.check_run_id, {

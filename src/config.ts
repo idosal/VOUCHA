@@ -100,6 +100,10 @@ const DEFAULT_ACCOUNTABILITY = Object.freeze({
   require_ai_disclosure: false,
 });
 
+const DEFAULT_CONFIRMATION = Object.freeze({
+  webauthn: true,
+});
+
 const DEFAULT_VOUCH_TRUST = Object.freeze({
   enabled: false,
   file: ".github/VOUCHED.td",
@@ -335,6 +339,10 @@ const accountabilitySchema = z.object({
   require_ai_disclosure: DEFAULT_ACCOUNTABILITY.require_ai_disclosure,
 }));
 
+const confirmationSchema = z.object({
+  webauthn: z.boolean().catch(DEFAULT_CONFIRMATION.webauthn),
+}).catch(() => ({ ...DEFAULT_CONFIRMATION }));
+
 const vouchTrustSchema = z.object({
   enabled: z.boolean().catch(DEFAULT_VOUCH_TRUST.enabled),
   file: z.string().trim().min(1).max(200).catch(DEFAULT_VOUCH_TRUST.file),
@@ -383,6 +391,7 @@ const configSchema = z.object({
   output: outputSchema,
   enforcement: enforcementSchema,
   accountability: accountabilitySchema,
+  confirmation: confirmationSchema,
   trust: trustSchema,
 }).transform((cfg) => ({
   ...cfg,
@@ -498,6 +507,7 @@ function normalizeConfig(
       },
     },
     accountability: { ...parsed.accountability },
+    confirmation: { ...parsed.confirmation },
     trust: {
       ...parsed.trust,
       default_author_associations: [...parsed.trust.default_author_associations],
@@ -587,6 +597,7 @@ function freezeConfig(cfg: VouchaConfig): VouchaConfig {
   Object.freeze(cfg.enforcement.auto_close);
   Object.freeze(cfg.enforcement);
   Object.freeze(cfg.accountability);
+  Object.freeze(cfg.confirmation);
   Object.freeze(cfg.trust.vouch);
   Object.freeze(cfg.trust.default_author_associations);
   Object.freeze(cfg.trust);

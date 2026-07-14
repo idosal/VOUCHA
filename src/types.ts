@@ -24,6 +24,7 @@ export interface Env {
 
 export type ChallengeStatus =
   | "awaiting_approval"
+  | "awaiting_confirmation"
   | "ready"
   | "passed"
   | "failed_assisted"
@@ -69,4 +70,24 @@ export interface PreparedQuiz {
   questions_json: string;
   created_at: string;
   updated_at: string;
+}
+
+export interface WebAuthnCredential {
+  id: string;
+  github_user_id: number;
+  public_key: string;
+  counter: number;
+  transports_json: string;
+  created_at: string;
+  last_used_at: string | null;
+}
+
+export interface PendingConfirmation {
+  challenge_id: string;
+  quiz_id: string;
+  reason: string;
+  created_at: string;
+  confirmed_at: string | null;
+  confirmed_by: string | null;
+  confirmation_method: "passkey" | "maintainer" | null;
 }

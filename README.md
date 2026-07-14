@@ -42,15 +42,23 @@ Private repositories and teams that want full control can
    size exemptions, team and repository-role trust, prior contributor history,
    trusted linked-issue exemptions, passive signals, and any configured gates.
 3. If a challenge is required, the PR author opens the link, verifies from the
-   PR with a one-time GitHub comment, passes Turnstile, and completes the gate.
+   PR with a one-time GitHub comment, passes a challenge-bound Turnstile check,
+   and completes the gate. Turnstile runs in Managed mode and its token is
+   validated against VOUCHA's hostname, action, signed challenge data, and the
+   request IP.
    VOUCHA first builds a cached PR investigation from the file map and selected patch
    evidence, then generates the author-facing quiz from that artifact. Today
    the shipped gate is a multiple-choice quiz about intent, behavior, and
    affected surfaces. Turnstile, browser automation checks, and repeated
-   server-measured sub-two-second answers can fail the gate with a clear reason;
-   merely fast answers, pointer/focus summaries, and honeypots stay report-only.
+   server-measured sub-two-second answers can fail the gate with a clear reason.
+   A single inconclusive signal stays report-only. If two independent ambiguous
+   signals agree, a correct result pauses visibly for independent maintainer
+   confirmation, with an established passkey also available when the repository
+   enables WebAuthn, instead of being silently accepted or rejected.
 4. Pass (3 of 4 by default) → green check + attestation comment. Fail →
-   an in-app fresh-quiz retry, immediate by default, up to 3 attempts.
+   an in-app fresh-quiz retry, immediate by default, up to 3 attempts. Questions
+   have 30 seconds plus 5 seconds of server-only network grace. There is no
+   minimum dwell time.
 5. The check run summary includes a risk report (timings, Turnstile verdict,
    automation fingerprints). VOUCHA never blocks merges on its own outages.
    Failures report `neutral`.
@@ -134,6 +142,8 @@ trust:
 accountability:
   require_pr_acknowledgement: false
   require_ai_disclosure: false
+confirmation:
+  webauthn: true          # false = independent maintainer confirmation only
 bot_policy:
   default: skip            # skip | challenge
   trusted_logins: ["dependabot[bot]", "renovate[bot]"]
@@ -176,11 +186,12 @@ enforcement:
 | `signals` | `[{ type: "honeypot", report_only: true }]` | Passive risk signals that appear in the maintainer report. Today VOUCHA supports `honeypot`, an off-screen decoy form field that can flag broad automated form filling, and `code_honeypot`, maintainer-authored literal canary patterns scanned only in added diff lines. Set `signals: []` to disable passive honeypot collection. |
 | `pass_threshold` | `3` | Legacy shortcut for the default multiple-choice gate's threshold when `gates` is omitted. New configs should prefer `gates[0].pass_threshold`. |
 | `max_attempts` | `3` | Integer, 1–10. Total quiz attempts allowed per challenge before the check becomes `failed_final`; maintainers review manually unless `enforcement.auto_close` is enabled for that outcome. |
-| `cooldown_minutes` | `0` | Integer, ≥ 0. Minutes an author must wait after a failed (non-final) attempt before starting a retry. `0` makes retries immediate. |
+| `cooldown_minutes` | `0` | Integer, ≥ 0. Base wait after a failed or abandoned non-final attempt. Repeated attempts use 1x, 2x, 4x, then at most 8x this value. `0` keeps every retry immediate. |
 | `draft_prs` | `"ignore"` | Enum: `challenge` \| `neutral` \| `ignore`. Controls whether draft PRs get the normal challenge, a neutral check, or no check. The default keeps drafts quiet until `ready_for_review`. |
 | `require_approval` | `"first_time"` | Enum: `first_time` \| `always` \| `never`. `first_time` requires maintainer approval (`/voucha approve` PR comment) only when the author's GitHub `author_association` is `FIRST_TIME_CONTRIBUTOR`, `FIRST_TIMER`, or `NONE`; `always` requires approval for every PR; `never` skips the approval gate entirely. An invalid value falls back to `first_time`. |
 | `trust` | `{ default_author_associations: ["OWNER", "MEMBER", "COLLABORATOR"], vouch: { enabled: false, file: ".github/VOUCHED.td" } }` | Built-in GitHub trust plus optional integration with Mitchell Hashimoto's Vouch. When enabled, vouched authors skip the challenge, unknown authors continue through normal VOUCHA policy, and denounced authors receive a failed check. |
 | `accountability` | `{ require_pr_acknowledgement: false, require_ai_disclosure: false }` | Optional PR-body preflight. When enabled, VOUCHA fails the check before creating a quiz unless the PR body has the configured acknowledgement and/or AI assistance disclosure line. |
+| `confirmation` | `{ webauthn: true }` | Controls optional passkey enrollment and established-passkey confirmation. Set `webauthn: false` to reject and hide the WebAuthn path; independent write-capable maintainer confirmation remains available. |
 | `bot_policy` | `{ default: "skip", trusted_logins: [] }` | Structured bot handling. `default: challenge` lets repos challenge bots except named trusted bot logins. Legacy `skip_bots` maps into this when `bot_policy` is omitted. |
 | `rechallenge` | `{ on_push: "included_paths", ignore_paths: ["docs/**", "*.md"], questions: 2 }` | Delta-aware push policy. VOUCHA compares the latest passed head with the new head. `never` carries the pass forward, `always` resets on any non-ignored delta, and `included_paths` resets only when the delta reaches the effective `include_paths` (or any non-ignored file when `include_paths` is empty). A reset creates an up-to-`questions`-long follow-up quiz using only that delta and excludes ignored files from its evidence. |
 | `min_changed_lines` | `10` | Diffs with fewer than this many changed lines (additions + deletions) are exempt ("diff below min_changed_lines"). |
@@ -429,11 +440,18 @@ the same report-only signal is shown in the success check summary.
 Turnstile, `webdriver`, and repeated server-measured sub-two-second answers are
 strong challenge-taking evidence and can invalidate an otherwise correct quiz.
 Merely fast answers, pointer absence, focus loss, form honeypots, and code
-canaries are inconclusive and remain report-only. They never combine into a
-hidden behavioral verdict.
+canaries are inconclusive on their own. Pointer absence and code canaries stay
+report-only. If two independent interaction clues agree, from the form
+honeypot, every answer under ten seconds, or repeated focus loss, VOUCHA pauses
+a correct result for explicit confirmation. The pause is visible to the author
+and maintainers and never changes the quiz score.
 
-Inconclusive signals remain inside the check-run risk report. They do not change
-the check title, add a label, or invalidate an otherwise correct challenge.
+When `confirmation.webauthn` is `true` (the default), an author can confirm with
+a passkey enrolled after an earlier clean pass. Set it to `false` to hide
+enrollment and passkey confirmation and reject the WebAuthn endpoints for that
+repository. First-time, passkey-ineligible, and WebAuthn-disabled authors use an
+independent write-capable maintainer's `/voucha confirm` comment. The PR author
+cannot self-confirm via the maintainer command.
 
 ### Path scope
 
@@ -548,9 +566,11 @@ If you prefer doing it by hand, or a wizard phase fails and points you here:
    - Install the app on the target repo(s)/org.
 
 3. **Create a Cloudflare Turnstile widget** (Cloudflare dashboard → Turnstile)
-   for the domain the Worker will be served from. Note the site key and
-   secret key. Do not use Cloudflare's public testing site keys in production;
-   they deliberately render a testing label in the browser.
+   in **Managed** mode for the domain the Worker will be served from. Note the
+   site key and secret key. VOUCHA executes the widget when the author begins
+   and asks Cloudflare for interaction only when needed. Do not use
+   Cloudflare's public testing site keys in production; they deliberately
+   render a testing label in the browser.
 
 4. **Configure public settings** (`vars` in `wrangler.jsonc`) and **set the
    secrets** (`wrangler secret put <NAME>`), matching `Env` in `src/types.ts`:
@@ -621,7 +641,7 @@ If you prefer doing it by hand, or a wizard phase fails and points you here:
   snapshot, active challenge state, generated quiz questions (with correct
   answers, server-side only), and derived investigation summaries from public
   PR context.
-- Once a challenge reaches a terminal state (`passed`, `failed_assisted`, or `failed_final`), its
+- Once a challenge reaches a terminal or confirmation-pending state, its
   stored quiz question text is purged (`questions_json` is overwritten to an
   empty list) while score, answers, and telemetry are retained as an audit
   trail.
@@ -639,20 +659,28 @@ If you prefer doing it by hand, or a wizard phase fails and points you here:
   and automation fingerprints (e.g. a `webdriver` flag). There is no keystroke
   logging or content capture, and its collection is disclosed on the quiz page.
   Turnstile validation, browser automation flags, and repeated server-measured
-  sub-two-second answers can fail the challenge with that reason. Merely fast
-  answers, pointer/focus summaries, honeypots, and code-canary signals remain
-  maintainer review evidence.
+  sub-two-second answers can fail the challenge with that reason. Individually
+  ambiguous summaries stay review evidence; two independent interaction clues
+  pause a correct result for explicit confirmation.
+- Cloudflare receives the Turnstile token and request IP for Siteverify.
+  VOUCHA stores the verdict, not Cloudflare's underlying assessment inputs, and
+  does not collect physiological, camera, motion, or raw pointer-path data.
+- When repository policy enables WebAuthn, optional passkeys are keyed to the
+  stable numeric GitHub user ID. VOUCHA stores the credential public key,
+  signature counter, transports, and
+  short-lived ceremony challenge. Device biometrics and private keys never
+  leave the contributor's device. Passkeys are never mandatory because an
+  independent write-capable maintainer can confirm instead.
 - Webhook payloads are authenticated via HMAC-SHA256 signature verification
   (`x-hub-signature-256`) before any processing happens.
 
 ## Known v1 limitations
 
-- **Not an unbeatable gate.** A contributor whose coding agent has computer
-  use (e.g. an agent that can drive a browser) can have that agent take the
-  quiz itself. VOUCHA does not claim to prevent this; the product is
-  attestation (making a pass a deliberate, on-the-record claim of
-  understanding) plus a behavioral risk report for maintainers, not a proof
-  of humanness.
+- **Not an unbeatable gate.** A determined contributor can still automate a
+  browser or enroll a virtual authenticator after first obtaining a clean pass.
+  VOUCHA raises the cost, prevents token and attempt replay, and makes ambiguous
+  completion require explicit confirmation. It remains an accountability gate,
+  not proof of humanness.
 - **Prompt injection into quiz generation.** The PR diff, title, and
   description flow directly into the LLM generation prompt, so a hostile
   author can try to steer the model toward an easier quiz. This is bounded:

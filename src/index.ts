@@ -1,6 +1,7 @@
 import { Hono, type Context } from "hono";
 import { getCookie, setCookie } from "hono/cookie";
 import type { Env, Challenge } from "./types";
+import type { AuthenticationResponseJSON, RegistrationResponseJSON } from "@simplewebauthn/server";
 import { verifyWebhookSignature } from "./github/webhook";
 import { isRepoAllowed } from "./github/allowlist";
 import { notifyEarlyAccess, shouldNotifyEarlyAccess } from "./github/early-access";
@@ -22,12 +23,20 @@ import {
   startPage,
   questionPage,
   resultPage,
+  confirmationPage,
   errorPage,
   homePage,
   HONEYPOT_FIELD_NAME,
   type PageAction,
 } from "./ui/pages";
-import { prepareQuizForChallenge, startQuizAttempt, submitAnswer, type ChallengeDeps, type PrContext } from "./challenge";
+import {
+  confirmPendingChallenge,
+  prepareQuizForChallenge,
+  startQuizAttempt,
+  submitAnswer,
+  type ChallengeDeps,
+  type PrContext,
+} from "./challenge";
 import { generateQuiz, generateQuizFromInvestigation } from "./quiz/generate";
 import { redactForClient, type Quiz } from "./quiz/schema";
 import {
@@ -41,7 +50,19 @@ import { allowSessionCreation } from "./policy/ratelimit";
 import { sameGitHubLogin } from "./github/login";
 import { fetchPrContextForChallenge } from "./github/pr-context";
 import { chooseInvestigatorSource, investigatePrWithFlue, type InvestigationSource } from "./flue/investigator";
-import { turnstileProductionConfigError } from "./turnstile";
+import {
+  createTurnstileCData,
+  TURNSTILE_ACTION,
+  turnstileProductionConfigError,
+  verifyTurnstileToken,
+} from "./turnstile";
+import {
+  createPasskeyAuthenticationOptions,
+  createPasskeyRegistrationOptions,
+  hasEstablishedPasskey,
+  verifyPasskeyAuthentication,
+  verifyPasskeyRegistration,
+} from "./webauthn";
 import {
   investigatePr,
   investigationMode,
@@ -159,13 +180,13 @@ function terminalChallengeActions(
   }];
 }
 
-function renderStartPage(
+async function renderStartPage(
   c: Context<{ Bindings: Env }>,
   challenge: Challenge,
   cfg: VouchaConfig,
   startError = "",
   status: 200 | 400 = 200
-): Response {
+): Promise<Response> {
   const turnstileError = turnstileProductionConfigError(
     c.env.TURNSTILE_SITE_KEY,
     c.req.url,
@@ -178,6 +199,7 @@ function renderStartPage(
       challengePageActions(challenge)
     ), 503);
   }
+  const turnstileCData = await createTurnstileCData(c.env.SESSION_SIGNING_KEY, challenge.id);
   return c.html(startPage(
     `${challenge.repo_full_name}#${challenge.pr_number}`, c.env.TURNSTILE_SITE_KEY, challenge.id,
     hasHoneypotSignal(cfg), startError, {
@@ -187,7 +209,8 @@ function renderStartPage(
       maxAttempts: cfg.max_attempts,
       attemptsUsed: challenge.attempts_used,
       cooldownMinutes: cfg.cooldown_minutes,
-    }
+    },
+    { action: TURNSTILE_ACTION, cData: turnstileCData }
   ), status);
 }
 
@@ -241,6 +264,12 @@ app.post("/webhook", async (c) => {
       else if (event === "issue_comment") {
         await handleIssueCommentEvent(c.env, api, payload, {
           prepareQuiz: (challenge) => prepareQuizForChallenge(c.env, challengeDeps(c.env), challenge.id),
+          confirmChallenge: (challenge, confirmer) => confirmPendingChallenge(
+            c.env,
+            challengeDeps(c.env),
+            challenge.id,
+            { method: "maintainer", by: confirmer }
+          ),
         });
       }
     } catch (e) {
@@ -328,6 +357,7 @@ async function createVerificationSession(
     id: sessionId,
     challenge_id: challengeId,
     gh_login: null,
+    github_user_id: null,
     verify_code: verifyCode,
     created_at: new Date().toISOString(),
   };
@@ -445,37 +475,23 @@ export function challengeDeps(env: Env): ChallengeDeps {
         ctx.deltaBaseSha
       );
     },
-    async verifyTurnstile(token: string) {
-      // Turnstile's browser token is trusted only after backend Siteverify.
-      // Configuration and service failures are VOUCHA outages, not bot verdicts.
-      try {
-        if (!token) return "failed" as const;
-        const res = await fetch("https://challenges.cloudflare.com/turnstile/v0/siteverify", {
-          method: "POST",
-          headers: { "content-type": "application/json" },
-          body: JSON.stringify({ secret: env.TURNSTILE_SECRET_KEY, response: token }),
-        });
-        if (!res.ok) return "unavailable" as const;
-        const result = (await res.json()) as { success?: boolean; "error-codes"?: string[] };
-        if (result.success) return "passed" as const;
-        const invalidTokenCodes = new Set([
-          "invalid-input-response",
-          "missing-input-response",
-          "timeout-or-duplicate",
-        ]);
-        return result["error-codes"]?.some((code) => invalidTokenCodes.has(code))
-          ? "failed" as const
-          : "unavailable" as const;
-      } catch (err) {
-        console.error("Turnstile Siteverify request failed", err);
-        return "unavailable" as const;
-      }
+    async verifyTurnstile(token, binding) {
+      return verifyTurnstileToken(env, token, binding);
     },
     async onChallengeResolved(r) {
       await onChallengeResolved(env, r);
     },
   };
 }
+
+// Challenge pages are personal attestations, not content for AI retrieval,
+// search indexing, or agentic use. These are policy signals for compliant
+// clients; the challenge still enforces its own author and browser checks.
+app.use("/challenge/*", async (c, next) => {
+  c.header("Content-Signal", "ai-train=yes, search=no, ai-input=no");
+  c.header("X-Robots-Tag", "noindex, nofollow, nosnippet");
+  await next();
+});
 
 // ---------- challenge pages ----------
 app.get("/challenge/:id", async (c) => {
@@ -502,6 +518,15 @@ app.get("/challenge/:id", async (c) => {
       challengePageActions(challenge)));
   }
   if (challenge.status === "passed") {
+    const session = await currentSession(c);
+    const offerPasskeyEnrollment = Boolean(
+      cfg.confirmation.webauthn &&
+      session?.gh_login &&
+      session.challenge_id === challenge.id &&
+      sameGitHubLogin(session.gh_login, challenge.author_login) &&
+      session.github_user_id &&
+      !(await hasEstablishedPasskey(c.env.DB, session))
+    );
     return c.html(resultPage(
       true,
       latest?.score ?? gate.pass_threshold,
@@ -512,7 +537,25 @@ app.get("/challenge/:id", async (c) => {
         prRef: `${challenge.repo_full_name}#${challenge.pr_number}`,
         passThreshold: gate.pass_threshold,
         recordedAt: latest?.finishedAt ?? undefined,
+        passkeyEnrollmentChallengeId: offerPasskeyEnrollment ? challenge.id : undefined,
       }
+    ));
+  }
+  if (challenge.status === "awaiting_confirmation") {
+    const session = await currentSession(c);
+    const canUsePasskey = Boolean(
+      cfg.confirmation.webauthn &&
+      session?.gh_login &&
+      sameGitHubLogin(session.gh_login, challenge.author_login) &&
+      await hasEstablishedPasskey(c.env.DB, session)
+    );
+    return c.html(confirmationPage(
+      challenge.id,
+      `${challenge.repo_full_name}#${challenge.pr_number}`,
+      latest?.score ?? gate.pass_threshold,
+      latest?.total ?? gate.questions,
+      canUsePasskey,
+      cfg.confirmation.webauthn
     ));
   }
   if (challenge.status === "failed_assisted" || challenge.status === "failed_final") {
@@ -629,7 +672,8 @@ app.post("/challenge/:id/start", async (c) => {
   const result = await startQuizAttempt(
     c.env, challengeDeps(c.env), c.req.param("id"),
     session.gh_login, String(form["cf-turnstile-response"] ?? ""),
-    hasSubmittedHoneypot(form)
+    hasSubmittedHoneypot(form),
+    c.req.header("cf-connecting-ip")
   );
   if (!result.ok) {
     if (result.error === "turnstile_missing") {
@@ -645,6 +689,7 @@ app.post("/challenge/:id/start", async (c) => {
       not_ready: "This challenge isn't ready (awaiting approval or already resolved).",
       cooldown: "Cooldown in effect. Try again in a few minutes. You'll get a fresh quiz.",
       attempts_exhausted: "No attempts remain. The PR check is failed; repository policy controls manual review or auto-close.",
+      attempt_preparing: "This attempt is already being prepared. Wait a moment, then return to the challenge.",
       rate_limited: "Rate limit reached. Try again later.",
       generation_failed: "We couldn't generate the quiz from this PR right now. This is a VOUCHA-side generation problem, so the check has been marked neutral and you're not blocked.",
       turnstile_unavailable: "Browser verification is misconfigured or unavailable. This is a VOUCHA-side problem, so the check has been marked neutral and you're not blocked.",
@@ -668,17 +713,25 @@ app.get("/challenge/:id/question", async (c) => {
   const quizId = getCookie(c, "voucha_quiz");
   if (!session?.gh_login || !quizId) return c.redirect(`/challenge/${c.req.param("id")}`);
   const quiz = await c.env.DB.prepare(
-    `SELECT q.questions_json, q.current_question, q.finished_at, q.question_served_at,
-       q.time_limit_ms, ch.author_login, ch.config_json, ch.repo_full_name, ch.pr_number
+    `SELECT q.challenge_id, q.state, q.questions_json, q.current_question, q.finished_at, q.question_served_at,
+       q.time_limit_ms, ch.status, ch.author_login, ch.config_json, ch.repo_full_name, ch.pr_number
      FROM quizzes q JOIN challenges ch ON ch.id = q.challenge_id WHERE q.id=?`
   ).bind(quizId).first<{
+    challenge_id: string; state: string; status: Challenge["status"];
     questions_json: string; current_question: number; finished_at: string | null;
     question_served_at: string | null; time_limit_ms: number;
     author_login: string; config_json: string; repo_full_name: string; pr_number: number;
   }>();
   // The quiz cookie is a capability token, but still bind it to the signed-in
   // author — a leaked/transplanted cookie must not expose questions to others.
-  if (!quiz || quiz.finished_at || !sameGitHubLogin(quiz.author_login, session.gh_login)) {
+  if (
+    !quiz ||
+    quiz.challenge_id !== c.req.param("id") ||
+    quiz.state !== "active" ||
+    quiz.status !== "ready" ||
+    quiz.finished_at ||
+    !sameGitHubLogin(quiz.author_login, session.gh_login)
+  ) {
     return c.redirect(`/challenge/${c.req.param("id")}`);
   }
   const questions = (JSON.parse(quiz.questions_json) as Quiz).questions;
@@ -688,7 +741,7 @@ app.get("/challenge/:id/question", async (c) => {
   // tabs share one server-authoritative deadline.
   const now = new Date();
   await c.env.DB.prepare(
-    "UPDATE quizzes SET question_served_at=COALESCE(question_served_at, ?) WHERE id=?"
+    "UPDATE quizzes SET question_served_at=COALESCE(question_served_at, ?) WHERE id=? AND state='active'"
   ).bind(now.toISOString(), quizId).run();
   const timing = await c.env.DB.prepare(
     "SELECT question_served_at, time_limit_ms FROM quizzes WHERE id=?"
@@ -717,9 +770,21 @@ app.post("/challenge/:id/answer", async (c) => {
   // Same author binding as the question route: only the challenge author's
   // session may submit answers for this quiz.
   const owner = await c.env.DB.prepare(
-    "SELECT ch.author_login FROM quizzes q JOIN challenges ch ON ch.id = q.challenge_id WHERE q.id=?"
-  ).bind(quizId).first<{ author_login: string }>();
-  if (!owner || !sameGitHubLogin(owner.author_login, session.gh_login)) {
+    `SELECT q.challenge_id, q.state, ch.status, ch.author_login
+     FROM quizzes q JOIN challenges ch ON ch.id = q.challenge_id WHERE q.id=?`
+  ).bind(quizId).first<{
+    challenge_id: string;
+    state: string;
+    status: Challenge["status"];
+    author_login: string;
+  }>();
+  if (
+    !owner ||
+    owner.challenge_id !== c.req.param("id") ||
+    owner.state !== "active" ||
+    owner.status !== "ready" ||
+    !sameGitHubLogin(owner.author_login, session.gh_login)
+  ) {
     return c.redirect(`/challenge/${c.req.param("id")}`);
   }
   const form = await c.req.parseBody({ all: true });
@@ -740,6 +805,21 @@ app.post("/challenge/:id/answer", async (c) => {
   );
   if ("error" in result) return c.redirect(`/challenge/${c.req.param("id")}`);
   if (!result.done) return c.redirect(`/challenge/${c.req.param("id")}/question`);
+  if ("confirmationRequired" in result) {
+    const challenge = await getChallenge(c.env.DB, c.req.param("id"));
+    const webauthnEnabled = Boolean(
+      challenge && resolveConfig(challenge.config_json).confirmation.webauthn
+    );
+    const canUsePasskey = webauthnEnabled && await hasEstablishedPasskey(c.env.DB, session);
+    return c.html(confirmationPage(
+      c.req.param("id"),
+      challenge ? `${challenge.repo_full_name}#${challenge.pr_number}` : "this pull request",
+      result.score,
+      result.total,
+      canUsePasskey,
+      webauthnEnabled
+    ));
+  }
   const challenge = await getChallenge(c.env.DB, c.req.param("id"));
   const cfg = challenge ? resolveConfig(challenge.config_json) : null;
   const retryable = Boolean(
@@ -750,12 +830,17 @@ app.post("/challenge/:id/answer", async (c) => {
       ? "cooldown" as const
       : "immediate" as const
     : undefined;
+  const offerPasskeyEnrollment = result.passed &&
+    Boolean(cfg?.confirmation.webauthn) &&
+    Boolean(session.github_user_id) &&
+    !(await hasEstablishedPasskey(c.env.DB, session));
   const resultOptions = challenge && cfg ? {
     prRef: `${challenge.repo_full_name}#${challenge.pr_number}`,
     passThreshold: getMultipleChoiceGate(cfg).pass_threshold,
     recordedAt: new Date().toISOString(),
     verificationFailure: !result.passed && Boolean(result.failureReason),
     retryState,
+    passkeyEnrollmentChallengeId: offerPasskeyEnrollment ? challenge.id : undefined,
   } : undefined;
   return c.html(resultPage(
     result.passed, result.score, result.total,
@@ -775,6 +860,103 @@ app.post("/challenge/:id/answer", async (c) => {
       : challengePathActions(c.req.path),
     resultOptions
   ));
+});
+
+async function passkeyRouteContext(
+  c: Context<{ Bindings: Env }>,
+  allowedStatus: "passed" | "awaiting_confirmation"
+): Promise<{ challenge: Challenge; session: ChallengeSession } | null> {
+  const challengeId = c.req.param("id");
+  if (!challengeId) return null;
+  const [challenge, session] = await Promise.all([
+    getChallenge(c.env.DB, challengeId),
+    currentSession(c),
+  ]);
+  if (
+    !challenge ||
+    challenge.status !== allowedStatus ||
+    !resolveConfig(challenge.config_json).confirmation.webauthn ||
+    !session?.gh_login ||
+    session.challenge_id !== challenge.id ||
+    !sameGitHubLogin(session.gh_login, challenge.author_login)
+  ) return null;
+  const requestOrigin = c.req.header("origin");
+  if (requestOrigin !== new URL(c.env.APP_BASE_URL).origin) return null;
+  return { challenge, session };
+}
+
+app.post("/challenge/:id/passkey/register/options", async (c) => {
+  const context = await passkeyRouteContext(c, "passed");
+  if (!context?.session.github_user_id) return c.json({ error: "not_available" }, 403);
+  try {
+    const options = await createPasskeyRegistrationOptions(
+      c.env.DB,
+      c.env.APP_BASE_URL,
+      context.session,
+      context.challenge.id
+    );
+    c.header("Cache-Control", "no-store");
+    return c.json(options);
+  } catch {
+    return c.json({ error: "not_available" }, 400);
+  }
+});
+
+app.post("/challenge/:id/passkey/register/verify", async (c) => {
+  const context = await passkeyRouteContext(c, "passed");
+  if (!context?.session.github_user_id) return c.json({ verified: false }, 403);
+  try {
+    const verified = await verifyPasskeyRegistration(
+      c.env.DB,
+      c.env.APP_BASE_URL,
+      context.session,
+      context.challenge.id,
+      await c.req.json<RegistrationResponseJSON>()
+    );
+    c.header("Cache-Control", "no-store");
+    return c.json({ verified }, verified ? 200 : 400);
+  } catch {
+    return c.json({ verified: false }, 400);
+  }
+});
+
+app.post("/challenge/:id/passkey/authenticate/options", async (c) => {
+  const context = await passkeyRouteContext(c, "awaiting_confirmation");
+  if (!context?.session.github_user_id) return c.json({ error: "not_available" }, 403);
+  const options = await createPasskeyAuthenticationOptions(
+    c.env.DB,
+    c.env.APP_BASE_URL,
+    context.session,
+    context.challenge.id
+  );
+  if (!options) return c.json({ error: "no_established_passkey" }, 409);
+  c.header("Cache-Control", "no-store");
+  return c.json(options);
+});
+
+app.post("/challenge/:id/passkey/authenticate/verify", async (c) => {
+  const context = await passkeyRouteContext(c, "awaiting_confirmation");
+  if (!context?.session.github_user_id) return c.json({ verified: false }, 403);
+  try {
+    const verified = await verifyPasskeyAuthentication(
+      c.env.DB,
+      c.env.APP_BASE_URL,
+      context.session,
+      context.challenge.id,
+      await c.req.json<AuthenticationResponseJSON>()
+    );
+    if (!verified) return c.json({ verified: false }, 400);
+    const confirmed = await confirmPendingChallenge(
+      c.env,
+      challengeDeps(c.env),
+      context.challenge.id,
+      { method: "passkey", by: context.session.gh_login! }
+    );
+    c.header("Cache-Control", "no-store");
+    return c.json({ verified: confirmed }, confirmed ? 200 : 409);
+  } catch {
+    return c.json({ verified: false }, 400);
+  }
 });
 
 app.get("/", (c) => c.html(homePage(new URL(c.req.url).origin)));

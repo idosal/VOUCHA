@@ -28,7 +28,7 @@ records its intent and ownership before maintainer review.
 | Accountability | optional PR-body acknowledgement and AI disclosure fields | Missing required policy fields fail before a quiz is created. |
 | Vouch trust | optional merge-target `VOUCHED.td` lookup | Vouched authors skip the challenge, unknown authors continue, and denounced authors receive a failed check. |
 | Exemptions | configurable default author trust, author rules, teams, repository roles, prior merged PRs, paths, size, issue context | Trusted or out-of-scope work gets an explanatory success check. |
-| Bot verification and signals | Turnstile, browser automation flags, hidden form fields, code canaries, timing, pointer summaries | Turnstile, browser automation, and repeated server-measured sub-two-second answers can stop the gate; inconclusive signals are report-only. |
+| Bot verification and signals | Challenge-bound Managed Turnstile, browser automation flags, hidden form fields, code canaries, timing, pointer summaries | Strong evidence can stop the gate; one ambiguous clue stays report-only and two independent interaction clues request explicit confirmation through a maintainer, plus an established passkey when enabled. |
 | Challenge | generated questions about intent, behavior, affected surfaces, and blast radius | A pass records that the PR was intentional and its author stands behind it. |
 
 ## What maintainers get

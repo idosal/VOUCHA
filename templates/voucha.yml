@@ -34,7 +34,7 @@ signals:
     report_only: true
 
 max_attempts: 3
-cooldown_minutes: 0 # Immediate retries by default; set a positive wait if needed.
+cooldown_minutes: 0 # Base retry wait; repeated failures scale to at most 8x. Zero stays immediate.
 draft_prs: ignore
 require_approval: first_time
 
@@ -53,6 +53,10 @@ accountability:
   # When true, the PR body must include a line such as:
   # AI assistance: yes
   require_ai_disclosure: false
+
+confirmation:
+  # Set false to use independent maintainer /voucha confirm only.
+  webauthn: true
 
 bot_policy:
   default: skip

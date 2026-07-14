@@ -197,10 +197,13 @@ Maintainers approve with a PR comment:
 /voucha approve
 ```
 
-`max_attempts` and `cooldown_minutes` control retry behavior. A failed non-final
-attempt can retry immediately by default and gets a fresh quiz. Set
-`cooldown_minutes` to a positive value when a repository wants a wait. Once
-attempts are exhausted, the PR stays failed for maintainer review by default.
+`max_attempts` and `cooldown_minutes` control retry behavior. An attempt is
+consumed when its quiz is admitted, including when the author later abandons
+it. A failed non-final attempt can retry immediately by default and gets a
+fresh quiz. Set `cooldown_minutes` to a positive base wait when a repository
+wants a delay. Repeated failures use 1x, 2x, 4x, then at most 8x the configured
+base. Once attempts are exhausted, the PR stays failed for maintainer review by
+default.
 
 A write-capable maintainer can restart a terminal failed or neutral challenge
 for the same commit without discarding the previous audit:
@@ -211,6 +214,26 @@ for the same commit without discarding the previous audit:
 
 `/voucha retrigger` is accepted as an alias. A retry starts a new attempt cycle,
 creates a new queued check run, and keeps the existing challenge link.
+
+When multiple independent ambiguous interaction signals pause an otherwise
+correct result, an independent write-capable maintainer can use:
+
+```text
+/voucha confirm
+```
+
+The PR author cannot use that command to confirm their own result. When
+`confirmation.webauthn` is enabled, an author with a previously enrolled
+passkey can instead confirm from the challenge page.
+
+```yaml
+confirmation:
+  webauthn: false
+```
+
+Setting this to `false` makes independent maintainer confirmation the only
+confirmation path. It suppresses passkey enrollment and rejects WebAuthn for
+challenges created under that merge-target policy.
 
 `enforcement.auto_close` can additionally close PRs after terminal hard-failure
 outcomes. It is off by default and never closes retryable failures, neutral

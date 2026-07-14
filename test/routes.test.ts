@@ -38,6 +38,8 @@ describe("GET /", () => {
 
     expect(res.status).toBe(200);
     expect(res.headers.get("content-type")).toContain("text/html");
+    expect(res.headers.get("content-signal")).toBeNull();
+    expect(res.headers.get("x-robots-tag")).toBeNull();
     const html = await res.text();
     expect(html).toContain("VOUCHA");
     expect(html).toContain("Deploy to Cloudflare");
@@ -82,6 +84,8 @@ describe("GET /challenge/:id", () => {
     const ctx = createExecutionContext();
     const res = await worker.fetch(new Request("https://x/challenge/nope"), testEnv, ctx);
     expect(res.status).toBe(404);
+    expect(res.headers.get("content-signal")).toBe("ai-train=yes, search=no, ai-input=no");
+    expect(res.headers.get("x-robots-tag")).toBe("noindex, nofollow, nosnippet");
   });
 
   it("shows anonymous visitors a GitHub comment verification command", async () => {
@@ -168,6 +172,139 @@ describe("GET /challenge/:id", () => {
     expect(html).not.toContain("Refresh challenge");
   });
 
+  it("offers optional passkey enrollment after a clean pass and enforces same-origin POSTs", async () => {
+    await testEnv.DB.prepare(
+      `INSERT INTO challenges (id, installation_id, repo_full_name, pr_number, head_sha,
+        author_login, status, config_json)
+       VALUES ('chPasskeyEnrollment', 1, 'o/r', 51, 's51', 'alice', 'passed', '{}')`
+    ).run();
+    await testEnv.DB.prepare(
+      `INSERT INTO sessions (id, challenge_id, gh_login, github_user_id)
+       VALUES ('sessPasskeyEnrollment', 'chPasskeyEnrollment', 'alice', 5151)`
+    ).run();
+    const cookie = await signSessionCookie(testEnv.SESSION_SIGNING_KEY, "sessPasskeyEnrollment");
+    const headers = { cookie: `voucha_session=${cookie}` };
+
+    const page = await worker.fetch(
+      new Request("https://x/challenge/chPasskeyEnrollment", { headers }),
+      testEnv,
+      createExecutionContext()
+    );
+    expect(await page.text()).toContain("Optional passkey for future checks");
+
+    const crossOrigin = await worker.fetch(new Request(
+      "https://x/challenge/chPasskeyEnrollment/passkey/register/options",
+      { method: "POST", headers }
+    ), testEnv, createExecutionContext());
+    expect(crossOrigin.status).toBe(403);
+
+    const sameOrigin = await worker.fetch(new Request(
+      "https://x/challenge/chPasskeyEnrollment/passkey/register/options",
+      {
+        method: "POST",
+        headers: { ...headers, origin: new URL(testEnv.APP_BASE_URL).origin },
+      }
+    ), testEnv, createExecutionContext());
+    expect(sameOrigin.status).toBe(200);
+    expect(await sameOrigin.json()).toEqual(expect.objectContaining({
+      rp: { name: "VOUCHA", id: new URL(testEnv.APP_BASE_URL).hostname },
+      attestation: "none",
+    }));
+  });
+
+  it("suppresses and rejects passkeys when repository policy disables WebAuthn", async () => {
+    const configJson = JSON.stringify({ confirmation: { webauthn: false } });
+    await testEnv.DB.prepare(
+      `INSERT INTO challenges (id, installation_id, repo_full_name, pr_number, head_sha,
+        author_login, status, config_json)
+       VALUES ('chPasskeyDisabled', 1, 'o/r', 53, 's53', 'alice', 'passed', ?)`
+    ).bind(configJson).run();
+    await testEnv.DB.prepare(
+      `INSERT INTO sessions (id, challenge_id, gh_login, github_user_id)
+       VALUES ('sessPasskeyDisabled', 'chPasskeyDisabled', 'alice', 5353)`
+    ).run();
+    const cookie = await signSessionCookie(testEnv.SESSION_SIGNING_KEY, "sessPasskeyDisabled");
+    const headers = {
+      cookie: `voucha_session=${cookie}`,
+      origin: new URL(testEnv.APP_BASE_URL).origin,
+    };
+
+    const page = await worker.fetch(
+      new Request("https://x/challenge/chPasskeyDisabled", { headers }),
+      testEnv,
+      createExecutionContext()
+    );
+    expect(await page.text()).not.toContain("Optional passkey for future checks");
+
+    for (const endpoint of ["options", "verify"]) {
+      const response = await worker.fetch(new Request(
+        `https://x/challenge/chPasskeyDisabled/passkey/register/${endpoint}`,
+        { method: "POST", headers }
+      ), testEnv, createExecutionContext());
+      expect(response.status).toBe(403);
+    }
+  });
+
+  it("keeps passkey-ineligible confirmation usable through the maintainer fallback", async () => {
+    await testEnv.DB.prepare(
+      `INSERT INTO challenges (id, installation_id, repo_full_name, pr_number, head_sha,
+        author_login, status, config_json)
+       VALUES ('chConfirmationFallback', 1, 'o/r', 52, 's52', 'alice', 'awaiting_confirmation', '{}')`
+    ).run();
+    await testEnv.DB.prepare(
+      `INSERT INTO sessions (id, challenge_id, gh_login, github_user_id)
+       VALUES ('sessConfirmationFallback', 'chConfirmationFallback', 'alice', 5252)`
+    ).run();
+    const cookie = await signSessionCookie(testEnv.SESSION_SIGNING_KEY, "sessConfirmationFallback");
+    const response = await worker.fetch(
+      new Request("https://x/challenge/chConfirmationFallback", {
+        headers: { cookie: `voucha_session=${cookie}` },
+      }),
+      testEnv,
+      createExecutionContext()
+    );
+    const html = await response.text();
+    expect(html).toContain("No previously enrolled passkey is available");
+    expect(html).toContain("a write-capable maintainer who is not the PR author");
+    expect(html).toContain("/voucha confirm");
+  });
+
+  it("renders maintainer-only confirmation when repository policy disables WebAuthn", async () => {
+    await testEnv.DB.prepare(
+      `INSERT INTO challenges (id, installation_id, repo_full_name, pr_number, head_sha,
+        author_login, status, config_json)
+       VALUES ('chConfirmationNoWebauthn', 1, 'o/r', 54, 's54', 'alice', 'awaiting_confirmation',
+         '{"confirmation":{"webauthn":false}}')`
+    ).run();
+    await testEnv.DB.prepare(
+      `INSERT INTO sessions (id, challenge_id, gh_login, github_user_id)
+       VALUES ('sessConfirmationNoWebauthn', 'chConfirmationNoWebauthn', 'alice', 5454)`
+    ).run();
+    const cookie = await signSessionCookie(testEnv.SESSION_SIGNING_KEY, "sessConfirmationNoWebauthn");
+    const headers = {
+      cookie: `voucha_session=${cookie}`,
+      origin: new URL(testEnv.APP_BASE_URL).origin,
+    };
+    const response = await worker.fetch(
+      new Request("https://x/challenge/chConfirmationNoWebauthn", { headers }),
+      testEnv,
+      createExecutionContext()
+    );
+    const html = await response.text();
+    expect(html).toContain("Passkey confirmation is disabled by this repository's VOUCHA policy");
+    expect(html).toContain("independent maintainer confirmation instead of passkeys");
+    expect(html).toContain("/voucha confirm");
+    expect(html).not.toContain('id="confirmPasskey"');
+
+    for (const endpoint of ["options", "verify"]) {
+      const passkeyResponse = await worker.fetch(new Request(
+        `https://x/challenge/chConfirmationNoWebauthn/passkey/authenticate/${endpoint}`,
+        { method: "POST", headers }
+      ), testEnv, createExecutionContext());
+      expect(passkeyResponse.status).toBe(403);
+    }
+  });
+
   it("renders assisted failures as failed results instead of stale challenges", async () => {
     await testEnv.DB.prepare(
       `INSERT INTO challenges (id, installation_id, repo_full_name, pr_number, head_sha,
@@ -248,9 +385,9 @@ describe("GET /challenge/:id", () => {
        VALUES ('chRetryResult', 1, 'o/r', 8, 's8', 'alice', 'passed', '{}', 1)`
     ).run();
     await testEnv.DB.prepare(
-      `INSERT INTO quizzes (id, challenge_id, attempt_number, retry_cycle, questions_json, answers_json, score)
-       VALUES ('quizOldCycle', 'chRetryResult', 3, 0, '{"questions":[]}', '[0,0,0,0]', 0),
-              ('quizNewCycle', 'chRetryResult', 1, 1, '{"questions":[]}', '[0,1,2,3]', 4)`
+      `INSERT INTO quizzes (id, challenge_id, attempt_number, retry_cycle, questions_json, answers_json, score, finished_at, state)
+       VALUES ('quizOldCycle', 'chRetryResult', 3, 0, '{"questions":[]}', '[0,0,0,0]', 0, datetime('now'), 'finished'),
+              ('quizNewCycle', 'chRetryResult', 1, 1, '{"questions":[]}', '[0,1,2,3]', 4, datetime('now'), 'finished')`
     ).run();
 
     const res = await worker.fetch(
@@ -467,7 +604,9 @@ describe("challengeDeps.verifyTurnstile", () => {
     }), { status: 200, headers: { "content-type": "application/json" } }));
     vi.stubGlobal("fetch", fetchMock);
     try {
-      await expect(challengeDeps(testEnv).verifyTurnstile("token")).resolves.toBe("unavailable");
+      await expect(challengeDeps(testEnv).verifyTurnstile("token", {
+        expectedCData: "v1_test-binding",
+      })).resolves.toBe("unavailable");
     } finally {
       vi.unstubAllGlobals();
     }
@@ -480,7 +619,9 @@ describe("challengeDeps.verifyTurnstile", () => {
     }), { status: 200, headers: { "content-type": "application/json" } }));
     vi.stubGlobal("fetch", fetchMock);
     try {
-      await expect(challengeDeps(testEnv).verifyTurnstile("token")).resolves.toBe("failed");
+      await expect(challengeDeps(testEnv).verifyTurnstile("token", {
+        expectedCData: "v1_test-binding",
+      })).resolves.toBe("failed");
     } finally {
       vi.unstubAllGlobals();
     }
