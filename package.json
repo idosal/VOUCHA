@@ -38,7 +38,7 @@
   },
   "dependencies": {
     "@simplewebauthn/server": "^13.3.2",
-    "hono": "^4.6.0",
+    "hono": "^4.13.5",
     "yaml": "^2.6.0",
     "zod": "^3.24.0"
   },
